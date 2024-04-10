@@ -23,6 +23,7 @@ int mastRotate, rotateout;
 int PotValue=0;
 int PotLo=9999;
 int PotHi=0;
+extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
 
 // Initialize static variables for RotationSensor Class
 int RotationSensor::newValue{0};
@@ -64,6 +65,7 @@ int readAnalogRotationValue() {
   if (!PotValue)
     return 0;
   // determine range of A2D values; this might be different on your boat
+  // after calibration, a value lower than PotLo or higher than PotHi should cause an error
   if (PotValue < PotLo && PotValue > 0) { 
     PotLo = PotValue;
   } else if (PotValue > PotHi) {
@@ -83,7 +85,7 @@ int readAnalogRotationValue() {
   RotationSensor::newValue = newValue;
   RotationSensor::oldValue = oldValue;
 
-  int mastRot = map(oldValue, lowset, highset, -50, 50);    //maps 10 bit number to degrees of rotation
+  int mastRot = map(oldValue, lowset, highset, -portRange, stbdRange);    // maps 10 bit number to degrees of rotation
   #ifdef DEBUG2
   sprintf(buf, "%d %d %d %d", oldValue, lowset, highset, mastRot);
   Serial.println(buf);

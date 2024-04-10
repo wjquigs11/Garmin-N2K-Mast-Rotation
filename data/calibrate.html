@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mast Rotation Calibration</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+  <h1>Mast Rotation Calibration</h1>
+  <p>Enter range of mast rotation</p>
+  <p>(port to starboard, in degrees)</p>
+  <form action="/calibrate2" method="post">
+    <p>from: -<input type="text" name="portRange" value=%portRange% size="4"></p>
+    <p>to: +<input type="text" name="stbdRange" value="50" size="4"></p>
+    <button type="submit">OK</button>
+</form>
+<p><a href="/"><button class="button button2">Cancel</button></a></p>
+
+</body>
+</html>
+

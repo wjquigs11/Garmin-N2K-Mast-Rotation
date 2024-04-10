@@ -5,6 +5,8 @@
 #include <Preferences.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
+#include <ESPmDNS.h>
+#include <Adafruit_ADS1X15.h>
 
 Preferences preferences;
 DNSServer dnsServer;
@@ -17,6 +19,13 @@ String password;
 String ip;
 String gateway;
 const char *hostname = "ESPWind";
+// calibration; saved to preferences
+int portRange=50, stbdRange=50; // NB BOTH are positive
+extern Adafruit_ADS1015 ads;
+extern int PotLo, PotHi;
+int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/stbdRange
+// however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
+extern int magOrientation; // we *should* start getting valid magOrientation as soon as BLE is connected
 
 bool is_setup_done = false;
 bool valid_ssid_received = false;
@@ -32,6 +41,7 @@ unsigned long lastTime = 0;
 int WebTimerDelay = 500;
 
 void StartCaptivePortal();
+void postAPweb();
 
 // define index.html for use when no AP has been defined (captive portal)
 // we ask for ssid, pass and do HTML GET to /get to "post"
@@ -97,17 +107,14 @@ void setupConfigServer() {
 }
 
 
-void WiFiSoftAPSetup()
-{
+void WiFiSoftAPSetup() {
   WiFi.mode(WIFI_AP);
   WiFi.softAP(hostname);
   Serial.print("AP IP address: "); Serial.println(WiFi.softAPIP());
 }
 
-
 //bool WiFiStationSetup(String rec_ssid, String rec_password)
-bool WiFiStationSetup()
-{
+bool WiFiStationSetup() {
   wifi_timeout = false;
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(hostname);
@@ -157,9 +164,11 @@ bool WiFiStationSetup()
     //preferences.putString("password", rec_password);
     preferences.putString("ssid", ssid);
     preferences.putString("password", password);
+    if (!MDNS.begin(hostname)) 
+      Serial.println("Error setting up MDNS responder!");
+    else Serial.println("MDNS OK");
 
-    // start serving from SPIFFS
-    server.serveStatic("/", SPIFFS, "/");
+    postAPweb(); // start serving from SPIFFS and handle calbration, etc
   }
   return true;
 }
@@ -185,67 +194,100 @@ void getWifiPrefs() {
   // TBD ip = preferences.getString();
 }
 
-
 void setupWifi() {
-
-  if (!is_setup_done)
-  {
+  if (!is_setup_done) {
     StartCaptivePortal();
-  }
-  else
-  {
+  } else {
     Serial.println("Using saved SSID and Password to attempt WiFi Connection!");
     Serial.print("Saved SSID is ");Serial.println(ssid);
     Serial.print("Saved Password is ");Serial.println(password);
     //WiFiStationSetup(ssid, password);
     WiFiStationSetup();
   }
-
-  while (!is_setup_done)
-  {
+  while (!is_setup_done) {
     dnsServer.processNextRequest();
     delay(10);
-    if (valid_ssid_received && valid_password_received)
-    {
+    if (valid_ssid_received && valid_password_received) {
       Serial.println("Attempting WiFi Connection!");
       //WiFiStationSetup(ssid, password);
       WiFiStationSetup();
     }
   }
-
   Serial.println("All Done!");
-
-  //Your Additional Setup code
 }
 
-/*
-void APmode() {
-    Serial.print(APmodeSwitch);
-    Serial.print(" Setting Access Point: ");
-    Serial.println(hostname);
-    // NULL sets an open Access Point
-    if (!WiFi.softAP(hostname, NULL)) {
-      Serial.println("AP failed");
-    }
+// Replaces HTML %placeholder% with stored values
+String cal_processor(const String& var) {
+  //Serial.println(var);
+  if (var == "portRange")
+    //return "-50"; // TBD read from preferences
+    return String(preferences.getInt("portRange"));
+  if (var == "stbdRange")
+    return String(preferences.getInt("stbdRange"));
+  if (var == "mastAngle")
+    return String(ads.readADC_SingleEnded(0));
+  return "not found";
+}
 
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(IP); 
 
-    // Web Server Root URL, serve wifimanager.html
-    // TBD: change index.html to wifimanager.html
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(SPIFFS, "/wifimanager.html", "text/html");
-    });
-    
+void postAPweb() {
+    // start serving from SPIFFS
     server.serveStatic("/", SPIFFS, "/");
-    
-    //server.begin();
+
+    server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request) {
+          request->send(SPIFFS, "/calibrate.html", "text/html", cal_processor);
+    });
+
+    // POST on calibrate means we've gotten rotation range parameters
+    server.on("/calibrate", HTTP_POST, [](AsyncWebServerRequest *request) {
+      int params = request->params();
+      for(int i=0;i<params;i++) {
+        AsyncWebParameter* p = request->getParam(i);
+        if(p->isPost()) {
+          // HTTP POST ssid value
+          if (p->name() == "portRange") {
+            portRange = atoi(p->value().c_str());
+            Serial.print("portRange: ");
+            Serial.println(portRange);
+          }
+          if (p->name() == "stbdRange") {
+            stbdRange = atoi(p->value().c_str());
+            Serial.print("stbdRange: ");
+            Serial.println(stbdRange);
+            preferences.putInt("stbdRange", stbdRange);
+          }
+        } // isPost
+      } // for params
+      request->send(SPIFFS, "/calibrate2.html", "text/html"); // go to 2nd page
+    });
+
+    // POST on calibrate2 means mast is all the way to port
+    server.on("/calibrate2", HTTP_POST, [](AsyncWebServerRequest *request) {
+      // read sensors at port end of range (Honeywell and/or magnetic)
+      PotLo = ads.readADC_SingleEnded(0);
+      request->send(SPIFFS, "/calibrate3.html", "text/html");
+    });
+
+    // POST on calibrate3 means mast is all the way to starboard
+    server.on("/calibrate3", HTTP_POST, [](AsyncWebServerRequest *request) {
+      // read sensors at port end of range (Honeywell and/or magnetic)
+      PotHi = ads.readADC_SingleEnded(0);
+      request->send(SPIFFS, "/calibrate4.html", "text/html", cal_processor);
+    });
+
+    // POST on calibrate4 means user has pressed OK; save values
+    // (cancel will redirect to /index.html)
+    server.on("/calibrate4", HTTP_POST, [](AsyncWebServerRequest *request) {
+      preferences.putInt("portRange", portRange);
+      preferences.putInt("stbdRange", stbdRange);
+      // what now? If you put a dial in calibrate4, maybe just refresh, but delete the buttons
+      // or put the dial on index.html with a Calibrate button
+      //request->send(SPIFFS, "/calibrate4.html", "text/html", cal_processor);
+    });
+
 }
-*/
 
 // do the websockets stuff
-
 void notifyClients(String sensorReadings) {
   ws.textAll(sensorReadings);
 }
