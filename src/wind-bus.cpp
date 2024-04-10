@@ -90,17 +90,19 @@ int num_wind_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
 
 // defs for wifi
-extern bool APmodeSwitch;
-bool initWiFi();
-void initSPIFFS();
+extern bool is_setup_done;
+bool setupWifi();
 void initWebSocket();
 void APmode();
 void notifyClients(String);
+void getWifiPrefs();
 extern AsyncWebServer server;
 extern String hostname;
 extern int WebTimerDelay;
 extern AsyncWebSocket ws;
 extern JSONVar readings;
+
+void SetupBLE();
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -123,7 +125,7 @@ tNMEA2000Handler NMEA2000Handlers[]={
 };
 */
 
-// NMEA 2000 message handler for main bus: just count messages
+// NMEA 2000 message handler for main bus
 void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {   
   //N2kMsg.Print(&Serial);
   num_n2k_messages++;
@@ -248,6 +250,9 @@ void setup() {
   honeywellSensor.begin();    // Instantiates the moving average object
   ads.begin();  // start ADS1015 ADC
 
+  // read preferences from flash
+  getWifiPrefs();
+
   // Set up NMEA0183 ports and handlers
   pBD=&BoatData;
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
@@ -309,27 +314,17 @@ void setup() {
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   n2kWind->Open();
 
-  initSPIFFS();
+  if (!SPIFFS.begin()) {
+    Serial.println("An error has occurred while mounting SPIFFS");
+  } else {
+  Serial.println("SPIFFS mounted successfully");
+  }
 
-  if (APmodeSwitch = initWiFi()) {
-    Serial.print("Init WIFI OK ");
-    Serial.println(APmodeSwitch);
-    // Initialize mDNS
-    if (!MDNS.begin(hostname.c_str())) {   
-      Serial.println("Error setting up MDNS responder!");
-      while(1) delay(1000);
-    } else Serial.println("MDNS OK");
-    // Web Server Root URL
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-      Serial.println("GET /index");
-      request->send(SPIFFS, "/index.html", "text/html");
-    });
-    initWebSocket();
-    server.serveStatic("/", SPIFFS, "/");
-    // Start server
-    server.begin();
-  } else
-    APmode();
+  // configure wifi server
+  setupWifi();
+
+  // connect to magnetic sensor on mast via BLE, if available
+  SetupBLE();
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
   app.onRepeat(1, []() {
@@ -337,6 +332,7 @@ void setup() {
     n2kMain->ParseMessages();
     n2kWind->ParseMessages();
     NMEA0183_3.ParseMessages(); // GPS from ICOM
+    //magLoop(); don't need to call anything; callback updates mast heading and parsemessages callback after mag heading m2k message will compare
   });
 /*
   app.onRepeat(100, []() {
@@ -352,7 +348,7 @@ void setup() {
 */
   // update web page
   app.onRepeat(WebTimerDelay, []() {
-    if (APmodeSwitch) {
+    if (is_setup_done) {
       String jsonString = JSON.stringify(readings);
     //  Serial.println("sending readings from WebTimerDelay");
     //  Serial.println(jsonString);
