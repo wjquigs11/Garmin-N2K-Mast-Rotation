@@ -5,6 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link rel="icon" type="image/png" href="favicon.png">
         <link rel="stylesheet" type="text/css" href="style.css">
+        <script src="gauge.min.js"></script>
     </head>
     <body>
         <div class="topnav">
@@ -20,13 +21,20 @@
                     <p class="card-title"><i class="fas fa-thermometer-threequarters" style="color:#059e8a;"></i> Wind Angle</p>
                     <p class="reading"><span id="windAngle"></span></p>
                 </div>
+            <!--
                 <div class="card">
                     <p class="card-title"><i class="fas fa-thermometer-threequarters" style="color:#059e8a;"></i> Mast Rotate</p>
                     <p class="reading"><span id="mastRotate"></span></p>
                 </div>
+            -->
                 <div class="card">
-                    <p class="card-title"><i class="fas fa-thermometer-threequarters" style="color:#059e8a;"></i> RotateOut</p>
+                    <p class="card-title"><i class="fas fa-thermometer-threequarters" style="color:#059e8a;"></i> Correct AWA</p>
                     <p class="reading"><span id="rotateout"></span></p>
+                </div>
+                <div>
+            <!--        <p class="card-title">Rotation</p>
+            -->
+                    <canvas id="gauge-rotation"></canvas>
                 </div>
             </div>
         </div>
