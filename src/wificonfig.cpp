@@ -126,16 +126,22 @@ bool WiFiStationSetup() {
   password.toCharArray(password_arr, password.length() + 1);
   Serial.print("Received SSID: "); Serial.println(ssid_arr); Serial.print("And password: "); Serial.println(password_arr);
   if (ip!="") {
+    Serial.print("Using IP: ");
+    Serial.println(ip);
     localIP.fromString(ip);
-    if (gateway!="")
+    if (gateway!="") {
+      Serial.print("Using GW: ");
+      Serial.println(gateway);
       localGateway.fromString(gateway);
+    }
     if (!WiFi.config(localIP, localGateway, subnet)) {
       Serial.println("STA Failed to configure");
       return false;
-    }
+    } else Serial.println("STA configured");
   }
   int result = WiFi.begin(ssid_arr, password_arr);
-
+  Serial.println(result);
+  
   uint32_t t1 = millis();
   // try to connect to wifi. If not, start captive portal
   while (WiFi.status() != WL_CONNECTED) {
@@ -220,7 +226,6 @@ void setupWifi() {
 String cal_processor(const String& var) {
   //Serial.println(var);
   if (var == "portRange")
-    //return "-50"; // TBD read from preferences
     return String(preferences.getInt("portRange"));
   if (var == "stbdRange")
     return String(preferences.getInt("stbdRange"));
@@ -231,6 +236,7 @@ String cal_processor(const String& var) {
 
 
 void postAPweb() {
+  Serial.println("serving site from SPIFFS");
     // start serving from SPIFFS
     server.serveStatic("/", SPIFFS, "/");
 
@@ -249,6 +255,7 @@ void postAPweb() {
             portRange = atoi(p->value().c_str());
             Serial.print("portRange: ");
             Serial.println(portRange);
+            //preferences?
           }
           if (p->name() == "stbdRange") {
             stbdRange = atoi(p->value().c_str());
