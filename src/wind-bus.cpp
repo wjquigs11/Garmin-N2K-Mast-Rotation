@@ -90,19 +90,19 @@ int num_wind_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
 
 // defs for wifi
-extern bool is_setup_done;
-bool setupWifi();
-void initWebSocket();
-void APmode();
 void notifyClients(String);
-void getWifiPrefs();
 extern AsyncWebServer server;
 extern String hostname;
 extern int WebTimerDelay;
 extern AsyncWebSocket ws;
 extern JSONVar readings;
+extern bool APmodeSwitch;
 
 void SetupBLE();
+bool initWifi();
+//void loopWifi();
+void APmode();
+bool initSPIFFS();
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -225,6 +225,16 @@ void setup() {
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
 
+  if (!initSPIFFS())
+    Serial.println("An error has occurred while mounting SPIFFS");
+  else
+    Serial.println("SPIFFS mounted successfully");
+
+  // configure wifi server (reboots if APmode was necessary)
+  if ((APmodeSwitch=initWifi()) == false) {
+    APmode();
+  } else {
+
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
   digitalWrite(OLED_RESET, LOW);
   delay(500);
@@ -249,9 +259,6 @@ void setup() {
 
   honeywellSensor.begin();    // Instantiates the moving average object
   ads.begin();  // start ADS1015 ADC
-
-  // read preferences from flash
-  getWifiPrefs();
 
   // Set up NMEA0183 ports and handlers
   pBD=&BoatData;
@@ -314,15 +321,6 @@ void setup() {
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   n2kWind->Open();
 
-  if (!SPIFFS.begin()) {
-    Serial.println("An error has occurred while mounting SPIFFS");
-  } else {
-  Serial.println("SPIFFS mounted successfully");
-  }
-
-  // configure wifi server
-  setupWifi();
-
   // connect to magnetic sensor on mast via BLE, if available
   SetupBLE();
 
@@ -348,14 +346,15 @@ void setup() {
 */
   // update web page
   app.onRepeat(WebTimerDelay, []() {
-    if (is_setup_done) {
+    //if (is_setup_done) {
       String jsonString = JSON.stringify(readings);
     //  Serial.println("sending readings from WebTimerDelay");
     //  Serial.println(jsonString);
       notifyClients(jsonString);
-    }
+    //}
     // Not sure if this should go here
     ws.cleanupClients();
+//    loopWifi();
   });
 
   // update results
@@ -364,6 +363,7 @@ void setup() {
     //num_n2k_messages = 0;
     //num_wind_messages = 0;
   });
+  } // else APmode...don't do any other setup until wifi is configured
 }
 
 void loop() { app.tick(); }

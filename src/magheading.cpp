@@ -19,6 +19,7 @@ transmit on n2k as rudder angle for rudder #2
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
+#include <Preferences.h>
 
 //int mastRotate, rotateout;
 extern String hostname;
@@ -26,12 +27,28 @@ BLEServer *pServer;
 BLEService *pService;
 BLECharacteristic *pMagOrientation;
 
+float lastValue=0;
+double rad=0.01745;
+
+// defs for robotshop CMPS14
+#define CMPS12_ADDRESS 0x60  // Address of CMPS12 shifted right one bit for arduino wire library
+#define ANGLE_8  1           // Register to read 8bit angle from
+
+
+unsigned char high_byte, low_byte, angle8;
+char pitch, roll;
+unsigned int angle16, comp8, comp16;
+#define VARIATION -15.2
+static int variation;
+static int orientation; // how is the compass oriented on the board
+extern Preferences preferences;     
+
 //String bleServerName(128);
 #define bleServerName "BLEcompass"
 
 /* UUID's of the service, characteristic that we want to read*/
 // BLE Service
-static BLEUUID bmeServiceUUID("01a91d81-b2be-4473-8490-5f6089a92b54");
+static BLEUUID bmeServiceUUID("01a91d81-b2be-4473-8490-5f6089a92b55");
 static BLEUUID magneticOrientationUUID("de64c403-2b3e-4566-bcea-e291922b934d");
 
 //Flags stating if should begin connecting and if the connection is up
@@ -145,6 +162,8 @@ static void magNotifyCallback(BLERemoteCharacteristic* pBLERemoteCharacteristic,
   magOrientationChar = (char*)pData;
   magOrientation = atoi(magOrientationChar);
   newMagOrient = true;
+  Serial.print("BLE mag orientation: ");
+  Serial.println(magOrientation);
 }
 /*
 void magLoop() {
