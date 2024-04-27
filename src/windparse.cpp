@@ -56,8 +56,8 @@ void IRAM_ATTR NewDataReadyISR() {
 // returns degrees, and corresponds to the current value of the Honeywell sensor
 int readAnalogRotationValue() {      
   // Define Constants
-  const int lowset = 47;
-  const int highset = 310;
+  const int lowset = 56;
+  const int highset = 311;
   
   //PotValue = analogRead(POT_PIN);
   PotValue = ads.readADC_SingleEnded(0);

@@ -10,8 +10,28 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 
 #include <Arduino.h>
 
+#define ESPBERRY
+#ifdef ESPBERRY
 #define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
 #define CAN_RX_PIN GPIO_NUM_35
+#define N2k_SPI_CS_PIN 5    // If you use mcp_can and CS pin is not 53, uncomment this and modify definition to match your CS pin.
+#define N2k_CAN_INT_PIN 22   // If you use mcp_can and interrupt pin is not 21, uncomment this and modify definition to match your interrupt pin.
+#endif
+#ifdef SH_ESP32
+//#define CAN_TX_PIN GPIO_NUM_32
+//#define CAN_RX_PIN GPIO_NUM_34
+// external transceiver because on-board one isn't working
+#define CAN_RX_PIN GPIO_NUM_27
+#define CAN_TX_PIN GPIO_NUM_25
+#define N2k_SPI_CS_PIN 5    
+//#define N2k_CAN_INT_PIN 22   
+#define N2k_CAN_INT_PIN 0xFF   
+#define MOSI 26
+#define MISO 18
+#define SS 5
+#define SCK 19
+#endif
+
 #define SDA_PIN 16
 #define SCL_PIN 17
 //#define TXD0 18
@@ -36,8 +56,6 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <mcp_can.h>
 #include <mcp_can_dfs.h>
 #include <Arduino.h>
-#define N2k_SPI_CS_PIN 5    // If you use mcp_can and CS pin is not 53, uncomment this and modify definition to match your CS pin.
-//#define N2k_CAN_INT_PIN 26   // If you use mcp_can and interrupt pin is not 21, uncomment this and modify definition to match your interrupt pin.
 #include <NMEA2000_mcp.h>
 //#include <NMEA2000_CAN.h>  // This will automatically choose right CAN library and create suitable NMEA2000 object
 #include <N2kMessages.h>
@@ -80,6 +98,7 @@ Stream *forward_stream = &Serial;
 tNMEA2000 *n2kMain;
 tNMEA2000 *n2kWind;
 
+// Honeywell sensor
 extern movingAvg honeywellSensor;                // define the moving average object
 extern int mastRotate, rotateout;
 extern int PotValue, PotLo, PotHi;
@@ -90,19 +109,25 @@ int num_wind_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
 
 // defs for wifi
+extern bool APmodeSwitch;
+bool startWifi();
+void initSPIFFS();
+void initWebSocket();
+void APmode();
 void notifyClients(String);
 extern AsyncWebServer server;
-extern String hostname;
+extern char *hostname;
 extern int WebTimerDelay;
 extern AsyncWebSocket ws;
 extern JSONVar readings;
-extern bool APmodeSwitch;
 
-void SetupBLE();
-bool initWifi();
-//void loopWifi();
-void APmode();
-bool initSPIFFS();
+// mast compass
+int MagHeading(const tN2kMsg &N2kMsg);
+void httpInit(const char* serverName);
+extern const char* serverName;
+extern int magOrientation;
+void mastHeading();
+int mastAngle[2]; // array for both sensors
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -114,7 +139,6 @@ void ToggleLed() {
 }
 
 void WindSpeed(const tN2kMsg &N2kMsg);
-void MagHeading(const tN2kMsg &N2kMsg);
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,0};
 
@@ -125,7 +149,7 @@ tNMEA2000Handler NMEA2000Handlers[]={
 };
 */
 
-// NMEA 2000 message handler for main bus
+// NMEA 2000 message handler for main bus: just count messages
 void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {   
   //N2kMsg.Print(&Serial);
   num_n2k_messages++;
@@ -133,8 +157,28 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
   ToggleLed();
   switch (N2kMsg.PGN) {
     case 127250L:
-      MagHeading(N2kMsg);
+      // got bearing (from RPI); calculate mast heading
+      tN2kMsg correctN2kMsg;
+      unsigned char instance=1;
+      int mastRotate = MagHeading(N2kMsg);
+      if (mastRotate > -1) {
+        mastAngle[instance] = (mastRotate * 4068) / 71;   // cheap rads to degree
+        // for now (until you dive into SensESP), send rotation angle as rudder (#1)
+        SetN2kPGN127245(correctN2kMsg, mastRotate*(M_PI/180), instance, N2kRDO_NoDirectionOrder, 0);
+        n2kMain->SendMsg(correctN2kMsg);
+        // send on USB as well in case CAN messages can't be differentiated
+        correctN2kMsg.SendInActisenseFormat(forward_stream);
+      }
+    /*
+    case 127245L:
+      // "rudder" (mast) angle
+      double rudPos, angleOrder;
+      unsigned char Instance;
+      tN2kRudderDirectionOrder Direction;
+      ParseN2kPGN127245(N2kMsg, rudPos, Instance, Direction, angleOrder);
+      mastAngle[Instance] = (rudPos * 4068) / 71;   // cheap rads to degree
       break;
+    */
   } 
 }
 
@@ -211,8 +255,9 @@ void OLEDdataWindDebug() {
   display->printf("N2K:%d ", num_n2k_messages);
   display->printf("Wind:%d\n", num_wind_messages);
   display->printf("S/A/R:%2.2lf/%2d/%2d\n", windSpeedKnots, windAngleDegrees,rotateout);
-  display->printf("Rot:%d\n", mastRotate);
+  //display->printf("Rot:%d\n", mastRotate);
   display->printf("Sens:%d/%d/%d\n", PotLo, PotValue, PotHi);
+  display->printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
   display->display();
 }
 
@@ -224,17 +269,7 @@ void setup() {
 
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
-
-  if (!initSPIFFS())
-    Serial.println("An error has occurred while mounting SPIFFS");
-  else
-    Serial.println("SPIFFS mounted successfully");
-
-  // configure wifi server (reboots if APmode was necessary)
-  if ((APmodeSwitch=initWifi()) == false) {
-    APmode();
-  } else {
-
+  
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
   digitalWrite(OLED_RESET, LOW);
   delay(500);
@@ -298,13 +333,15 @@ void setup() {
   );
   n2kMain->SetForwardStream(forward_stream);
   n2kMain->SetMode(tNMEA2000::N2km_ListenAndSend);
-  //n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
+  n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
   n2kMain->EnableForward(true);
   n2kMain->SetForwardOwnMessages(true); // shouldn't have any self-generated messages on main bus
   n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
   // I could use the same handler on both since I *should* never get a wind PGN on the main bus
-  //n2kMain->EnableForward(true); // false for debugging
+  n2kMain->EnableForward(false);
+  n2kMain->SetForwardOwnMessages(true);
   n2kMain->ExtendTransmitMessages(TransmitMessages);
+  Serial.println("opening n2kMain");
   n2kMain->Open();
 
   // instantiate the NMEA2000 object for the wind bus
@@ -315,14 +352,34 @@ void setup() {
   n2kWind->SetN2kCANReceiveFrameBufSize(100);
   n2kWind->SetMode(tNMEA2000::N2km_ListenAndSend);
   n2kWind->SetForwardStream(forward_stream);
-  n2kWind->SetForwardType(tNMEA2000::fwdt_Text); // Show in clear text
-  n2kWind->EnableForward(false); // don't want to send 130306 on main bus unless we crafted it
-  //n2kWind->SetForwardOwnMessages(true);
+  n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
+  n2kWind->EnableForward(false); 
+  n2kWind->SetForwardOwnMessages(true);
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
+  Serial.println("opening n2kWind");
   n2kWind->Open();
 
-  // connect to magnetic sensor on mast via BLE, if available
-  SetupBLE();
+  initSPIFFS();
+
+  if (APmodeSwitch = startWifi()) {
+    Serial.print("Init WIFI OK ");
+    Serial.println(APmodeSwitch);
+    // Initialize mDNS
+    if (!MDNS.begin(hostname)) {   
+      Serial.println("Error setting up MDNS responder!");
+      while(1) delay(1000);
+    } else Serial.println("MDNS OK");
+    // Web Server Root URL
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+      Serial.println("GET /index");
+      request->send(SPIFFS, "/index.html", "text/html");
+    });
+    initWebSocket();
+    server.serveStatic("/", SPIFFS, "/");
+    // Start server
+    server.begin();
+  } else // start wifi returned false; set up AP to config wifi
+    APmode();
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
   app.onRepeat(1, []() {
@@ -330,7 +387,6 @@ void setup() {
     n2kMain->ParseMessages();
     n2kWind->ParseMessages();
     NMEA0183_3.ParseMessages(); // GPS from ICOM
-    //magLoop(); don't need to call anything; callback updates mast heading and parsemessages callback after mag heading m2k message will compare
   });
 /*
   app.onRepeat(100, []() {
@@ -346,15 +402,19 @@ void setup() {
 */
   // update web page
   app.onRepeat(WebTimerDelay, []() {
-    //if (is_setup_done) {
+    if (APmodeSwitch) {
       String jsonString = JSON.stringify(readings);
     //  Serial.println("sending readings from WebTimerDelay");
     //  Serial.println(jsonString);
       notifyClients(jsonString);
-    //}
+    }
     // Not sure if this should go here
     ws.cleanupClients();
-//    loopWifi();
+  });
+
+  // check in with mast for new heading @ 10Hz
+  app.onRepeat(100, []() {
+    mastHeading();
   });
 
   // update results
@@ -363,7 +423,6 @@ void setup() {
     //num_n2k_messages = 0;
     //num_wind_messages = 0;
   });
-  } // else APmode...don't do any other setup until wifi is configured
 }
 
 void loop() { app.tick(); }
