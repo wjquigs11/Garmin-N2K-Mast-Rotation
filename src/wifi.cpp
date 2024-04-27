@@ -15,6 +15,7 @@ const char* PARAM_INPUT_2 = "pass";
 const char* PARAM_INPUT_3 = "ip";
 const char* PARAM_INPUT_4 = "gateway";
 
+/*
 struct wifiConfig {
   String hostname;
   String ssid;
@@ -26,6 +27,20 @@ struct wifiConfig {
 
 wifiConfig wConfig;
 
+const char *ssid;
+const char *pass;
+const char *ip;
+const char *gateway;
+const char *hostname = "ESPWind";
+*/
+String ssid, pass, ip, gateway;
+String hostname = "ESPWind";
+
+Preferences preferences;     
+
+const char *configPath = "/wifiConf.json";
+
+
 IPAddress localIP;
 
 // Set your Gateway IP address
@@ -33,7 +48,6 @@ IPAddress localGateway;
 
 IPAddress subnet(255, 255, 255, 0);
 
-const char *hostname = "ESPWind";
 // calibration; saved to preferences
 int portRange=50, stbdRange=50; // NB BOTH are positive
 extern Adafruit_ADS1015 ads;
@@ -41,7 +55,6 @@ extern int PotLo, PotHi;
 int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/stbdRange
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
 extern int magOrientation; // we *should* start getting valid magOrientation as soon as BLE is connected
-Preferences preferences;     
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -62,18 +75,40 @@ unsigned long lastTime = 0;
 int WebTimerDelay = 500;
 
 // Initialize SPIFFS
-bool initSPIFFS() {
+void initSPIFFS() {
   if (!SPIFFS.begin()) {
     Serial.println("An error has occurred while mounting SPIFFS");
-    return false;
+    //return false;
   }
   Serial.println("SPIFFS mounted successfully");
   preferences.begin("wifi", false);                        
-  wConfig.hostname = preferences.getString("hostname",hostname).c_str();  
-  wConfig.ssid = preferences.getString("ssid").c_str();  
-  wConfig.pass = preferences.getString("pass").c_str();
-  Serial.println(wConfig.hostname);
-  return true;
+  /*String hostnameS = preferences.getString("hostname",hostname);  
+  //String ssidS = preferences.getString("ssid");
+  ssid = preferences.getString("ssid");
+  strcpy(ssid, ssidS.c_str());
+  ssid = ssidS.c_str();
+  String passS = preferences.getString("pass");
+  pass = passS.c_str();
+  String ipS = preferences.getString("ip");
+  ip = ipS.c_str();
+  String gatewayS = preferences.getString("gateway");
+  gateway = gatewayS.c_str();
+  */
+  ssid = preferences.getString("ssid");
+  pass = preferences.getString("pass");
+  ip = preferences.getString("ip");
+  gateway = preferences.getString("gateway");
+  Serial.print("ssid: ");
+  Serial.println(ssid);
+  Serial.print("pass: ");
+  Serial.println(pass);
+  Serial.print("ip: ");
+  Serial.println(ip);
+  Serial.print("gateway: ");
+  Serial.println(gateway);
+  Serial.print("hostname: ");
+  Serial.println(hostname);
+  //return true;
 }
 
 // Replaces HTML %placeholder% with stored values
@@ -90,38 +125,39 @@ String cal_processor(const String& var) {
 
 bool APmodeSwitch = false;
 
-bool initWifi() {
-  if(wConfig.ssid=="") {
+bool startWifi() {
+  if(ssid=="") {
     Serial.println("Undefined SSID.");
     return false;
   }
-  WiFi.setHostname(wConfig.hostname.c_str());
+  WiFi.setHostname(hostname.c_str());
   WiFi.mode(WIFI_STA);
-  if (wConfig.ip!="") {
-    localIP.fromString(wConfig.ip);
-    if (wConfig.gateway!="")
-      localGateway.fromString(wConfig.gateway);
+  /*
+  if (ip!="") {
+    Serial.print("ip=");
+    Serial.println(ip);
+    Serial.println(strlen(ip));
+    localIP.fromString(ip);
+    if (gateway!="")
+      localGateway.fromString(gateway);
     if (!WiFi.config(localIP, localGateway, subnet)) {
       Serial.println("STA Failed to configure");
       return false;
-    }
+    } else
+      Serial.printf("Configured IP,GW = %s, %s\n", ip, gateway);
   }
-  int result = WiFi.begin(wConfig.ssid, wConfig.pass);
+  */
+  int result = WiFi.begin(ssid.c_str(), pass.c_str());
   Serial.println("Connecting to WiFi...");
-  unsigned long currentMillis = millis();
-  lastTime = currentMillis;
-  while(WiFi.status() != WL_CONNECTED) {
-    currentMillis = millis();
-    if (currentMillis - lastTime >= 5000) {
-      Serial.print("Failed to connect, status: ");
-      Serial.println(result);
-      lastTime = currentMillis;
-      return false;
-    }
+  int tries;
+  while (WiFi.status() != WL_CONNECTED && tries++ < 5) {
+    Serial.print("Failed to connect, status: ");
+    Serial.println(result);
     delay(1000);
-    result = WiFi.begin(wConfig.ssid, wConfig.pass);
+    result = WiFi.begin(ssid.c_str(), pass.c_str());
   }
-  Serial.println(result);
+  if (WiFi.status() != WL_CONNECTED) return false;
+  // else wifi connected ok
   Serial.println(WiFi.localIP());
 
     // start serving from SPIFFS
@@ -189,7 +225,7 @@ void APmode() {
     Serial.print(" Setting Access Point: ");
     Serial.println(hostname);
     // NULL sets an open Access Point
-    if (!WiFi.softAP(hostname, NULL)) {
+    if (!WiFi.softAP(hostname.c_str(), NULL)) {
       Serial.println("AP failed");
     }
 
@@ -211,34 +247,39 @@ void APmode() {
         if(p->isPost()){
           // HTTP POST ssid value
           if (p->name() == PARAM_INPUT_1) {
-            wConfig.ssid = p->value();
-            preferences.putString("ssid", wConfig.ssid);
+            ssid = p->value();
+            preferences.putString("ssid", ssid);
             Serial.print("SSID set to: ");
-            Serial.println(wConfig.ssid);
+            Serial.println(ssid);
           }
           // HTTP POST pass value
           if (p->name() == PARAM_INPUT_2) {
-            wConfig.pass = p->value();
-            preferences.putString("pass", wConfig.pass);
+            pass = p->value();
+            preferences.putString("pass", pass);
             Serial.print("Password set to: ");
-            Serial.println(wConfig.pass);
+            Serial.println(pass);
           }
           // HTTP POST ip value
           if (p->name() == PARAM_INPUT_3) {
+            ip = p->value();
+            preferences.putString("ip", ip);  
             Serial.print("IP Address set to: ");
-            Serial.println(wConfig.ip);
+            Serial.println(ip);
           }
           // HTTP POST gateway value
           if (p->name() == PARAM_INPUT_4) {
+            gateway = p->value();
+            preferences.putString("gateway", gateway);  
             Serial.print("Gateway set to: ");
-            Serial.println(wConfig.gateway);
+            Serial.println(gateway);
           }
           //Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
         }
       }
       char buf[128];
-      sprintf(buf, "Done. ESP will restart, connect to your router and go to IP address: %s", wConfig.ip);
+      sprintf(buf, "Done. ESP will restart, connect to your router and go to IP address: %s", ip);
       request->send(200, "text/plain", buf);
+      preferences.end();
       delay(5000);
       ESP.restart();
     });
