@@ -8,320 +8,209 @@
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <Adafruit_ADS1X15.h>
+#include <N2kMessages.h>
+#include "windparse.h"
 
-// Search for parameter in HTTP POST request
-const char* PARAM_INPUT_1 = "ssid";
-const char* PARAM_INPUT_2 = "pass";
-const char* PARAM_INPUT_3 = "ip";
-const char* PARAM_INPUT_4 = "gateway";
-
-/*
-struct wifiConfig {
-  String hostname;
-  String ssid;
-  String pass;
-  char ip[64];
-  char gateway[64]; 
-  int port;
-};
-
-wifiConfig wConfig;
-
-const char *ssid;
-const char *pass;
-const char *ip;
-const char *gateway;
-const char *hostname = "ESPWind";
-*/
-String ssid, pass, ip, gateway;
-String hostname = "ESPWind";
+extern String host;
 
 Preferences preferences;     
-
-const char *configPath = "/wifiConf.json";
-
-
-IPAddress localIP;
-
-// Set your Gateway IP address
-IPAddress localGateway;
-
-IPAddress subnet(255, 255, 255, 0);
 
 // calibration; saved to preferences
 int portRange=50, stbdRange=50; // NB BOTH are positive
 extern Adafruit_ADS1015 ads;
-extern int PotLo, PotHi;
+extern int adsInit;
+extern int PotValue;
 int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/stbdRange
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
 extern int magOrientation; // we *should* start getting valid magOrientation as soon as BLE is connected
+extern int mastRotate, rotateout;
 
 // Create AsyncWebServer object on port 80
-AsyncWebServer server(80);
-
+//AsyncWebServer server(80);
 // Create an Event Source on /events
-//AsyncEventSource events("/events");
-
-// create websocket object
-AsyncWebSocket ws("/ws");
+extern AsyncEventSource events;
+extern AsyncWebServer server;
 
 // Json Variable to Hold Sensor Readings
 JSONVar readings;
-//const char *readings;
-//JsonArray readings;
 
 // Timer variables
 unsigned long lastTime = 0;
 int WebTimerDelay = 500;
 
-// Initialize SPIFFS
-void initSPIFFS() {
-  if (!SPIFFS.begin()) {
-    Serial.println("An error has occurred while mounting SPIFFS");
-    //return false;
+extern char buf[];
+extern bool displayOnToggle;
+const char* PARAM_INPUT_1 = "output";
+const char* PARAM_INPUT_2 = "state";
+
+// Get Sensor Readings and return JSON object
+String getSensorReadings() {
+  // speed/angle/rotateout are assigned in windparse.cpp
+  // magnetic heading/mast heading are assigned in magheading.cpp
+  /* on second thought I should just do this in cal_processor
+    if (adsInit) {
+      PotValue = ads.readADC_SingleEnded(0);
+      readings["PotValue"] = String(PotValue);
+    }
+    */
+  String jsonString = JSON.stringify(readings);
+  //Serial.println(readings);
+  return jsonString;
+}
+
+// Replaces HTML %placeholder% with stored values, called when page renders
+String settings_processor(const String& var) {
+  Serial.printf("settings processor var: %s\n", var.c_str());
+  if(var == "DISPLAYSTATE") {
+    if (displayOnToggle)
+      return String("on");
+    else
+      return String("off");
   }
-  Serial.println("SPIFFS mounted successfully");
-  preferences.begin("wifi", false);                        
-  /*String hostnameS = preferences.getString("hostname",hostname);  
-  //String ssidS = preferences.getString("ssid");
-  ssid = preferences.getString("ssid");
-  strcpy(ssid, ssidS.c_str());
-  ssid = ssidS.c_str();
-  String passS = preferences.getString("pass");
-  pass = passS.c_str();
-  String ipS = preferences.getString("ip");
-  ip = ipS.c_str();
-  String gatewayS = preferences.getString("gateway");
-  gateway = gatewayS.c_str();
-  */
-  ssid = preferences.getString("ssid");
-  pass = preferences.getString("pass");
-  ip = preferences.getString("ip");
-  gateway = preferences.getString("gateway");
-  Serial.print("ssid: ");
-  Serial.println(ssid);
-  Serial.print("pass: ");
-  Serial.println(pass);
-  Serial.print("ip: ");
-  Serial.println(ip);
-  Serial.print("gateway: ");
-  Serial.println(gateway);
-  Serial.print("hostname: ");
-  Serial.println(hostname);
-  //return true;
+  return String();
 }
 
 // Replaces HTML %placeholder% with stored values
 String cal_processor(const String& var) {
-  //Serial.println(var);
-  if (var == "portRange")
-    return String(preferences.getInt("portRange"));
-  if (var == "stbdRange")
+  Serial.printf("cal processor var: %s\n", var.c_str());
+  if (var == "portRange") {
+    String PR = String(preferences.getInt("portRange"));
+    Serial.printf("PR = %s\n", PR);
+    return PR;
+  }
+  if (var == "stbdRange") {
     return String(preferences.getInt("stbdRange"));
-  if (var == "mastAngle")
-    return String(ads.readADC_SingleEnded(0));
-  return "not found";
+  }
+  // works BUT does not update value continuously, maybe change to javascript/readings?
+  if (var == "PotValue") {
+    if (adsInit) {
+      return String(ads.readADC_SingleEnded(0));
+    } else return String("55");
+  }
+  return String("cal processor: placeholder not found " + var);
 }
 
-bool APmodeSwitch = false;
+void startWebServer() {
 
-bool startWifi() {
-  if(ssid=="") {
-    Serial.println("Undefined SSID.");
-    return false;
-  }
-  WiFi.setHostname(hostname.c_str());
-  WiFi.mode(WIFI_STA);
-  /*
-  if (ip!="") {
-    Serial.print("ip=");
-    Serial.println(ip);
-    Serial.println(strlen(ip));
-    localIP.fromString(ip);
-    if (gateway!="")
-      localGateway.fromString(gateway);
-    if (!WiFi.config(localIP, localGateway, subnet)) {
-      Serial.println("STA Failed to configure");
-      return false;
-    } else
-      Serial.printf("Configured IP,GW = %s, %s\n", ip, gateway);
-  }
+  preferences.begin();
+
+  // start serving from SPIFFS
+  server.serveStatic("/", SPIFFS, "/");
+  //server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    //request->send_P(200, "text/html", index_html, processor);
+  //  request->send(SPIFFS, "/index.html", "text/html");
+  //});
+
+  // Request the latest sensor readings
+  /* As the rest of the code runs, receiving updates like wind speed and boat heading, 
+     it updates a JSON array called "readings".
+     The index of each array element represents a variable passed to javascript on the web page
+     Any page that uses script.js and has an element whose "span id" is the same as one of the readings elements
+     will have that element's value replaced by the latest data, if that reading value is in the array
+     For example, windparse.cpp does this: readings["windSpeed"] = String(windSpeedKnots);
+     So any page that needs windSpeed can create an element with that label and get the value 
   */
-  int result = WiFi.begin(ssid.c_str(), pass.c_str());
-  Serial.println("Connecting to WiFi...");
-  int tries;
-  while (WiFi.status() != WL_CONNECTED && tries++ < 5) {
-    Serial.print("Failed to connect, status: ");
-    Serial.println(result);
-    delay(1000);
-    result = WiFi.begin(ssid.c_str(), pass.c_str());
-  }
-  if (WiFi.status() != WL_CONNECTED) return false;
-  // else wifi connected ok
-  Serial.println(WiFi.localIP());
+  server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String json = getSensorReadings();
+    request->send(200, "application/json", json);
+    json = String();
+  });
 
-    // start serving from SPIFFS
-    server.serveStatic("/", SPIFFS, "/");
+  server.on("/host", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.print("hostname: ");
+    Serial.println(host.c_str());
+    //sprintf(buf, "host: %s, variation: %d, orientation: %d, timerdelay: %d", host.c_str(), variation, orientation, timerDelay);
+    sprintf(buf, "host %s", host.c_str());
+    request->send_P(200, "text/plain", buf);
+  });
 
-    server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request) {
-          request->send(SPIFFS, "/calibrate.html", "text/html", cal_processor);
-    });
+  server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(SPIFFS, "/settings.html", "text/html", false, settings_processor);
+    //request->send(SPIFFS, "/settings.html", "text/html");
+  });
 
-    // POST on calibrate means we've gotten rotation range parameters
-    server.on("/calibrate", HTTP_POST, [](AsyncWebServerRequest *request) {
-      int params = request->params();
-      for(int i=0;i<params;i++) {
-        AsyncWebParameter* p = request->getParam(i);
-        if(p->isPost()) {
-          // HTTP POST ssid value
-          if (p->name() == "portRange") {
-            portRange = atoi(p->value().c_str());
-            Serial.print("portRange: ");
-            Serial.println(portRange);
-            //preferences?
-          }
-          if (p->name() == "stbdRange") {
-            stbdRange = atoi(p->value().c_str());
-            Serial.print("stbdRange: ");
-            Serial.println(stbdRange);
-            preferences.putInt("stbdRange", stbdRange);
-          }
-        } // isPost
-      } // for params
-      request->send(SPIFFS, "/calibrate2.html", "text/html"); // go to 2nd page
-    });
-
-    // POST on calibrate2 means mast is all the way to port
-    server.on("/calibrate2", HTTP_POST, [](AsyncWebServerRequest *request) {
-      // read sensors at port end of range (Honeywell and/or magnetic)
-      PotLo = ads.readADC_SingleEnded(0);
-      request->send(SPIFFS, "/calibrate3.html", "text/html");
-    });
-
-    // POST on calibrate3 means mast is all the way to starboard
-    server.on("/calibrate3", HTTP_POST, [](AsyncWebServerRequest *request) {
-      // read sensors at port end of range (Honeywell and/or magnetic)
-      PotHi = ads.readADC_SingleEnded(0);
-      request->send(SPIFFS, "/calibrate4.html", "text/html", cal_processor);
-    });
-
-    // POST on calibrate4 means user has pressed OK; save values
-    // (cancel will redirect to /index.html)
-    server.on("/calibrate4", HTTP_POST, [](AsyncWebServerRequest *request) {
-      preferences.putInt("portRange", portRange);
-      preferences.putInt("stbdRange", stbdRange);
-      // what now? If you put a dial in calibrate4, maybe just refresh, but delete the buttons
-      // or put the dial on index.html with a Calibrate button
-      //request->send(SPIFFS, "/calibrate4.html", "text/html", cal_processor);
-    });
-
-    server.begin(); // start dishing up those web pages
-
-  return true;
-}
-
-void APmode() {
-    Serial.print(APmodeSwitch);
-    Serial.print(" Setting Access Point: ");
-    Serial.println(hostname);
-    // NULL sets an open Access Point
-    if (!WiFi.softAP(hostname.c_str(), NULL)) {
-      Serial.println("AP failed");
-    }
-
-    IPAddress IP = WiFi.softAPIP();
-    Serial.print("AP IP address: ");
-    Serial.println(IP); 
-
-    // Web Server Root URL, serve wifimanager.html
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(SPIFFS, "/wifimanager.html", "text/html");
-    });
-    
-    server.serveStatic("/", SPIFFS, "/");
-    
-    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
-      int params = request->params();
-      for(int i=0;i<params;i++){
-        AsyncWebParameter* p = request->getParam(i);
-        if(p->isPost()){
-          // HTTP POST ssid value
-          if (p->name() == PARAM_INPUT_1) {
-            ssid = p->value();
-            preferences.putString("ssid", ssid);
-            Serial.print("SSID set to: ");
-            Serial.println(ssid);
-          }
-          // HTTP POST pass value
-          if (p->name() == PARAM_INPUT_2) {
-            pass = p->value();
-            preferences.putString("pass", pass);
-            Serial.print("Password set to: ");
-            Serial.println(pass);
-          }
-          // HTTP POST ip value
-          if (p->name() == PARAM_INPUT_3) {
-            ip = p->value();
-            preferences.putString("ip", ip);  
-            Serial.print("IP Address set to: ");
-            Serial.println(ip);
-          }
-          // HTTP POST gateway value
-          if (p->name() == PARAM_INPUT_4) {
-            gateway = p->value();
-            preferences.putString("gateway", gateway);  
-            Serial.print("Gateway set to: ");
-            Serial.println(gateway);
-          }
-          //Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
-        }
+  // Send a GET request to <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
+  server.on("/update", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    //Serial.println("update");
+    String inputMessage1;
+    String inputMessage2;
+    // GET input1 value on <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
+    if (request->hasParam(PARAM_INPUT_1) && request->hasParam(PARAM_INPUT_2)) {
+      inputMessage1 = request->getParam(PARAM_INPUT_1)->value();
+      inputMessage2 = request->getParam(PARAM_INPUT_2)->value();
+      //digitalWrite(inputMessage1.toInt(), inputMessage2.toInt());
+      //Serial.printf("/update got %s %s\n", inputMessage1, inputMessage2);
+      if (inputMessage1 == "display") {
+        if (inputMessage2 == "off")
+          displayOnToggle = false;
+        else
+          displayOnToggle = true;
       }
-      char buf[128];
-      sprintf(buf, "Done. ESP will restart, connect to your router and go to IP address: %s", ip);
-      request->send(200, "text/plain", buf);
-      preferences.end();
-      delay(5000);
-      ESP.restart();
-    });
-    
-    server.begin();
-}
+    }
+    else {
+      inputMessage1 = "No message sent";
+      inputMessage2 = "No message sent";
+    }
+    request->send(200, "text/plain", "OK");
+  });
 
-// do the websockets stuff
+  server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(SPIFFS, "/calibrate.html", "text/html", false, cal_processor);
+  });
 
-void notifyClients(String sensorReadings) {
-  ws.textAll(sensorReadings);
-}
+  // POST on calibrate means we've gotten rotation range parameters
+  server.on("/calibrate", HTTP_POST, [](AsyncWebServerRequest *request) {
+    Serial.println("calibrate post");
+    int params = request->params();
+    Serial.printf("/calibrate POST got %d params", params);
+    for(int i=0;i<params;i++) {
+      AsyncWebParameter* p = request->getParam(i);
+      if(p->isPost()) {
+        // HTTP POST ssid value
+        if (p->name() == "portRange") {
+          portRange = atoi(p->value().c_str());
+          Serial.print("portRange: ");
+          Serial.println(portRange);
+          preferences.putInt("portRange", portRange);
+        }
+        if (p->name() == "stbdRange") {
+          stbdRange = atoi(p->value().c_str());
+          Serial.print("stbdRange: ");
+          Serial.println(stbdRange);
+          preferences.putInt("stbdRange", stbdRange);
+        }
+      } // isPost
+    } // for params
+    request->send(SPIFFS, "/calibrate2.html", "text/html", false, cal_processor); // go to 2nd page
+  });
 
-void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
-  AwsFrameInfo *info = (AwsFrameInfo*)arg;
-  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
-      String jsonString = JSON.stringify(readings);
-      Serial.println("sending readings from handleWebSocketMessage");
-      notifyClients(jsonString);
-  }
-}
+  // POST on calibrate2 means mast is all the way to port
+  server.on("/calibrate2", HTTP_POST, [](AsyncWebServerRequest *request) {
+    // cal_processor will read sensors (Honeywell/ADC and/or magnetic)
+    request->send(SPIFFS, "/calibrate3.html", "text/html", false, cal_processor);
+  });
 
-void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
-  switch (type) {
-    case WS_EVT_CONNECT:
-      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
-      break;
-    case WS_EVT_DISCONNECT:
-      Serial.printf("WebSocket client #%u disconnected\n", client->id());
-      break;
-    case WS_EVT_DATA:
-      handleWebSocketMessage(arg, data, len);
-      break;
-    case WS_EVT_PONG:
-    case WS_EVT_ERROR:
-      break;
-  }
+  // POST on calibrate3 means mast is all the way to starboard
+  server.on("/calibrate3", HTTP_POST, [](AsyncWebServerRequest *request) {
+    // read sensors at port end of range (Honeywell and/or magnetic)
+    //PotHi = ads.readADC_SingleEnded(0);
+    Serial.println("read pothi");
+    request->send(SPIFFS, "/calibrate4.html", "text/html");
+  });
+
+  // POST on calibrate4 means user has pressed OK; save values
+  // (cancel will redirect to /index.html)
+  server.on("/calibrate4", HTTP_POST, [](AsyncWebServerRequest *request) {
+    preferences.putInt("portRange", portRange);
+    preferences.putInt("stbdRange", stbdRange);
+    // what now? If you put a dial in calibrate4, maybe just refresh, but delete the buttons
+    // or put the dial on index.html with a Calibrate button
+    //request->send(SPIFFS, "/calibrate4.html", "text/html", cal_processor);
+  });
 }
 
 void initWebSocket() {
-  ws.onEvent(onEvent);
-  server.addHandler(&ws);
+  server.addHandler(&events);
 }
 /*
 void loop() {
