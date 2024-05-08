@@ -10,7 +10,10 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 
 #include <Arduino.h>
 
-#define ESPBERRY
+//#define ESPBERRY
+#define SH_ESP32  // these defs will probably change with SINGLECAN
+#define SINGLECAN  // for testing we can use one bus (or non-Garmin)
+
 #ifdef ESPBERRY
 #define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
 #define CAN_RX_PIN GPIO_NUM_35
@@ -96,41 +99,48 @@ tNMEA0183 NMEA0183_3;
 Stream *forward_stream = &Serial;
 
 tNMEA2000 *n2kMain;
+#ifndef SINGLECAN
 tNMEA2000 *n2kWind;
+#endif
 
 // Honeywell sensor
 extern movingAvg honeywellSensor;                // define the moving average object
 extern int mastRotate, rotateout;
 extern int PotValue, PotLo, PotHi;
 extern Adafruit_ADS1015 ads;
+extern int adsInit;
 
 int num_n2k_messages = 0;
 int num_wind_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
 
 // defs for wifi
-extern bool APmodeSwitch;
-bool startWifi();
-void initSPIFFS();
 void initWebSocket();
-void APmode();
-void notifyClients(String);
+//void notifyClients(String);
 extern AsyncWebServer server;
 extern char *hostname;
 extern int WebTimerDelay;
-extern AsyncWebSocket ws;
+//extern AsyncWebSocket ws;
+extern AsyncEventSource events;
 extern JSONVar readings;
+extern void setupWifi();
+extern String host;
+extern void loopWifi();
+void startWebServer();
+String getSensorReadings();
 
 // mast compass
-int MagHeading(const tN2kMsg &N2kMsg);
+int convertMagHeading(const tN2kMsg &N2kMsg);
 void httpInit(const char* serverName);
 extern const char* serverName;
-extern int magOrientation;
+extern int magOrientation, headingDeg;
 void mastHeading();
 int mastAngle[2]; // array for both sensors
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
+
+bool displayOnToggle=true;
 
 void ToggleLed() {
   static bool led_state = false;
@@ -139,52 +149,72 @@ void ToggleLed() {
 }
 
 void WindSpeed(const tN2kMsg &N2kMsg);
+void BoatSpeed(const tN2kMsg &N2kMsg);
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,0};
+// do I need to add mag heading?
 
-/* handle 130306 on the wind bus
+/* if you add more handlers you might want to switch back to this method instead of switch/case
 tNMEA2000Handler NMEA2000Handlers[]={
   {130306L,&WindSpeed},
   {0,0}
 };
 */
 
-// NMEA 2000 message handler for main bus: just count messages
+// NMEA 2000 message handler for main bus
 void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {   
   //N2kMsg.Print(&Serial);
   num_n2k_messages++;
   time_since_last_can_rx = 0;
   ToggleLed();
   switch (N2kMsg.PGN) {
-    case 127250L:
+    case 127250L: { // magnetic heading
+#ifdef DEBUG
+      Serial.println(N2kMsg.PGN);
+#endif
       // got bearing (from RPI); calculate mast heading
       tN2kMsg correctN2kMsg;
-      unsigned char instance=1;
-      int mastRotate = MagHeading(N2kMsg);
+      int mastRotate = convertMagHeading(N2kMsg);
       if (mastRotate > -1) {
-        mastAngle[instance] = (mastRotate * 4068) / 71;   // cheap rads to degree
+        //mastAngle[instance] = (mastRotate * 4068) / 71;   // cheap rads to degree
         // for now (until you dive into SensESP), send rotation angle as rudder (#1)
-        SetN2kPGN127245(correctN2kMsg, mastRotate*(M_PI/180), instance, N2kRDO_NoDirectionOrder, 0);
+        //SetN2kPGN127245(correctN2kMsg, (mastRotate+50)*(M_PI/180), 1, N2kRDO_NoDirectionOrder, 0);
+        // now using "rate of turn"
+        //Serial.printf("angle delta: %d rad %f\n", mastRotate+50,(mastRotate+50)*(M_PI/180));
+        SetN2kPGN127251(correctN2kMsg,0xff,(mastRotate+50)*(M_PI/180));
         n2kMain->SendMsg(correctN2kMsg);
         // send on USB as well in case CAN messages can't be differentiated
-        correctN2kMsg.SendInActisenseFormat(forward_stream);
+        //correctN2kMsg.SendInActisenseFormat(forward_stream);
       }
-    /*
-    case 127245L:
+      break; }
+#ifdef SINGLECAN
+    case 130306L: {
+      WindSpeed(N2kMsg);
+      break; }
+    case 128259L: {
+      BoatSpeed(N2kMsg);
+      break; }
+#endif
+#ifdef REPORTRUDDER
+    case 127245L: {
+#ifdef DEBUG
+      Serial.println(N2kMsg.PGN);
+#endif
       // "rudder" (mast) angle
       double rudPos, angleOrder;
       unsigned char Instance;
       tN2kRudderDirectionOrder Direction;
       ParseN2kPGN127245(N2kMsg, rudPos, Instance, Direction, angleOrder);
       mastAngle[Instance] = (rudPos * 4068) / 71;   // cheap rads to degree
-      break;
-    */
+      break; }
+#endif
   } 
 }
 
 // NMEA 2000 message handler for wind bus: check if message is wind and handle it
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
   //N2kMsg.Print(&Serial);
+  Serial.printf("t: %d R: %d\n", millis(), N2kMsg.PGN);
   num_wind_messages++;
   time_since_last_can_rx = 0;
   ToggleLed();
@@ -192,6 +222,9 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     case 130306L:
       WindSpeed(N2kMsg);
       break;
+    case 128259L: {
+      BoatSpeed(N2kMsg);
+      break; }
   } 
   /* this will be useful if we're handling more than one message type later
   int iHandler;
@@ -250,14 +283,17 @@ void OLEDdataWindDebug() {
   int windAngleDegrees = WindSensor::windAngleDegrees;
   display->clearDisplay();
   display->setCursor(0, 0);
-  display->printf("CAN:%s ", can_state.c_str());
-  display->printf("Up:%lu\n", millis() / 1000);
-  display->printf("N2K:%d ", num_n2k_messages);
-  display->printf("Wind:%d\n", num_wind_messages);
-  display->printf("S/A/R:%2.2lf/%2d/%2d\n", windSpeedKnots, windAngleDegrees,rotateout);
+  display->printf("CAN: %s ", can_state.c_str());
+  display->printf("Up: %lu\n", millis() / 1000);
+  display->printf("N2K: %d ", num_n2k_messages);
+  display->printf("Wind: %d\n", num_wind_messages);
+  display->printf("S/A/R: %2.2lf/%d/%d\n", windSpeedKnots, windAngleDegrees,rotateout);
   //display->printf("Rot:%d\n", mastRotate);
-  display->printf("Sens:%d/%d/%d\n", PotLo, PotValue, PotHi);
-  display->printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
+  display->printf("Sensor: %d/%d/%d\n", PotLo, PotValue, PotHi);
+  display->printf("Angle: %d\n", mastAngle[0]);
+  display->printf("Mast: %d Boat: %d\n", magOrientation, headingDeg);
+  display->printf("Delta: %d\n", mastAngle[1]);
+  //Serial.printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
   display->display();
 }
 
@@ -265,19 +301,23 @@ void setup() {
   // setup serial output
   Serial.begin(115200);
   delay(100);
-  Serial.println("starting wind");
+  Serial.println("starting wind correction");
 
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
   
+#ifdef ESPBERRY
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
   digitalWrite(OLED_RESET, LOW);
   delay(500);
   digitalWrite(OLED_RESET, HIGH);
-
-  //display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
+#endif
+#ifdef SH_ESP32
+  i2c = new TwoWire(0);
+  i2c->begin(SDA_PIN, SCL_PIN);
+  display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
+#endif
   if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
     Serial.println(F("SSD1306 allocation failed"));
   else
@@ -293,7 +333,8 @@ void setup() {
   app.onRepeatMicros(1e6 / 1, []() { ToggleLed(); });
 
   honeywellSensor.begin();    // Instantiates the moving average object
-  ads.begin();  // start ADS1015 ADC
+  if (!(adsInit = ads.begin()))  // start ADS1015 ADC
+    Serial.println("ads sensor not found");
 
   // Set up NMEA0183 ports and handlers
   pBD=&BoatData;
@@ -306,9 +347,11 @@ void setup() {
     Serial.println("failed to open NMEA0183 serial port");
 
   // instantiate the NMEA2000 object for the main bus
-  // switching buses for testing
-  //n2kMain = new tNMEA2000_esp32(CAN_TX_PIN, CAN_RX_PIN);
+#ifdef SINGLECAN
+  n2kMain = new tNMEA2000_esp32(CAN_TX_PIN, CAN_RX_PIN);
+#else
   n2kMain = new tNMEA2000_mcp(N2k_SPI_CS_PIN,MCP_16MHz);
+#endif
   // Reserve enough buffer for sending all messages.
   n2kMain->SetN2kCANSendFrameBufSize(250);
   n2kMain->SetN2kCANReceiveFrameBufSize(250);
@@ -331,19 +374,18 @@ void setup() {
       2046  // Just choosen free from code list on
             // http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf
   );
-  n2kMain->SetForwardStream(forward_stream);
+  //n2kMain->SetForwardStream(forward_stream);
   n2kMain->SetMode(tNMEA2000::N2km_ListenAndSend);
   n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
   n2kMain->EnableForward(true);
-  n2kMain->SetForwardOwnMessages(true); // shouldn't have any self-generated messages on main bus
-  n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
-  // I could use the same handler on both since I *should* never get a wind PGN on the main bus
-  n2kMain->EnableForward(false);
   n2kMain->SetForwardOwnMessages(true);
+  n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
+  //n2kMain->EnableForward(false);
   n2kMain->ExtendTransmitMessages(TransmitMessages);
   Serial.println("opening n2kMain");
   n2kMain->Open();
 
+#ifndef SINGLECAN
   // instantiate the NMEA2000 object for the wind bus
   // does not need to register since it's only listening
   //n2kWind = new tNMEA2000_mcp(N2k_SPI_CS_PIN,MCP_16MHz);
@@ -351,41 +393,30 @@ void setup() {
   n2kWind->SetN2kCANMsgBufSize(8);
   n2kWind->SetN2kCANReceiveFrameBufSize(100);
   n2kWind->SetMode(tNMEA2000::N2km_ListenAndSend);
-  n2kWind->SetForwardStream(forward_stream);
+  //n2kWind->SetForwardStream(forward_stream);
   n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
   n2kWind->EnableForward(false); 
   n2kWind->SetForwardOwnMessages(true);
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   Serial.println("opening n2kWind");
   n2kWind->Open();
+#endif
+ 
+  if (!SPIFFS.begin())
+    Serial.println("An error has occurred while mounting SPIFFS");
+  else
+    Serial.println("SPIFFS mounted successfully");
 
-  initSPIFFS();
-
-  if (APmodeSwitch = startWifi()) {
-    Serial.print("Init WIFI OK ");
-    Serial.println(APmodeSwitch);
-    // Initialize mDNS
-    if (!MDNS.begin(hostname)) {   
-      Serial.println("Error setting up MDNS responder!");
-      while(1) delay(1000);
-    } else Serial.println("MDNS OK");
-    // Web Server Root URL
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-      Serial.println("GET /index");
-      request->send(SPIFFS, "/index.html", "text/html");
-    });
-    initWebSocket();
-    server.serveStatic("/", SPIFFS, "/");
-    // Start server
-    server.begin();
-  } else // start wifi returned false; set up AP to config wifi
-    APmode();
+  setupWifi();
+  startWebServer();
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
   app.onRepeat(1, []() {
     PollCANStatus();
     n2kMain->ParseMessages();
+#ifndef SINGLECAN
     n2kWind->ParseMessages();
+#endif
     NMEA0183_3.ParseMessages(); // GPS from ICOM
   });
 /*
@@ -400,16 +431,17 @@ void setup() {
     }
   });
 */
+
   // update web page
   app.onRepeat(WebTimerDelay, []() {
-    if (APmodeSwitch) {
-      String jsonString = JSON.stringify(readings);
-    //  Serial.println("sending readings from WebTimerDelay");
-    //  Serial.println(jsonString);
-      notifyClients(jsonString);
-    }
-    // Not sure if this should go here
-    ws.cleanupClients();
+    // Send Events to the client with the Sensor Readings Every x seconds
+    events.send("ping",NULL,millis());
+    events.send(getSensorReadings().c_str(),"new_readings" ,millis());
+  });
+
+  // check for DRD
+  app.onRepeat(500, []() {
+    loopWifi();
   });
 
   // check in with mast for new heading @ 10Hz
@@ -419,10 +451,17 @@ void setup() {
 
   // update results
   app.onRepeat(1000, []() {
-    OLEDdataWindDebug();
-    //num_n2k_messages = 0;
-    //num_wind_messages = 0;
+    if (displayOnToggle)
+      OLEDdataWindDebug();
+    else {
+      display->clearDisplay();
+      display->display();
+      // this might be kinda weird but we have to clear counters sometime because otherwise they roll off screen
+      num_n2k_messages = 0;
+      num_wind_messages = 0;
+    }
   });
+
 }
 
 void loop() { app.tick(); }

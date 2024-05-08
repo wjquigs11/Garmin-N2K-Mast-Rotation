@@ -18,7 +18,9 @@ class RotationSensor {
 class WindSensor {
   public:
     static double windSpeedKnots;
-    static int windAngleDegrees;
+    static double windSpeedMeters;
+    static double windAngleDegrees;
+    static double windAngleRadians;
 };
 
 typedef struct {
