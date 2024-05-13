@@ -997,11 +997,13 @@ void setupWifi()
   if ( !MDNS.begin(host.c_str()) ) {
     Serial.println(F("Error starting MDNS responder!"));
   } else
-    Serial.println("Started MDNS");
+      Serial.printf("MDNS started %s\n", host.c_str());
 
   // Add service to MDNS-SD
-  MDNS.addService("http", "tcp", HTTP_PORT);
-
+  if (!MDNS.addService("http", "tcp", HTTP_PORT)) {
+    Serial.printf("MDNS add service failed\n");
+  }
+  
   //SERVER INIT
   events.onConnect([](AsyncEventSourceClient * client)
   {
@@ -1116,12 +1118,7 @@ void setupWifi()
   Serial.println(WiFi.localIP());
 
   Serial.println(separatorLine);
-  Serial.print("Open http://");
-  Serial.print(WiFi.localIP());
-  Serial.println("/edit to see the file browser");
-  Serial.println("Using username = " + http_username + " and password = " + http_password);
-  Serial.println(separatorLine);
-
+  
   digitalWrite(LED_BUILTIN, LED_OFF);
 }
 

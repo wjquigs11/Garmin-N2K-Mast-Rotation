@@ -24,6 +24,7 @@ int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/st
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
 extern int magOrientation; // we *should* start getting valid magOrientation as soon as BLE is connected
 extern int mastRotate, rotateout;
+extern int mastAngle[];
 
 // Create AsyncWebServer object on port 80
 //AsyncWebServer server(80);
@@ -47,12 +48,10 @@ const char* PARAM_INPUT_2 = "state";
 String getSensorReadings() {
   // speed/angle/rotateout are assigned in windparse.cpp
   // magnetic heading/mast heading are assigned in magheading.cpp
-  /* on second thought I should just do this in cal_processor
-    if (adsInit) {
+  // switched to cal_processor but that's not dynamic so switching back
+  if (adsInit)
       PotValue = ads.readADC_SingleEnded(0);
-      readings["PotValue"] = String(PotValue);
-    }
-    */
+  readings["PotValue"] = String(PotValue);
   String jsonString = JSON.stringify(readings);
   //Serial.println(readings);
   return jsonString;
@@ -72,27 +71,25 @@ String settings_processor(const String& var) {
 
 // Replaces HTML %placeholder% with stored values
 String cal_processor(const String& var) {
-  Serial.printf("cal processor var: %s\n", var.c_str());
+  //Serial.printf("cal processor var: %s\n", var.c_str());
   if (var == "portRange") {
-    String PR = String(preferences.getInt("portRange"));
-    Serial.printf("PR = %s\n", PR);
-    return PR;
+    return String(preferences.getInt("portRange"));
   }
   if (var == "stbdRange") {
     return String(preferences.getInt("stbdRange"));
   }
-  // works BUT does not update value continuously, maybe change to javascript/readings?
+  /* works BUT does not update value continuously, maybe change to javascript/readings?
   if (var == "PotValue") {
     if (adsInit) {
       return String(ads.readADC_SingleEnded(0));
     } else return String("55");
-  }
+  }*/
   return String("cal processor: placeholder not found " + var);
 }
 
 void startWebServer() {
 
-  preferences.begin();
+  preferences.begin("calibration", false);
 
   // start serving from SPIFFS
   server.serveStatic("/", SPIFFS, "/");
@@ -160,23 +157,17 @@ void startWebServer() {
 
   // POST on calibrate means we've gotten rotation range parameters
   server.on("/calibrate", HTTP_POST, [](AsyncWebServerRequest *request) {
-    Serial.println("calibrate post");
     int params = request->params();
-    Serial.printf("/calibrate POST got %d params", params);
     for(int i=0;i<params;i++) {
       AsyncWebParameter* p = request->getParam(i);
       if(p->isPost()) {
         // HTTP POST ssid value
         if (p->name() == "portRange") {
           portRange = atoi(p->value().c_str());
-          Serial.print("portRange: ");
-          Serial.println(portRange);
           preferences.putInt("portRange", portRange);
         }
         if (p->name() == "stbdRange") {
           stbdRange = atoi(p->value().c_str());
-          Serial.print("stbdRange: ");
-          Serial.println(stbdRange);
           preferences.putInt("stbdRange", stbdRange);
         }
       } // isPost
@@ -186,26 +177,41 @@ void startWebServer() {
 
   // POST on calibrate2 means mast is all the way to port
   server.on("/calibrate2", HTTP_POST, [](AsyncWebServerRequest *request) {
-    // cal_processor will read sensors (Honeywell/ADC and/or magnetic)
-    request->send(SPIFFS, "/calibrate3.html", "text/html", false, cal_processor);
+    //Serial.println("calibrate post");
+    /*
+    int params = request->params();
+    Serial.printf("/calibrate POST got %d params\n", params);
+    for(int i=0;i<params;i++) {
+      AsyncWebParameter* p = request->getParam(i);
+      if(p->isPost()) {
+        Serial.printf("param: %s %s\n", p->name(), p->value());
+      }
+    }*/
+    // RN post isn't including PotValue actual value so I'll just read it and hope they don't move the mast
+    if (adsInit)
+      preferences.putInt("Honeywell.left", ads.readADC_SingleEnded(0));
+    if (mastAngle[1])
+      preferences.putInt("Mast.left", mastAngle[1]);
+    request->send(SPIFFS, "/calibrate3.html", "text/html");
   });
 
   // POST on calibrate3 means mast is all the way to starboard
   server.on("/calibrate3", HTTP_POST, [](AsyncWebServerRequest *request) {
-    // read sensors at port end of range (Honeywell and/or magnetic)
-    //PotHi = ads.readADC_SingleEnded(0);
-    Serial.println("read pothi");
+    if (adsInit)
+      preferences.putInt("Honeywell.right", ads.readADC_SingleEnded(0));    
+    if (mastAngle[1])
+      preferences.putInt("Mast.right", mastAngle[1]);
     request->send(SPIFFS, "/calibrate4.html", "text/html");
   });
 
   // POST on calibrate4 means user has pressed OK; save values
   // (cancel will redirect to /index.html)
   server.on("/calibrate4", HTTP_POST, [](AsyncWebServerRequest *request) {
-    preferences.putInt("portRange", portRange);
-    preferences.putInt("stbdRange", stbdRange);
+    //preferences.putInt("portRange", portRange);
+    //preferences.putInt("stbdRange", stbdRange);
     // what now? If you put a dial in calibrate4, maybe just refresh, but delete the buttons
     // or put the dial on index.html with a Calibrate button
-    //request->send(SPIFFS, "/calibrate4.html", "text/html", cal_processor);
+    request->send(SPIFFS, "/index.html", "text/html");
   });
 }
 

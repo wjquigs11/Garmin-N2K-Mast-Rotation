@@ -19,7 +19,7 @@ transmit on n2k as rudder angle for rudder #2
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-int magOrientation, headingDeg;
+int mastOrientation, headingDeg;
 
 //Flags to check whether new readings are available
 boolean newMagOrient = false;
@@ -61,9 +61,9 @@ int convertMagHeading(const tN2kMsg &N2kMsg) {
       //Serial.print(headingDeg);
       // compare to heading reading from mast compass (via wifi)
       //Serial.print(" mast bearing: ");
-      //Serial.print(magOrientation);
+      //Serial.print(mastOrientation);
       //Serial.print(" difference: ");
-      int delta = magOrientation - headingDeg;
+      int delta = mastOrientation - headingDeg;
       if (delta > 180) {
         delta -= 360;
       } else if (delta < -180) {
@@ -85,24 +85,28 @@ void mastHeading() {
   if(WiFi.status() == WL_CONNECTED) {       
     sensorReadings = httpGETRequest(serverURL);
     if (sensorReadings.length()) {  // null string is 0 len
+      //Serial.println(sensorReadings.c_str());
       JSONVar myObject = JSON.parse(sensorReadings);
       // JSON.typeof(jsonVar) can be used to get the type of the var
       if (JSON.typeof(myObject) == "undefined") {
         Serial.println("Parsing input failed!");
-        magOrientation = -1;
+        mastOrientation = -1;
         return;
       }
       JSONVar keys = myObject.keys();    
       if (keys.length()) { // should be 1 key
         JSONVar value = myObject[keys[0]];
-        //Serial.printf("mastheading got %d keys, value0 is %s\n", keys.length(), myObject[keys[0]]);
-        magOrientation = atoi(value);
-        readings["mastOrient"] = String(magOrientation);
+        //Serial.printf("mastheading got %d keys, value0 is %s\n", keys.length(), myObject[keys[0]].c_str());
+        mastOrientation = atoi(value);
+        readings["mastOrient"] = String(mastOrientation);
       }
-    } // sensorReadings
+    } else { // sensorReadings
+      Serial.printf("GET failed: %d %s\n", sensorReadings.length(), serverURL);
+      mastOrientation = -1;
+    }
   } else {
     Serial.println(" WiFi Disconnected");
-    magOrientation = -1;
+    mastOrientation = -1;
   }
 }
 
@@ -117,13 +121,14 @@ void httpInit(const char* serverURL) {
 
 String httpGETRequest(const char* serverURL) {
   if (!http.connected())
-      http.begin(client, serverURL);
-  if (http.connected()) {
+      if (!http.begin(client, serverURL))
+        Serial.println("http begin failed");
+  //if (http.connected()) {
     int httpResponseCode = http.GET();
+    //Serial.printf("HTTP response code %d\n", httpResponseCode);
     String payload = "{}";   
     if (httpResponseCode>0) {
-      //Serial.print("HTTP Response code: ");
-      //Serial.println(httpResponseCode);
+      //Serial.printf("HTTP Response code: %d\n", httpResponseCode);
       payload = http.getString();
     } else {
       Serial.print("MagHeading HTTP GET Error code: ");
@@ -132,7 +137,8 @@ String httpGETRequest(const char* serverURL) {
     // Free resources
     //http.end();
     return payload;
-  } // else not connected
+  //} else { // not connected
+  //  Serial.println("HTTP not connected");
   return String();
 }
 

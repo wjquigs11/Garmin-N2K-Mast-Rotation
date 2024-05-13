@@ -10,9 +10,9 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 
 #include <Arduino.h>
 
-//#define ESPBERRY
-#define SH_ESP32  // these defs will probably change with SINGLECAN
-#define SINGLECAN  // for testing we can use one bus (or non-Garmin)
+#define ESPBERRY
+//#define SH_ESP32  // these defs will probably change with SINGLECAN
+//#define SINGLECAN  // for testing we can use one bus (or non-Garmin)
 
 #ifdef ESPBERRY
 #define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
@@ -90,7 +90,7 @@ Adafruit_SSD1306 *display;
 TwoWire *i2c;
 
 HardwareSerial NMEA0183serial(1);
-#define NMEA0183RX 15 // ESPberry RX0 = IO15 (or is it 16? docs unclear)
+#define NMEA0183RX 15 // ESPberry RX0 = IO15
 extern tBoatData *pBD;
 tBoatData BoatData;
 tNMEA0183 NMEA0183_3;
@@ -133,7 +133,7 @@ String getSensorReadings();
 int convertMagHeading(const tN2kMsg &N2kMsg);
 void httpInit(const char* serverName);
 extern const char* serverName;
-extern int magOrientation, headingDeg;
+extern int mastOrientation, headingDeg;
 void mastHeading();
 int mastAngle[2]; // array for both sensors
 
@@ -214,7 +214,7 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
 // NMEA 2000 message handler for wind bus: check if message is wind and handle it
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
   //N2kMsg.Print(&Serial);
-  Serial.printf("t: %d R: %d\n", millis(), N2kMsg.PGN);
+  //Serial.printf("t: %d R: %d\n", millis(), N2kMsg.PGN);
   num_wind_messages++;
   time_since_last_can_rx = 0;
   ToggleLed();
@@ -280,18 +280,18 @@ void PollCANStatus() {
 //void OLEDdataWindDebug(int mastrotate, int rotateout) {                           
 void OLEDdataWindDebug() {                           
   double windSpeedKnots = WindSensor::windSpeedKnots;
-  int windAngleDegrees = WindSensor::windAngleDegrees;
+  double windAngleDegrees = WindSensor::windAngleDegrees;
   display->clearDisplay();
   display->setCursor(0, 0);
   display->printf("CAN: %s ", can_state.c_str());
   display->printf("Up: %lu\n", millis() / 1000);
   display->printf("N2K: %d ", num_n2k_messages);
   display->printf("Wind: %d\n", num_wind_messages);
-  display->printf("S/A/R: %2.2lf/%d/%d\n", windSpeedKnots, windAngleDegrees,rotateout);
+  display->printf("S/A/R:%2.1f/%2.1f/%2.1f\n", windSpeedKnots, windAngleDegrees,rotateout);
   //display->printf("Rot:%d\n", mastRotate);
   display->printf("Sensor: %d/%d/%d\n", PotLo, PotValue, PotHi);
   display->printf("Angle: %d\n", mastAngle[0]);
-  display->printf("Mast: %d Boat: %d\n", magOrientation, headingDeg);
+  display->printf("Mast: %d Boat: %d\n", mastOrientation, headingDeg);
   display->printf("Delta: %d\n", mastAngle[1]);
   //Serial.printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
   display->display();
@@ -339,12 +339,14 @@ void setup() {
   // Set up NMEA0183 ports and handlers
   pBD=&BoatData;
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
-  //DebugNMEA0183Handlers(&Serial);
+  DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(4800, SERIAL_8N1, NMEA0183RX, -1);
   NMEA0183_3.SetMessageStream(&NMEA0183serial);
   NMEA0183_3.Open();
   if (!NMEA0183serial) 
     Serial.println("failed to open NMEA0183 serial port");
+  else
+    Serial.println("opened NMEA0183 serial port");
 
   // instantiate the NMEA2000 object for the main bus
 #ifdef SINGLECAN
@@ -440,11 +442,11 @@ void setup() {
   });
 
   // check for DRD
-  app.onRepeat(500, []() {
+  app.onRepeat(1000, []() {
     loopWifi();
   });
 
-  // check in with mast for new heading @ 10Hz
+  // check in with mast for new heading 100 msecs = 10Hz
   app.onRepeat(100, []() {
     mastHeading();
   });
