@@ -18,7 +18,7 @@
 #include <Adafruit_ADS1X15.h>
 #include <Arduino_JSON.h>
 
-int rotateout;
+double rotateout;
 // analog values from rotation sensor
 int PotValue=0;
 int PotLo=9999;
@@ -143,8 +143,8 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
     Serial.print(" mastRotate: ");
     Serial.print(mastRotate);
     #endif
-    float anglesum = windAngleDegrees + mastRotate;
-    float rotateout=0.0;
+    double anglesum = windAngleDegrees + mastRotate;
+    //rotateout=0.0;
     if (anglesum<0) { // ensure sum is 0-359
       rotateout = anglesum + 360; 
     } else if (anglesum>359) {   

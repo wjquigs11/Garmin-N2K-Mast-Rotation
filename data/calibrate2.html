@@ -9,11 +9,14 @@
 <body>
   <h1>Mast Rotation Calibration</h1>
   <p>Rotate mast all the way to port.</p>
-        <p>Honeywell sensor: %PotValue%</p>
-        <form action="/calibrate2" method="post">
-    <button type="submit">OK</button>
-</form>
+  <p class="reading">Honeywell sensor:<span id="PotValue"></span></p>
+  <p class="reading">Mast delta:<span id="mastDelta"></span></p>
+  <form action="/calibrate2" method="post">
+      <input type="hidden" name="PotValuePass" id="PotValuePass">
+      <button type="submit">OK</button>
+    </form>
 <p><a href="/"><button class="button button2">Cancel</button></a></p>
+<script src="script.js"></script>
 </body>
 </html>
 

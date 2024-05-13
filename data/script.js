@@ -95,18 +95,22 @@ function updatePage(myObj) {
   //console.log(keys.length);
   for (var i = 0; i < keys.length; i++) {
     var key = keys[i];
-    /*
-    if (key == "mastRotate") {
-      gaugeHoneyRot.value = myObj[key];
+    console.log(key);
+    // not sure if this is going to work. I'm trying to put the value of PotValue into the hidden input in the form to pass to the POST
+    if (key == "PotValue") {
+      document.getElementById("PotValuePass").textContent = myObj[key];
       console.log(myObj[key]);
       continue;
     }
+    /*
     if (key == "mastDelta") {
       gaugeMagRot.value = myObj[key];
       console.log(myObj[key]);
       continue
     }*/
-    document.getElementById(key).textContent = myObj[key];
+    var theElement = document.getElementById(key);
+    if (theElement)
+      theElement.textContent = myObj[key];
   }    
 }
 
