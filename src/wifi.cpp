@@ -93,10 +93,10 @@ void startWebServer() {
 
   // start serving from SPIFFS
   server.serveStatic("/", SPIFFS, "/");
-  //server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    //request->send_P(200, "text/html", index_html, processor);
-  //  request->send(SPIFFS, "/index.html", "text/html");
-  //});
+  
+  server.on("/demo", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(SPIFFS, "/demo.html", "text/html");
+  });
 
   // Request the latest sensor readings
   /* As the rest of the code runs, receiving updates like wind speed and boat heading, 
