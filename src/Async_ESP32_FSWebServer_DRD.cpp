@@ -110,7 +110,7 @@ WiFiMulti wifiMulti;
   #define FS_Name                 "FFat"
 #endif
 
-//#define LED_BUILTIN       2
+#define LED_BUILTIN       2
 #define LED_ON            HIGH
 #define LED_OFF           LOW
 
@@ -285,16 +285,15 @@ IPAddress APStaticSN  = IPAddress(255, 255, 255, 0);
 // Redundant, for v1.10.0 only
 //#include <ESPAsync_WiFiManager-Impl.h>          //https://github.com/khoih-prog/ESPAsync_WiFiManager
 
-String host = "ESPwind";
-
-// SSID and PW for Config Portal
-//String ssid = "ESP_" + String(ESP_getChipId(), HEX);
-String ssid = host;
-String password;
-
 // SSID and PW for your Router
 String Router_SSID;
 String Router_Pass;
+
+String host = "ESPwind";
+
+// SSID and PW for Config Portal
+String ssid = host + "CONF";
+String password = "password";
 
 #define HTTP_PORT     80
 
@@ -304,7 +303,7 @@ AsyncDNSServer dnsServer;
 AsyncEventSource events("/events");
 
 String http_username = "admin";
-String http_password = "password";
+String http_password = "admin";
 
 String separatorLine = "===============================================================";
 
@@ -454,7 +453,8 @@ uint8_t connectMultiWiFi()
     // To avoid unnecessary DRD
     drd->loop();
 
-    ESP.restart();
+    // what happens if I disable restart?
+    //ESP.restart();
   }
 
   return status;
@@ -528,9 +528,9 @@ void heartBeatPrint()
   static int num = 1;
 
   if (WiFi.status() == WL_CONNECTED)
-    Serial.print(F("HB "));        // H means connected to WiFi
+    Serial.print(F("H"));        // H means connected to WiFi
   else
-    Serial.print(F("NC "));        // NC means not connected to WiFi
+    Serial.print(F("F"));        // F means not connected to WiFi
 
   if (num == 80)
   {
@@ -539,7 +539,7 @@ void heartBeatPrint()
   }
   else if (num++ % 10 == 0)
   {
-    Serial.println(F(" "));
+    Serial.print(F(" "));
   }
 
 #endif
@@ -591,7 +591,7 @@ void check_status()
   // Print hearbeat every HEARTBEAT_INTERVAL (10) seconds.
   if ((current_millis > checkstatus_timeout) || (checkstatus_timeout == 0))
   {
-    //heartBeatPrint();
+    heartBeatPrint();
     checkstatus_timeout = current_millis + HEARTBEAT_INTERVAL;
   }
 }
@@ -682,6 +682,12 @@ void setupWifi()
   //set led pin as output
   pinMode(LED_BUILTIN, OUTPUT);
 
+  Serial.begin(115200);
+
+  while (!Serial);
+
+  delay(200);
+
   Serial.print(F("\nStarting Async_ESP32_FSWebServer_DRD using "));
   Serial.print(FS_Name);
   Serial.print(F(" on "));
@@ -726,7 +732,7 @@ void setupWifi()
       }
     }
   }
-
+/*
   File root = FileFS.open("/");
   File file = root.openNextFile();
 
@@ -739,7 +745,7 @@ void setupWifi()
   }
 
   Serial.println();
-
+*/
   drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
 
   if (!drd)
@@ -763,7 +769,7 @@ void setupWifi()
 #else
   AsyncDNSServer dnsServer;
 
-  ESPAsync_WiFiManager ESPAsync_wifiManager(&server, &dnsServer, host.c_str());
+  ESPAsync_WiFiManager ESPAsync_wifiManager(&server, &dnsServer, "AsyncESP32-FSWebServer");
 #endif
 
 #if USE_CUSTOM_AP_IP
@@ -802,7 +808,6 @@ void setupWifi()
 
   // SSID to uppercase
   ssid.toUpperCase();
-  password = "password";
 
   bool configDataLoaded = false;
 
@@ -994,16 +999,14 @@ void setupWifi()
   else
     Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
 
-  if ( !MDNS.begin(host.c_str()) ) {
+  if ( !MDNS.begin(host.c_str()) )
+  {
     Serial.println(F("Error starting MDNS responder!"));
-  } else
-      Serial.printf("MDNS started %s\n", host.c_str());
+  }
 
   // Add service to MDNS-SD
-  if (!MDNS.addService("http", "tcp", HTTP_PORT)) {
-    Serial.printf("MDNS add service failed\n");
-  }
-  
+  MDNS.addService("http", "tcp", HTTP_PORT);
+
   //SERVER INIT
   events.onConnect([](AsyncEventSourceClient * client)
   {
@@ -1017,9 +1020,8 @@ void setupWifi()
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
 
-  //server.addHandler(new SPIFFSEditor(FileFS, http_username, http_password));
-  server.serveStatic("/", FileFS, "/").setDefaultFile("index.html");
-  //server.serveStatic("/", SPIFFS, "/");
+  server.addHandler(new SPIFFSEditor(FileFS, http_username, http_password));
+  server.serveStatic("/", FileFS, "/").setDefaultFile("index.htm");
 
 
   server.onNotFound([](AsyncWebServerRequest * request)
@@ -1118,7 +1120,12 @@ void setupWifi()
   Serial.println(WiFi.localIP());
 
   Serial.println(separatorLine);
-  
+  Serial.print("Open http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/edit to see the file browser");
+  Serial.println("Using username = " + http_username + " and password = " + http_password);
+  Serial.println(separatorLine);
+
   digitalWrite(LED_BUILTIN, LED_OFF);
 }
 

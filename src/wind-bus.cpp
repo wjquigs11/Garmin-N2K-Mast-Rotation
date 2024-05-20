@@ -9,37 +9,6 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 */
 
 #include <Arduino.h>
-
-#define ESPBERRY
-//#define SH_ESP32  // these defs will probably change with SINGLECAN
-//#define SINGLECAN  // for testing we can use one bus (or non-Garmin)
-
-#ifdef ESPBERRY
-#define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
-#define CAN_RX_PIN GPIO_NUM_35
-#define N2k_SPI_CS_PIN 5    // If you use mcp_can and CS pin is not 53, uncomment this and modify definition to match your CS pin.
-#define N2k_CAN_INT_PIN 22   // If you use mcp_can and interrupt pin is not 21, uncomment this and modify definition to match your interrupt pin.
-#endif
-#ifdef SH_ESP32
-//#define CAN_TX_PIN GPIO_NUM_32
-//#define CAN_RX_PIN GPIO_NUM_34
-// external transceiver because on-board one isn't working
-#define CAN_RX_PIN GPIO_NUM_27
-#define CAN_TX_PIN GPIO_NUM_25
-#define N2k_SPI_CS_PIN 5    
-//#define N2k_CAN_INT_PIN 22   
-#define N2k_CAN_INT_PIN 0xFF   
-#define MOSI 26
-#define MISO 18
-#define SS 5
-#define SCK 19
-#endif
-
-#define SDA_PIN 16
-#define SCL_PIN 17
-//#define TXD0 18
-//#define RXD0 19
-
 #include <ActisenseReader.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -72,6 +41,36 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 
+#define ESPBERRY
+//#define SH_ESP32  // these defs will probably change with SINGLECAN
+//#define SINGLECAN  // for testing we can use one bus (or non-Garmin)
+
+#ifdef ESPBERRY
+#define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
+#define CAN_RX_PIN GPIO_NUM_35
+#define N2k_SPI_CS_PIN 5    // If you use mcp_can and CS pin is not 53, uncomment this and modify definition to match your CS pin.
+#define N2k_CAN_INT_PIN 22   // If you use mcp_can and interrupt pin is not 21, uncomment this and modify definition to match your interrupt pin.
+#endif
+#ifdef SH_ESP32
+//#define CAN_TX_PIN GPIO_NUM_32
+//#define CAN_RX_PIN GPIO_NUM_34
+// external transceiver because on-board one isn't working
+#define CAN_RX_PIN GPIO_NUM_27
+#define CAN_TX_PIN GPIO_NUM_25
+#define N2k_SPI_CS_PIN 5    
+//#define N2k_CAN_INT_PIN 22   
+#define N2k_CAN_INT_PIN 0xFF   
+#define MOSI 26
+#define MISO 18
+#define SS 5
+#define SCK 19
+#endif
+
+#define SDA_PIN 16
+#define SCL_PIN 17
+//#define TXD0 18
+//#define RXD0 19
+
 using namespace reactesp;
 
 ReactESP app;
@@ -89,8 +88,12 @@ Adafruit_SSD1306 *display;
 
 TwoWire *i2c;
 
-HardwareSerial NMEA0183serial(1);
-#define NMEA0183RX 15 // ESPberry RX0 = IO15
+#define NMEA0183serial Serial1
+#define NMEA0183RX 16 // ESPberry RX0 = IO16? 
+// SK Pang says it's mapped to /dev/ttyS0 which is 14(tx) and 15(rx) on RPI
+// but that's RPI GPIOs, and RPI GPIO 15 is mapped to IO16 on ESPBerry
+//#define SER_BUF_SIZE (unsigned int)(1024)
+#define NMEA0183BAUD 4800
 extern tBoatData *pBD;
 tBoatData BoatData;
 tNMEA0183 NMEA0183_3;
@@ -340,7 +343,8 @@ void setup() {
   pBD=&BoatData;
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
   DebugNMEA0183Handlers(&Serial);
-  NMEA0183serial.begin(4800, SERIAL_8N1, NMEA0183RX, -1);
+  NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, -1);
+  //Serial1.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, -1);
   NMEA0183_3.SetMessageStream(&NMEA0183serial);
   NMEA0183_3.Open();
   if (!NMEA0183serial) 
@@ -420,6 +424,10 @@ void setup() {
     n2kWind->ParseMessages();
 #endif
     NMEA0183_3.ParseMessages(); // GPS from ICOM
+    /*while (Serial1.available()) {
+      char byte = Serial1.read();
+      Serial.print(byte);
+    }*/
   });
 /*
   app.onRepeat(100, []() {

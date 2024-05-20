@@ -198,6 +198,7 @@ void calcTrueWind() {
   double AWS_parallel = AWS * sin(AWA);
   // Calculate the angle between the true wind direction and the vessel's heading
   TWA = acos((STW * cos(AWA) - AWS_parallel) / TWS);
+//#define DEBUG
 #ifdef DEBUG
   Serial.printf("STW(k): %2.2f TWS(k): %2.2f TWA(d): %2.2f\n", STW*1.943844, TWS*1.943844, TWA*(180/M_PI));
 #endif
