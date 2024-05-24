@@ -40,7 +40,7 @@ unsigned long lastTime = 0;
 int WebTimerDelay = 500;
 
 extern char buf[];
-extern bool displayOnToggle;
+extern bool displayOnToggle, compassOnToggle;
 const char* PARAM_INPUT_1 = "output";
 const char* PARAM_INPUT_2 = "state";
 
@@ -142,6 +142,12 @@ void startWebServer() {
           displayOnToggle = false;
         else
           displayOnToggle = true;
+      }
+      if (inputMessage1 == "compass") {
+        if (inputMessage2 == "off")
+          compassOnToggle = false;
+        else
+          compassOnToggle = true;
       }
     }
     else {

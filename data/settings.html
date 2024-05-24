@@ -24,6 +24,12 @@
       <span class="slider"></span>
     </label>
   </h3>
+  <h3>Compass
+    <label class="switch">
+    <input type="checkbox" onchange="toggleCheckbox(this)" id="compass" checked>
+    <span class="slider"></span>
+  </label>
+</h3>
 <script>function toggleCheckbox(element) {
   var xhr = new XMLHttpRequest();
   if(element.checked){ xhr.open("GET", "/update?output="+element.id+"&state=on", true); }
