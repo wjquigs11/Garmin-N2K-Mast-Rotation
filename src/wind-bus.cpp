@@ -116,6 +116,9 @@ extern int adsInit;
 int num_n2k_messages = 0;
 int num_wind_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
+elapsedMillis time_since_last_wind_rx = 0;
+unsigned long total_time_since_last_wind = 0.0;
+unsigned long avg_time_since_last_wind = 0.0;
 
 // defs for wifi
 void initWebSocket();
@@ -143,7 +146,7 @@ int mastAngle[2]; // array for both sensors
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
 
-bool displayOnToggle=true;
+bool displayOnToggle=true, compassOnToggle=false;
 
 void ToggleLed() {
   static bool led_state = false;
@@ -223,6 +226,18 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
   ToggleLed();
   switch (N2kMsg.PGN) {
     case 130306L:
+//#define WINDEBUG
+#ifdef WINDEBUG
+      total_time_since_last_wind += time_since_last_wind_rx;
+      avg_time_since_last_wind = total_time_since_last_wind / num_wind_messages;
+      if (num_wind_messages % 100 == 0) {
+        Serial.printf("last wind time: %2.2ld avg wind time: %2.2ld ms", time_since_last_wind_rx, avg_time_since_last_wind);
+        if (time_since_last_wind_rx > 0.0)
+          Serial.printf(" %2.2ld Hz", 1000.0/avg_time_since_last_wind);
+        Serial.println();
+      }
+      time_since_last_wind_rx = 0;
+#endif
       WindSpeed(N2kMsg);
       break;
     case 128259L: {
@@ -342,7 +357,7 @@ void setup() {
   // Set up NMEA0183 ports and handlers
   pBD=&BoatData;
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
-  DebugNMEA0183Handlers(&Serial);
+  //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, -1);
   //Serial1.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, -1);
   NMEA0183_3.SetMessageStream(&NMEA0183serial);
@@ -456,7 +471,8 @@ void setup() {
 
   // check in with mast for new heading 100 msecs = 10Hz
   app.onRepeat(100, []() {
-    mastHeading();
+    if (compassOnToggle)
+      mastHeading();
   });
 
   // update results
