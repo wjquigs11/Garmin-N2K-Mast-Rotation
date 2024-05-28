@@ -10,8 +10,9 @@
 #include <Adafruit_ADS1X15.h>
 #include <N2kMessages.h>
 #include "windparse.h"
+#include <esp_now.h>
 
-extern String host;
+String host = "ESPwind";
 
 Preferences preferences;     
 
@@ -27,10 +28,9 @@ extern int mastRotate, rotateout;
 extern int mastAngle[];
 
 // Create AsyncWebServer object on port 80
-//AsyncWebServer server(80);
-// Create an Event Source on /events
-extern AsyncEventSource events;
-extern AsyncWebServer server;
+#define HTTP_PORT 80
+AsyncWebServer server(HTTP_PORT);
+AsyncEventSource events("/events");
 
 // Json Variable to Hold Sensor Readings
 JSONVar readings;
@@ -89,10 +89,35 @@ String cal_processor(const String& var) {
 
 void startWebServer() {
 
+  Serial.println("starting web server");
+
   preferences.begin("calibration", false);
 
+  if (!MDNS.begin(host.c_str()) ) {
+    Serial.println(F("Error starting MDNS responder!"));
+  } else
+      Serial.printf("MDNS started %s\n", host.c_str());
+
+  // Add service to MDNS-SD
+  if (!MDNS.addService("http", "tcp", HTTP_PORT)) {
+    Serial.printf("MDNS add service failed\n");
+  }
+  
+  //SERVER INIT
+  events.onConnect([](AsyncEventSourceClient * client)
+  {
+    client->send("hello!", NULL, millis(), 1000);
+  });
+
+  server.addHandler(&events);
+
   // start serving from SPIFFS
-  server.serveStatic("/", SPIFFS, "/");
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+
+  server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request)
+  {
+    request->send(200, "text/plain", String(ESP.getFreeHeap()));
+  });
   
   server.on("/demo", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(SPIFFS, "/demo.html", "text/html");
@@ -219,12 +244,61 @@ void startWebServer() {
     // or put the dial on index.html with a Calibrate button
     request->send(SPIFFS, "/index.html", "text/html");
   });
+
+  server.onNotFound([](AsyncWebServerRequest * request)
+  {
+    Serial.print(F("NOT_FOUND: "));
+
+    if (request->method() == HTTP_GET)
+      Serial.print(F("GET"));
+    else if (request->method() == HTTP_POST)
+      Serial.print(F("POST"));
+    else if (request->method() == HTTP_DELETE)
+      Serial.print(F("DELETE"));
+    else if (request->method() == HTTP_PUT)
+      Serial.print(F("PUT"));
+    else if (request->method() == HTTP_PATCH)
+      Serial.print(F("PATCH"));
+    else if (request->method() == HTTP_HEAD)
+      Serial.print(F("HEAD"));
+    else if (request->method() == HTTP_OPTIONS)
+      Serial.print(F("OPTIONS"));
+    else
+      Serial.print(F("UNKNOWN"));
+    Serial.println(" http://" + request->host() + request->url());
+    if (request->contentLength()) {
+      Serial.println("_CONTENT_TYPE: " + request->contentType());
+      Serial.println("_CONTENT_LENGTH: " + request->contentLength());
+    }
+    int headers = request->headers();
+    int i;
+    for (i = 0; i < headers; i++) {
+      AsyncWebHeader* h = request->getHeader(i);
+      Serial.println("_HEADER[" + h->name() + "]: " + h->value());
+    }
+    int params = request->params();
+    for (i = 0; i < params; i++) {
+      AsyncWebParameter* p = request->getParam(i);
+      if (p->isFile()) {
+        Serial.println("_FILE[" + p->name() + "]: " + p->value() + ", size: " + p->size());
+      } else if (p->isPost()) {
+        Serial.println("_POST[" + p->name() + "]: " + p->value());
+      } else {
+        Serial.println("_GET[" + p->name() + "]: " + p->value());
+      }
+    }
+    request->send(404);
+  }); // onNotFound
+
+  server.begin();
+  Serial.print(F("HTTP server started @ "));
+  Serial.println(WiFi.localIP());
 }
 
+/*
 void initWebSocket() {
   server.addHandler(&events);
 }
-/*
 void loop() {
   if ((millis() - lastTime) > WebTimerDelay) {
     if (APmodeSwitch) {
