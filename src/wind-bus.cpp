@@ -41,9 +41,9 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 
-#define ESPBERRY
-//#define SH_ESP32  // these defs will probably change with SINGLECAN
-//#define SINGLECAN  // for testing we can use one bus (or non-Garmin)
+//#define ESPBERRY
+#define SH_ESP32  // these defs will probably change with SINGLECAN
+#define SINGLECAN  // for testing we can use one bus (or non-Garmin)
 
 #ifdef ESPBERRY
 #define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
@@ -134,6 +134,7 @@ extern String host;
 extern void loopWifi();
 void startWebServer();
 String getSensorReadings();
+void setupESPNOW();
 
 // mast compass
 int convertMagHeading(const tN2kMsg &N2kMsg);
@@ -428,8 +429,12 @@ void setup() {
   else
     Serial.println("SPIFFS mounted successfully");
 
+  Serial.print("ESP Board MAC Address:  ");
+  Serial.println(WiFi.macAddress());
+
   setupWifi();
   startWebServer();
+  setupESPNOW();
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
   app.onRepeat(1, []() {
