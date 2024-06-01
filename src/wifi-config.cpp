@@ -50,17 +50,26 @@
 // Redundant, for v1.10.0 only
 //#include <ESPAsync_WiFiManager-Impl.h>          //https://github.com/khoih-prog/ESPAsync_WiFiManager
 
-void setupWifi()
-{
-  // put your setup code here, to run once:
-  // initialize the LED digital pin as an output.
-  pinMode(PIN_LED, OUTPUT);
+int32_t getWiFiChannel(const char *ssid) {
+  if (int32_t n = WiFi.scanNetworks()) {
+      for (uint8_t i=0; i<n; i++) {
+          if (!strcmp(ssid, WiFi.SSID(i).c_str())) {
+              return WiFi.channel(i);
+          }
+      }
+  }
+  return 0;
+}
 
-  Serial.begin(115200);
+void setupWifi() {
+  int32_t channel = getWiFiChannel(ssid.c_str());
 
-  while (!Serial);
+  WiFi.printDiag(Serial); // Uncomment to verify channel number before
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
+  WiFi.printDiag(Serial); // Uncomment to verify channel change after
 
-  delay(200);
 
   Serial.print(F("\nStarting Async_ConfigOnDoubleReset_Multi using "));
   Serial.print(FS_Name);

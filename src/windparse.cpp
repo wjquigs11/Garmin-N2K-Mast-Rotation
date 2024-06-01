@@ -24,7 +24,9 @@ int PotValue=0;
 int PotLo=9999;
 int PotHi=0;
 extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
-extern int mastAngle[];
+extern int mastAngle[]; // range from -50 to +50, TBD set range in calibration
+extern bool compassOnToggle, honeywellOnToggle;
+extern float mastCompassDeg, boatHeadingDeg;
 
 // Initialize static variables for RotationSensor Class
 int RotationSensor::newValue{0};
@@ -81,9 +83,10 @@ int readAnalogRotationValue() {
     readings["PotLo"] = String(PotLo); // for calibration
   } else if (PotValue > PotHi) {
     PotHi = PotValue;
-    readings["PotHi"] = String(PotHi);
+    readings["PotHi"] = String(PotHi); // for calibration
   }
   readings["PotValue"] = String(PotValue);
+
   #ifdef DEBUG
   sprintf(buf, " pot(l/v/h): %d/%d/%d ", PotLo, PotValue, PotHi);
   Serial.print(buf);
@@ -99,6 +102,7 @@ int readAnalogRotationValue() {
   RotationSensor::oldValue = oldValue;
 
   mastAngle[0] = map(oldValue, lowset, highset, -portRange, stbdRange);    // maps 10 bit number to degrees of rotation
+  readings["mastRotate"] = mastAngle[0];
   #ifdef DEBUG2
   sprintf(buf, "%d %d %d %d", oldValue, lowset, highset, mastRot);
   Serial.println(buf);
@@ -113,7 +117,8 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
   double windAngleRadians;
   double windAngleDegrees;
   tN2kWindReference WindReference;
-  tN2kMsg correctN2kMsg; // can this be a local?
+  tN2kMsg correctN2kMsg;
+  int mastRotate;
 //#define DEBUG
   if (ParseN2kWindSpeed(N2kMsg,SID, windSpeedMeters, windAngleRadians, WindReference)) {
     if (WindReference != N2kWind_Apparent) {
@@ -123,13 +128,12 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
     WindSensor::windSpeedMeters = windSpeedMeters;
     windSpeedKnots =  windSpeedMeters * 1.943844; // convert m/s to kts
     WindSensor::windSpeedKnots = windSpeedKnots;
+    readings["windSpeed"] = String(windSpeedKnots);
     WindSensor::windAngleRadians = windAngleRadians;
     windAngleDegrees = windAngleRadians*(180/M_PI);
     WindSensor::windAngleDegrees = windAngleDegrees;
-    // set up readings for html page
-    readings["windSpeed"] = String(windSpeedKnots);
     readings["windAngle"] = String(windAngleDegrees);
-    #ifdef DEBUG
+  #ifdef DEBUG
     Serial.printf("wind reference %d ", WindReference);
     Serial.print("windSpeedKnots: ");
     Serial.print(windSpeedKnots);
@@ -137,8 +141,28 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
     Serial.print(windAngleDegrees);
     #endif
     // read rotation value and correct
-    int mastRotate = readAnalogRotationValue();
-    readings["mastRotate"] = String(mastRotate); // TBD change to range of rotation and correct js gauge
+    // either read from Honeywell sensor, or from external compass, or both
+    // if external compass, reading will be updated in espnow.cpp
+    mastRotate = 0;
+    if (honeywellOnToggle) {
+      mastRotate = readAnalogRotationValue();
+      Serial.printf("honeywell mastrotate = %d\n", mastRotate);
+    }
+    if (compassOnToggle) {
+      int delta = mastCompassDeg-boatHeadingDeg;
+      if (delta > 180) {
+        delta -= 360;
+      } else if (delta < -180) {
+        delta += 360;
+      }
+      mastAngle[1] = delta;
+      readings["mastHeading"] = String(mastCompassDeg);
+      readings["boatHeading"] = String(boatHeadingDeg);
+      readings["mastDelta"] = String(delta);
+      //Serial.printf("WindSpeed mast %.2f boat %.2f mastrotate = %d\n", mastCompassDeg, boatHeadingDeg, delta);
+      // TBD: decide which one to use
+      //mastRotate = delta;
+    }
     #ifdef DEBUG
     Serial.print(" mastRotate: ");
     Serial.print(mastRotate);
@@ -162,10 +186,9 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
     #ifdef DEBUG2
     Serial.println("sending corrected wind on n2kMain");
     #endif
+    // send corrected wind
     SetN2kPGN130306(correctN2kMsg, 0xFF, windSpeedMeters, rotateout*(M_PI/180), N2kWind_Apparent); 
-    //correctN2kMsg.Print();
     n2kMain->SendMsg(correctN2kMsg);
-    //Serial.printf("t: %d T: 130306\n", millis());
     // for now (until you dive into SensESP), send rotation angle as rudder
     SetN2kPGN127245(correctN2kMsg, (mastRotate+50)*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
     n2kMain->SendMsg(correctN2kMsg);
