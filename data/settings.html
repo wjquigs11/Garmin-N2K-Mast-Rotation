@@ -3,10 +3,11 @@
   <title>ESP Mast Rotation Settings</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" type="text/css" href="style.css">
   <style>
     html {font-family: Arial; display: inline-block; text-align: center;}
     h2 {font-size: 3.0rem;}
-    p {font-size: 3.0rem;}
+    p {font-size: 1.0rem;}
     body {max-width: 600px; margin:0px auto; padding-bottom: 25px;}
     .switch {position: relative; display: inline-block; width: 120px; height: 68px} 
     .switch input {display: none}
@@ -17,19 +18,18 @@
   </style>
 </head>
 <body>
-  <h2>ESP Mast Rotation Settings</h2>
-  <h3>Display
-    <label class="switch">
-      <input type="checkbox" onchange="toggleCheckbox(this)" id="display" checked>
-      <span class="slider"></span>
-    </label>
-  </h3>
-  <h3>Compass
-    <label class="switch">
-    <input type="checkbox" onchange="toggleCheckbox(this)" id="compass" checked>
-    <span class="slider"></span>
-  </label>
-</h3>
+  <div class="topnav">
+    <h1>Mast Rotation Sensor</h1>
+  </div>
+%BUTTONPLACEHOLDER%
+  <form action="/compass" method="post">
+    <p>(Use /mastcompass for dynamic orientation.)</p>
+    <p>Mast compass orientation: <input type="text" name="orientation" value=%orientation% size="6"></p>
+    <p>Mast compass frequency: <input type="text" name="frequency" value=%frequency% size="4"></p>
+    <button type="submit">Confirm</button>
+  </form>
+  <p>Controller MAC address: %controlMAC%</p>
+  <p>Compass MAC address: %compMAC%</p>
 <script>function toggleCheckbox(element) {
   var xhr = new XMLHttpRequest();
   if(element.checked){ xhr.open("GET", "/update?output="+element.id+"&state=on", true); }

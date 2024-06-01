@@ -1,118 +1,94 @@
 
 // Get current sensor readings when the page loads  
 window.addEventListener('load', getReadings);
-/*
-var gaugeMagRot = new RadialGauge({
-    renderTo: 'gauge-magrot',
-    width: 300,
-    height: 300,
-//    units: "degrees",
-    minValue: 0,
-    maxValue: 100,
-    startAngle: 310,
-    ticksAngle: 100,
-    colorValueBoxRect: "#049faa",
-    colorValueBoxRectEnd: "#049faa",
-    colorValueBoxBackground: "#f1fbfc",
-    valueInt: 2,
-    valueBox: true,
-    majorTicks: [
-        "50",
-        "0",
-        "50"
-    ],
-    minorTicks: 4,
-    strokeTicks: true,
-    highlights: [
-        {
-            "from": 0,
-            "to": 100,
-            "color": "#03C0C1"
-        }
-    ],
-    colorPlate: "#fff",
-    borderShadowWidth: 0,
-    borders: false,
-    needleType: "arrow",
-    colorNeedle: "#007F80",
-    colorNeedleEnd: "#007F80",
-    needleWidth: 3,
-    needleCircleSize: 5,
-    colorNeedleCircleOuter: "#007F80",
-    needleCircleOuter: true,
-    needleCircleInner: false,
-    animationDuration: 1500,
-    animationRule: "linear"
-  }).draw();
 
-  var gaugeHoneyRot = new RadialGauge({
-    renderTo: 'gauge-honeyrot',
-    width: 300,
-    height: 300,
+var gaugeMagRot = new RadialGauge({
+  renderTo: 'gauge-magrot',
+  width: 300,
+  height: 300,
 //    units: "degrees",
-    minValue: 0,
-    maxValue: 100,
-    startAngle: 310,
-    ticksAngle: 100,
-    colorValueBoxRect: "#049faa",
-    colorValueBoxRectEnd: "#049faa",
-    colorValueBoxBackground: "#f1fbfc",
-    valueInt: 2,
-    valueBox: true,
-    majorTicks: [
-        "50",
-        "0",
-        "50"
-    ],
-    minorTicks: 4,
-    strokeTicks: true,
-    highlights: [
-        {
-            "from": 0,
-            "to": 100,
-            "color": "#03C0C1"
-        }
-    ],
-    colorPlate: "#fff",
-    borderShadowWidth: 0,
-    borders: false,
-    needleType: "arrow",
-    colorNeedle: "#007F80",
-    colorNeedleEnd: "#007F80",
-    needleWidth: 3,
-    needleCircleSize: 5,
-    colorNeedleCircleOuter: "#007F80",
-    needleCircleOuter: true,
-    needleCircleInner: false,
-    animationDuration: 1500,
-    animationRule: "linear"
-  }).draw();
-*/
-function updatePage(myObj) {
-  //var myObj = JSON.parse(gotUpdate.responseText);
-  var keys = Object.keys(myObj);
-  //console.log(keys);
-  //console.log(keys.length);
-  for (var i = 0; i < keys.length; i++) {
-    var key = keys[i];
-    console.log(key);
-    // not sure if this is going to work. I'm trying to put the value of PotValue into the hidden input in the form to pass to the POST
-    if (key == "PotValue") {
-      document.getElementById("PotValuePass").textContent = myObj[key];
-      console.log(myObj[key]);
-      continue;
-    }
-    /*
-    if (key == "mastDelta") {
-      gaugeMagRot.value = myObj[key];
-      console.log(myObj[key]);
-      continue
-    }*/
-    var theElement = document.getElementById(key);
-    if (theElement)
-      theElement.textContent = myObj[key];
-  }    
-}
+  minValue: -50,
+  maxValue: 50,
+  startAngle: 310,
+  ticksAngle: 100,
+//    colorValueBoxRect: "#049faa",
+//    colorValueBoxRectEnd: "#049faa",
+//    colorValueBoxBackground: "#f1fbfc",
+  valueInt: 2,
+  valueBox: false,
+  majorTicks: [
+      "-50",
+      "0",
+      "50"
+  ],
+  minorTicks: 4,
+  strokeTicks: true,
+  highlights: [
+      {
+          "from": -50,
+          "to": 50,
+          "color": "#D3D3D3"
+      }
+  ],
+  colorPlate: "#fff",
+  borderShadowWidth: 0,
+  borders: false,
+  needleType: "arrow",
+  colorNeedle: "#0A1128",
+  colorNeedleEnd: "#D3D3D3",
+  needleWidth: 3,
+  needleCircleSize: 5,
+  colorNeedleCircleOuter: "#D3D3D3",
+  needleCircleOuter: true,
+  needleCircleInner: false,
+  animationDuration: 10,
+  animationRule: "linear",
+  title: "Magnetic"
+}).draw();
+
+var gaugeHoneyRot = new RadialGauge({
+  renderTo: 'gauge-honeyrot',
+  width: 300,
+  height: 300,
+//    units: "degrees",
+  minValue: -50,
+  maxValue: 50,
+  startAngle: 310,
+  ticksAngle: 100,
+//    colorValueBoxRect: "#049faa",
+//    colorValueBoxRectEnd: "#049faa",
+//    colorValueBoxBackground: "#f1fbfc",
+  valueInt: 2,
+  valueBox: false,
+  majorTicks: [
+      "-50",
+      "0",
+      "50"
+  ],
+  minorTicks: 4,
+  strokeTicks: true,
+  highlights: [
+      {
+          "from": -50,
+          "to": 50,
+          "color": "#D3D3D3"
+      }
+  ],
+  colorPlate: "#fff",
+  borderShadowWidth: 0,
+  borders: false,
+  needleType: "arrow",
+  colorNeedle: "#0A1128",
+  colorNeedleEnd: "#D3D3D3",
+  needleWidth: 3,
+  needleCircleSize: 5,
+  colorNeedleCircleOuter: "#D3D3D3",
+  needleCircleOuter: true,
+  needleCircleInner: false,
+  animationDuration: 10,
+  animationRule: "linear",
+  title: "Sensor"
+}).draw();
 
 // Function to get current readings on the webpage when it loads for the first time
 function getReadings() {
@@ -149,6 +125,6 @@ function getReadings() {
       var myObj = JSON.parse(e.data);
       console.log(myObj);
       updatePage(myObj);
-      //gaugeRot.value = myObj.temperature;
+      gaugeMagRot.value = -myObj.mastDelta;
     }, false);
   }

@@ -23,9 +23,14 @@ extern int adsInit;
 extern int PotValue;
 int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/stbdRange
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
-extern int magOrientation; // we *should* start getting valid magOrientation as soon as BLE is connected
+extern int mastOrientation; // mast compass position relative to boat compass position
+int mastFrequency;
 extern int mastRotate, rotateout;
 extern int mastAngle[];
+void sendMastControl();
+extern uint8_t compassAddress[];
+extern esp_now_peer_info_t peerInfo;
+extern float mastCompassDeg, boatHeadingDeg;
 
 // Create AsyncWebServer object on port 80
 #define HTTP_PORT 80
@@ -40,7 +45,7 @@ unsigned long lastTime = 0;
 int WebTimerDelay = 500;
 
 extern char buf[];
-extern bool displayOnToggle, compassOnToggle;
+extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
 const char* PARAM_INPUT_1 = "output";
 const char* PARAM_INPUT_2 = "state";
 
@@ -48,25 +53,76 @@ const char* PARAM_INPUT_2 = "state";
 String getSensorReadings() {
   // speed/angle/rotateout are assigned in windparse.cpp
   // magnetic heading/mast heading are assigned in magheading.cpp
-  // switched to cal_processor but that's not dynamic so switching back
-  if (adsInit)
-      PotValue = ads.readADC_SingleEnded(0);
-  readings["PotValue"] = String(PotValue);
+  if (honeywellOnToggle)
+    readAnalogRotationValue();  // update readings[]
+  if (compassOnToggle) {
+    readings["mastHeading"] = mastCompassDeg;
+    readings["compassHeading"] = boatHeadingDeg;
+    int delta = mastCompassDeg-boatHeadingDeg;
+    if (delta > 180) delta -= 360;
+      else if (delta < -180) delta += 360;    
+    readings["mastDelta"] = delta;
+  }
   String jsonString = JSON.stringify(readings);
   //Serial.println(readings);
   return jsonString;
 }
 
-// Replaces HTML %placeholder% with stored values, called when page renders
+/* I loathe this code but it's how HTML and Javascript work. 
+  There's a placeholder in the html file %BUTTONPLACEHOLDER%
+  When the page renders the "processor" function I define below will get called to replace the placeholder(s)
+  with html generated and placed in the string(s) below
+  The CSS in the HTML file changes the appearance of the slider based on whether the checkbox shows as "checked" or not
+*/
 String settings_processor(const String& var) {
   Serial.printf("settings processor var: %s\n", var.c_str());
-  if(var == "DISPLAYSTATE") {
-    if (displayOnToggle)
-      return String("on");
-    else
-      return String("off");
+  if (var == "BUTTONPLACEHOLDER") {
+    String buttons = "";
+    buttons += "<h4>Display</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"display\" ";
+    if (displayOnToggle) buttons += "checked";
+    buttons += "><span class=\"slider\"></span></label>";
+    buttons += "<h4>Honeywell</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"honeywell\" ";
+    if (honeywellOnToggle) buttons += "checked"; 
+    buttons += "><span class=\"slider\"></span></label>";
+    buttons += "<h4>Mast Compass</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"compass\" ";
+    if (compassOnToggle) buttons += "checked"; 
+    buttons += "><span class=\"slider\"></span></label>";
+    return buttons;
   }
-  return String();
+  if (var == "orientation") return String(mastOrientation);
+  if (var == "frequency") return String(mastFrequency);
+  if (var == "controlMAC") return String(WiFi.macAddress());
+  if (var == "compMAC") {
+    String peerMAC;
+    for (int i=0; i<ESP_NOW_ETH_ALEN; i++) {
+      //peerMAC.concat("0x");
+      //peerMAC.concat(String(peerInfo.peer_addr[i], HEX).toUpperCase());
+      //peerMAC.concat(", ");
+      String hexStr = String(peerInfo.peer_addr[i], HEX);
+      hexStr.toUpperCase();
+      peerMAC += "0x" + hexStr;
+      if (i<ESP_NOW_ETH_ALEN-1) peerMAC += ", ";
+    }
+    Serial.printf("compMAC %s\n", peerMAC);
+    return peerMAC;
+  }
+  return String("settings processor: placeholder not found " + var);
+}
+
+void toggleCheckbox(const char* id) {
+  Serial.printf("toggleCheckbox id: %s\n", id);
+  if (strcmp(id, "display") == 0) {
+    displayOnToggle = !displayOnToggle;
+    preferences.putBool("displayOnToggle", displayOnToggle);
+  }
+  if (strcmp(id, "honeywell") == 0) {
+    honeywellOnToggle = !honeywellOnToggle;
+    preferences.putBool("honeywellOnToggle", honeywellOnToggle);
+  }
+  if (strcmp(id, "compass") == 0) {
+    compassOnToggle = !compassOnToggle;
+    preferences.putBool("compassOnToggle", compassOnToggle);
+  }
 }
 
 // Replaces HTML %placeholder% with stored values
@@ -79,6 +135,7 @@ String cal_processor(const String& var) {
     return String(preferences.getInt("stbdRange"));
   }
   /* works BUT does not update value continuously, maybe change to javascript/readings?
+  only updates on first page render
   if (var == "PotValue") {
     if (adsInit) {
       return String(ads.readADC_SingleEnded(0));
@@ -91,7 +148,12 @@ void startWebServer() {
 
   Serial.println("starting web server");
 
-  preferences.begin("calibration", false);
+  preferences.begin("ESPwind", false);
+  displayOnToggle = preferences.getBool("displayOnToggle", true);
+  compassOnToggle = preferences.getBool("compassOnToggle", false);
+  honeywellOnToggle = preferences.getBool("honeywellOnToggle", false);
+  mastOrientation = preferences.getInt("mastOrientation", 0);
+  mastFrequency = preferences.getInt("mastFrequency", 0);
 
   if (!MDNS.begin(host.c_str()) ) {
     Serial.println(F("Error starting MDNS responder!"));
@@ -103,9 +165,8 @@ void startWebServer() {
     Serial.printf("MDNS add service failed\n");
   }
   
-  //SERVER INIT
-  events.onConnect([](AsyncEventSourceClient * client)
-  {
+  // SERVER INIT
+  events.onConnect([](AsyncEventSourceClient * client) {
     client->send("hello!", NULL, millis(), 1000);
   });
 
@@ -113,9 +174,10 @@ void startWebServer() {
 
   // start serving from SPIFFS
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  server.serveStatic("/", SPIFFS, "/");
 
-  server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request)
-  {
+  server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
+    Serial.println("got /heap HTTP request");
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
   
@@ -147,6 +209,7 @@ void startWebServer() {
   });
 
   server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
+    //Serial.println("settings");
     request->send(SPIFFS, "/settings.html", "text/html", false, settings_processor);
     //request->send(SPIFFS, "/settings.html", "text/html");
   });
@@ -167,12 +230,22 @@ void startWebServer() {
           displayOnToggle = false;
         else
           displayOnToggle = true;
+        preferences.putBool("displayOnToggle", displayOnToggle);
       }
       if (inputMessage1 == "compass") {
         if (inputMessage2 == "off")
           compassOnToggle = false;
         else
           compassOnToggle = true;
+        preferences.putBool("compassOnToggle", compassOnToggle);
+        sendMastControl();
+      }
+      if (inputMessage1 == "honeywell") {
+        if (inputMessage2 == "off")
+          honeywellOnToggle = false;
+        else
+          honeywellOnToggle = true;
+        preferences.putBool("honeywellOnToggle", honeywellOnToggle);
       }
     }
     else {
@@ -186,6 +259,7 @@ void startWebServer() {
     request->send(SPIFFS, "/calibrate.html", "text/html", false, cal_processor);
   });
 
+  // TBD: modify pages to reflect honeywell and compass toggles
   // POST on calibrate means we've gotten rotation range parameters
   server.on("/calibrate", HTTP_POST, [](AsyncWebServerRequest *request) {
     int params = request->params();
@@ -235,14 +309,51 @@ void startWebServer() {
     request->send(SPIFFS, "/calibrate4.html", "text/html");
   });
 
-  // POST on calibrate4 means user has pressed OK; save values
+  // POST on calibrate4 means mast should be centered and user has pressed OK; save values
   // (cancel will redirect to /index.html)
   server.on("/calibrate4", HTTP_POST, [](AsyncWebServerRequest *request) {
     //preferences.putInt("portRange", portRange);
     //preferences.putInt("stbdRange", stbdRange);
     // what now? If you put a dial in calibrate4, maybe just refresh, but delete the buttons
     // or put the dial on index.html with a Calibrate button
+    // check the difference between mast compass and boat compass; set orientation
     request->send(SPIFFS, "/index.html", "text/html");
+  });
+
+  // POST on compass is manual config for orientation and frequency
+  server.on("/compass", HTTP_POST, [](AsyncWebServerRequest *request) {
+    int params = request->params();
+    for(int i=0;i<params;i++) {
+      AsyncWebParameter* p = request->getParam(i);
+      if(p->isPost()) {
+        // HTTP POST ssid value
+        if (p->name() == "orientation") {
+          mastOrientation = atoi(p->value().c_str());
+          preferences.putInt("mastOrientation", mastOrientation);
+        }
+        if (p->name() == "frequency") {
+          mastFrequency = atoi(p->value().c_str());
+          preferences.putInt("mastFrequency", mastFrequency);
+        }
+        sendMastControl();
+      } // isPost
+    } // for params
+    request->send(SPIFFS, "/index.html", "text/html");
+  });
+
+  // POST on mastcompass means mast is centered and we can calculate orientation
+  server.on("/mastcompass", HTTP_POST, [](AsyncWebServerRequest *request) {
+    int delta = mastCompassDeg-boatHeadingDeg;
+    if (delta > 180) {
+      delta -= 360;
+    } else if (delta < -180) {
+      delta += 360;
+    }
+    mastOrientation = delta;
+    Serial.printf("mastcompass: delta=%d\n", delta);
+    preferences.putInt("mastOrientation", mastOrientation);
+    // TBD: build a page with a gauge that reflects mast orientation and redirect there
+    request->send(SPIFFS, "/mastcompass.html", "text/html");
   });
 
   server.onNotFound([](AsyncWebServerRequest * request)

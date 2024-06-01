@@ -11,25 +11,17 @@
         <div class="topnav">
             <h1>Mast Rotation Sensor</h1>
         </div>
+        <p>Center mast and press Confirm</p>
         <div class="content">
             <div class="card-grid">
-                <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Wind Speed</p>
-                    <p class="reading"><span id="windSpeed"></span></p>
+            <!--        <p class="card-title">Rotation</p>
+                    <canvas id="gauge-honeyrot"></canvas>
                 </div>
-                <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Uncorrected AWA</p>
-                    <p class="reading"><span id="windAngle"></span></p>
+                <div>
+                    <canvas id="gauge-magrot"></canvas>
                 </div>
                 <br>
-                <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Sensor Angle</p>
-                    <p class="reading"><span id="mastRotate"></span></p>
-                </div>
-                <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Correct AWA</p>
-                    <p class="reading"><span id="rotateout"></span></p>
-                </div>
+            -->
                 <div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Mast Heading</p>
                     <p class="reading"><span id="mastHeading"></span></p>
@@ -42,11 +34,9 @@
                     <p class="card-title"><i style="color:#059e8a;"></i>Mast Delta</p>
                     <p class="reading"><span id="mastDelta"></span></p>
                 </div>
-                <br>
-                <div>
-                    <canvas id="gauge-magrot"></canvas>
-                    <canvas id="gauge-honeyrot"></canvas>
-                </div>
+                <form action="/mastcompass" method="post">
+                    <button type="submit">Confirm</button>
+                </form>
             </div>
         </div>
         <script src="script.js"></script>
