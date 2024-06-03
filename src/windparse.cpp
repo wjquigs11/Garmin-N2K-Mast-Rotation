@@ -64,7 +64,7 @@ void IRAM_ATTR NewDataReadyISR() {
 
 void calcTrueWind();
 
-// returns degrees, and corresponds to the current value of the Honeywell sensor
+// returns degrees (x10), and corresponds to the current value of the Honeywell sensor
 int readAnalogRotationValue() {      
   // Define Constants
   const int lowset = 56;
@@ -101,8 +101,9 @@ int readAnalogRotationValue() {
   RotationSensor::newValue = newValue;
   RotationSensor::oldValue = oldValue;
 
-  mastAngle[0] = map(oldValue, lowset, highset, -portRange, stbdRange);    // maps 10 bit number to degrees of rotation
-  readings["mastRotate"] = mastAngle[0];
+  // map 10 bit number to degrees of rotation (*10 for precision)
+  mastAngle[0] = map(oldValue, lowset, highset, -portRange*10, stbdRange*10);    
+  readings["mastRotate"] = mastAngle[0]/10;
   #ifdef DEBUG2
   sprintf(buf, "%d %d %d %d", oldValue, lowset, highset, mastRot);
   Serial.println(buf);
@@ -149,13 +150,13 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
       Serial.printf("honeywell mastrotate = %d\n", mastRotate);
     }
     if (compassOnToggle) {
-      int delta = mastCompassDeg-boatHeadingDeg;
+      float delta = mastCompassDeg-boatHeadingDeg;
       if (delta > 180) {
         delta -= 360;
       } else if (delta < -180) {
         delta += 360;
       }
-      mastAngle[1] = delta;
+      mastAngle[1] = (int)delta;
       readings["mastHeading"] = String(mastCompassDeg);
       readings["boatHeading"] = String(boatHeadingDeg);
       readings["mastDelta"] = String(delta);
@@ -167,8 +168,8 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
     Serial.print(" mastRotate: ");
     Serial.print(mastRotate);
     #endif
-    double anglesum = windAngleDegrees + mastRotate;
-    //rotateout=0.0;
+    // still using Honeywell; TBD make configurable
+    double anglesum = windAngleDegrees + mastRotate/10;
     if (anglesum<0) { // ensure sum is 0-359
       rotateout = anglesum + 360; 
     } else if (anglesum>359) {   
@@ -190,7 +191,7 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
     SetN2kPGN130306(correctN2kMsg, 0xFF, windSpeedMeters, rotateout*(M_PI/180), N2kWind_Apparent); 
     n2kMain->SendMsg(correctN2kMsg);
     // for now (until you dive into SensESP), send rotation angle as rudder
-    SetN2kPGN127245(correctN2kMsg, (mastRotate+50)*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
+    SetN2kPGN127245(correctN2kMsg, ((mastRotate/10)+50)*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
     n2kMain->SendMsg(correctN2kMsg);
     // calculate TWS/TWA from boat speed and send another wind PGN
     calcTrueWind();
@@ -221,7 +222,7 @@ void calcTrueWind() {
   double AWS_parallel = AWS * sin(AWA);
   // Calculate the angle between the true wind direction and the vessel's heading
   TWA = acos((STW * cos(AWA) - AWS_parallel) / TWS);
-//#define DEBUG
+#define DEBUG
 #ifdef DEBUG
   Serial.printf("STW(k): %2.2f TWS(k): %2.2f TWA(d): %2.2f\n", STW*1.943844, TWS*1.943844, TWA*(180/M_PI));
 #endif
