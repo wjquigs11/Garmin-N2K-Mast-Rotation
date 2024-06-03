@@ -68,7 +68,7 @@ String getSensorReadings() {
   return jsonString;
 }
 
-/* I loathe this code but it's how HTML and Javascript work. 
+/*  
   There's a placeholder in the html file %BUTTONPLACEHOLDER%
   When the page renders the "processor" function I define below will get called to replace the placeholder(s)
   with html generated and placed in the string(s) below
