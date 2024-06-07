@@ -103,6 +103,7 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
       n2kMain->SendMsg(N2kMsg); 
       // Variation
       SetN2kPGN127258(N2kMsg, 255, N2kmagvar_Calc, pBD->DaysSince1970, pBD->Variation);
+      
       n2kMain->SendMsg(N2kMsg);
     }
   if (NMEA0183HandlersDebugStream!=0) {

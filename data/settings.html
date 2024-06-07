@@ -19,13 +19,14 @@
 </head>
 <body>
   <div class="topnav">
-    <h1>Mast Rotation Sensor</h1>
+    <h1>Mast Rotation Settings</h1>
   </div>
 %BUTTONPLACEHOLDER%
   <form action="/compass" method="post">
     <p>(Use /mastcompass for dynamic orientation.)</p>
     <p>Mast compass orientation: <input type="text" name="orientation" value=%orientation% size="6"></p>
     <p>Mast compass frequency: <input type="text" name="frequency" value=%frequency% size="4"></p>
+    <p>Local variation: <input type="text" name="variation" value=%variation% size="4"></p>
     <button type="submit">Confirm</button>
   </form>
   <p>Controller MAC address: %controlMAC%</p>

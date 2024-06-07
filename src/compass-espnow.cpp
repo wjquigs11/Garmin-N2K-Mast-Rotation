@@ -27,7 +27,7 @@ unsigned int angle16, comp8, comp16;
 #define VARIATION -15.2
 static int variation;
 float mastCompassDeg; 
-float boatHeadingDeg;
+float boatCompassDeg;
 // how is the compass oriented on the board relative to boat compass
 // when mast is centered, mast compass+orientation == boat compass
 int mastOrientation;
@@ -103,9 +103,9 @@ void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) 
   readings["mastHeading"] = mastCompassDeg;
   // set boatHeading to local compass reading (currently CMPS14)
   // windparse will calculate corrected AWA based on boat compass+mast compass
-  boatHeadingDeg = getCompass(mastOrientation);
-  readings["boatHeading"] = boatHeadingDeg;
-  Serial.printf("ESPNOW Mast Heading: %.2f Boat Heading: %.2f\n", mastCompassDeg, boatHeadingDeg);
+  boatCompassDeg = getCompass(mastOrientation);
+  readings["boatHeading"] = boatCompassDeg;
+  Serial.printf("ESPNOW Mast Heading: %.2f Boat Heading: %.2f\n", mastCompassDeg, boatCompassDeg);
 */
 }
 
@@ -128,7 +128,7 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   Serial.print("Last Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
-
+/*
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
 <head>
@@ -196,6 +196,7 @@ if (!!window.EventSource) {
 </script>
 </body>
 </html>)rawliteral";
+*/
 
 void compassCommand() {
   outCommand.compassOnToggle = compassOnToggle;
@@ -232,13 +233,17 @@ void setupESPNOW() {
     Serial.printf("Failed to add peer: %d\n", err);
     return;
   }
-
+/* turning off for now to save space because I'm not using ESPnow for compass data
   server.on("/espnow", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", index_html);
   });
+*/
 }
 
-// it's weird to apply the MAST orientation correction to the boat heading, but whatevs
+// get heading from (local) compass
+// called when we get a Heading PGN on the wind bus (which means mast compass transmitted)
+// so frequency of update is going to depend on how often we get a Heading PGN from the mast
+// also called as a Reaction in case we're not connected to mast compass
 float getCompass(int correction) {
   //Serial.println("getCompass");
   Wire1.beginTransmission(CMPS12_ADDRESS);  // starts communication with CMPS14
@@ -264,7 +269,6 @@ float getCompass(int correction) {
   angle16 <<= 8;
   angle16 += low_byte;
   comp16 = ((angle16/10) + correction + 360) % 360;
-
 #ifdef DEBUG
   Serial.print("roll: ");               // Display roll data
   Serial.print(roll, DEC);
