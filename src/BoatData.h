@@ -15,7 +15,7 @@ public:
     TrueHeading=0;
     SOG=0;
     COG=0; 
-    Variation=7.0;
+    Variation=0.0;
     GPSTime=0;
     Altitude=0;
     HDOP=100000;

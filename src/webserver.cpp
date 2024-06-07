@@ -11,6 +11,7 @@
 #include <N2kMessages.h>
 #include "windparse.h"
 #include <esp_now.h>
+#include "BoatData.h"
 
 String host = "ESPwind";
 
@@ -30,7 +31,8 @@ extern int mastAngle[];
 void sendMastControl();
 extern uint8_t compassAddress[];
 extern esp_now_peer_info_t peerInfo;
-extern float mastCompassDeg, boatHeadingDeg;
+extern float mastCompassDeg, boatCompassDeg;
+extern tBoatData BoatData;
 
 // Create AsyncWebServer object on port 80
 #define HTTP_PORT 80
@@ -57,18 +59,20 @@ String getSensorReadings() {
     readAnalogRotationValue();  // update readings[]
   if (compassOnToggle) {
     readings["mastHeading"] = mastCompassDeg;
-    readings["compassHeading"] = boatHeadingDeg;
-    int delta = mastCompassDeg-boatHeadingDeg;
+    readings["compassHeading"] = boatCompassDeg;
+    int delta = mastCompassDeg-boatCompassDeg;
     if (delta > 180) delta -= 360;
       else if (delta < -180) delta += 360;    
     readings["mastDelta"] = delta;
   }
+  // add true boat compass for compass.html
+  readings["boatTrue"] = BoatData.TrueHeading;
   String jsonString = JSON.stringify(readings);
   //Serial.println(readings);
   return jsonString;
 }
 
-/*  
+/*
   There's a placeholder in the html file %BUTTONPLACEHOLDER%
   When the page renders the "processor" function I define below will get called to replace the placeholder(s)
   with html generated and placed in the string(s) below
@@ -92,6 +96,7 @@ String settings_processor(const String& var) {
   if (var == "orientation") return String(mastOrientation);
   if (var == "frequency") return String(mastFrequency);
   if (var == "controlMAC") return String(WiFi.macAddress());
+  if (var == "variation") return String(BoatData.Variation);
   if (var == "compMAC") {
     String peerMAC;
     for (int i=0; i<ESP_NOW_ETH_ALEN; i++) {
@@ -154,6 +159,7 @@ void startWebServer() {
   honeywellOnToggle = preferences.getBool("honeywellOnToggle", false);
   mastOrientation = preferences.getInt("mastOrientation", 0);
   mastFrequency = preferences.getInt("mastFrequency", 0);
+  BoatData.Variation = preferences.getFloat("variation", 0);
 
   if (!MDNS.begin(host.c_str()) ) {
     Serial.println(F("Error starting MDNS responder!"));
@@ -173,7 +179,7 @@ void startWebServer() {
   server.addHandler(&events);
 
   // start serving from SPIFFS
-  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  //server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
   server.serveStatic("/", SPIFFS, "/");
 
   server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
@@ -320,7 +326,7 @@ void startWebServer() {
     request->send(SPIFFS, "/index.html", "text/html");
   });
 
-  // POST on compass is manual config for orientation and frequency
+  // POST on compass == manual config for orientation and frequency
   server.on("/compass", HTTP_POST, [](AsyncWebServerRequest *request) {
     int params = request->params();
     for(int i=0;i<params;i++) {
@@ -335,7 +341,11 @@ void startWebServer() {
           mastFrequency = atoi(p->value().c_str());
           preferences.putInt("mastFrequency", mastFrequency);
         }
-        sendMastControl();
+        if (p->name() == "variation") {
+          BoatData.Variation = atof(p->value().c_str());
+          preferences.putFloat("variation", BoatData.Variation);
+        }
+        sendMastControl();  // notify mast compass via ESPNOW
       } // isPost
     } // for params
     request->send(SPIFFS, "/index.html", "text/html");
@@ -343,7 +353,7 @@ void startWebServer() {
 
   // POST on mastcompass means mast is centered and we can calculate orientation
   server.on("/mastcompass", HTTP_POST, [](AsyncWebServerRequest *request) {
-    int delta = mastCompassDeg-boatHeadingDeg;
+    int delta = mastCompassDeg-boatCompassDeg;
     if (delta > 180) {
       delta -= 360;
     } else if (delta < -180) {
@@ -356,10 +366,8 @@ void startWebServer() {
     request->send(SPIFFS, "/mastcompass.html", "text/html");
   });
 
-  server.onNotFound([](AsyncWebServerRequest * request)
-  {
+  server.onNotFound([](AsyncWebServerRequest * request) {
     Serial.print(F("NOT_FOUND: "));
-
     if (request->method() == HTTP_GET)
       Serial.print(F("GET"));
     else if (request->method() == HTTP_POST)

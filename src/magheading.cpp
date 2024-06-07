@@ -4,6 +4,7 @@ compare to magnetic heading sent from ESP32 with compass on mast
 transmit on n2k as rudder angle
 NOTE: NOT USING THIS CODE RIGHT NOW
 Everything is in espnow.cpp since compass is the only ESPnow device
+TBD: set global variation for correct compass display if we're not using internal compass 
 */
 #include <Arduino.h>
 #include <N2kMessages.h>
@@ -21,7 +22,7 @@ Everything is in espnow.cpp since compass is the only ESPnow device
 #include <WiFi.h>
 #include <HTTPClient.h>
 
-extern float boatHeadingDeg;
+extern float boatCompassDeg;
 extern float mastCompass;
 extern int mastOrientation;
 
@@ -95,13 +96,13 @@ int convertMagHeading(const tN2kMsg &N2kMsg) {
     if (headingRef == N2khr_magnetic && heading >= 0) {  // need to check heading because it could be null
       // TBD this duplicates work in wind-bus so change to shared function
       //Serial.print("\tcompass heading: ");
-      boatHeadingDeg = heading * (180/M_PI);
-      //Serial.print(boatHeadingDeg);
+      boatCompassDeg = heading * (180/M_PI);
+      //Serial.print(boatCompassDeg);
       // compare to heading reading from mast compass (via wifi)
       //Serial.print(" mast bearing: ");
       //Serial.print(mastOrientation);
       //Serial.print(" difference: ");
-      int delta = mastOrientation - boatHeadingDeg;
+      int delta = mastOrientation - boatCompassDeg;
       if (delta > 180) {
         delta -= 360;
       } else if (delta < -180) {

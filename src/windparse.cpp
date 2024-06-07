@@ -26,7 +26,7 @@ int PotHi=0;
 extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
 extern int mastAngle[]; // range from -50 to +50, TBD set range in calibration
 extern bool compassOnToggle, honeywellOnToggle;
-extern float mastCompassDeg, boatHeadingDeg;
+extern float mastCompassDeg, boatCompassDeg;
 
 // Initialize static variables for RotationSensor Class
 int RotationSensor::newValue{0};
@@ -150,7 +150,7 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
       Serial.printf("honeywell mastrotate = %d\n", mastRotate);
     }
     if (compassOnToggle) {
-      float delta = mastCompassDeg-boatHeadingDeg;
+      float delta = mastCompassDeg-boatCompassDeg;
       if (delta > 180) {
         delta -= 360;
       } else if (delta < -180) {
@@ -158,9 +158,9 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
       }
       mastAngle[1] = (int)delta;
       readings["mastHeading"] = String(mastCompassDeg);
-      readings["boatHeading"] = String(boatHeadingDeg);
+      readings["boatHeading"] = String(boatCompassDeg);
       readings["mastDelta"] = String(delta);
-      //Serial.printf("WindSpeed mast %.2f boat %.2f mastrotate = %d\n", mastCompassDeg, boatHeadingDeg, delta);
+      //Serial.printf("WindSpeed mast %.2f boat %.2f mastrotate = %d\n", mastCompassDeg, boatCompassDeg, delta);
       // TBD: decide which one to use
       //mastRotate = delta;
     }
