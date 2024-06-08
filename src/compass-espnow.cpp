@@ -16,13 +16,6 @@
 extern int CMPS14_ADDRESS;  // Address of CMPS14 shifted right one bit for arduino wire library
 extern bool cmps14_ready;
 #define ANGLE_8  1           // Register to read 8bit angle from
-// ESP32
-// purple wire SDA 21
-// orange wire SCL 22
-// SH-ESP32 16/17
-// ESPberry
-// SDA RPI GPIO2 IO21
-// SCL RPI GPIO3 IO22
 
 unsigned char high_byte, low_byte, angle8;
 char pitch, roll;
@@ -38,19 +31,8 @@ extern int mastFrequency;
 extern bool compassOnToggle;
 extern JSONVar readings;
 
-uint8_t compassAddress[] = {0x08, 0xB6, 0x1F, 0xB8, 0xE1, 0xD4};
+uint8_t compassAddress[] = {0xE4, 0x65, 0xB8, 0x78, 0xE9, 0x7C};
 esp_now_peer_info_t peerInfo;
-
-// struct we will receive from compass
-// not using now because we're getting mast heading as PGN on wind bus
-typedef struct compass_s {
-  int id;
-  float heading;
-  float accuracy;
-  int calStatus;
-  int readingId;
-} compass_s;
-compass_s inReadings;
 
 // struct we will send to compass
 typedef struct control_s {
@@ -74,132 +56,31 @@ float getCompass(int correction);
 // we will also check/update boat heading from local compass at this time
 // not using at this time
 void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) { 
-/*
-#ifdef DEBUG
-  // Copies the sender mac address to a string
-  char macStr[18];
-  Serial.print("Packet received from: ");
-  snprintf(macStr, sizeof(macStr), "0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x",
-           mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
-  Serial.println(macStr);
-#endif
-  memcpy(&inReadings, incomingData, sizeof(inReadings));
-  
-  board["id"] = inReadings.id;
-  board["heading"] = inReadings.heading;
-  board["accuracy"] = inReadings.accuracy;
-  board["calStatus"] = inReadings.calStatus;
-  board["readingId"] = String(inReadings.readingId);
-  String jsonString = JSON.stringify(board);
-  events.send(jsonString.c_str(), "new_readings", millis());
-//#define DEBUG
-#ifdef DEBUG  
-  Serial.printf("Board ID %u: %u bytes\n", inReadings.id, len);
-  Serial.printf("heading: %.2f\n", inReadings.heading);
-  Serial.printf("accuracy: %.2f\n", inReadings.accuracy);
-  Serial.printf("calStatus: %d\n", inReadings.calStatus);
-  Serial.printf("readingID value: %d \n", inReadings.readingId);
-  Serial.println();
-#endif
-  // set mastCompass to the heading value from the mast compass
-  mastCompassDeg = inReadings.heading;
-  readings["mastHeading"] = mastCompassDeg;
-  // set boatHeading to local compass reading (currently CMPS14)
-  // windparse will calculate corrected AWA based on boat compass+mast compass
-  boatCompassDeg = getCompass(mastOrientation);
-  readings["boatHeading"] = boatCompassDeg;
-  Serial.printf("ESPNOW Mast Heading: %.2f Boat Heading: %.2f\n", mastCompassDeg, boatCompassDeg);
-*/
 }
 
 // Send control message via ESP-NOW
-void sendMastControl() {
+// called from webserver.cpp when settings are updated "get /params"
+bool sendMastControl() {
   outCommand.compassOnToggle = compassOnToggle;
   outCommand.orientation = mastOrientation;
   outCommand.frequency = mastFrequency;
   esp_err_t result = esp_now_send(compassAddress, (uint8_t *) &outCommand, sizeof(outCommand));
   if (result == ESP_OK) {
     Serial.printf("sent mast control\n");
+    return true;
   } else {
     Serial.printf("Error sending the data: %d\n", result);
   }
+  return false;
 }
 
 // Callback when data is sent
 String success;
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   Serial.print("Last Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+  Serial.print(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success: " : "Delivery Fail: ");
+  Serial.println(status);
 }
-/*
-const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
-<head>
-  <title>ESP-NOW DASHBOARD</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
-  <link rel="icon" href="data:,">
-  <style>
-    html {font-family: Arial; display: inline-block; text-align: center;}
-    p {  font-size: 1.2rem;}
-    body {  margin: 0;}
-    .topnav { overflow: hidden; background-color: #2f4468; color: white; font-size: 1.7rem; }
-    .content { padding: 20px; }
-    .card { background-color: white; box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5); }
-    .cards { max-width: 700px; margin: 0 auto; display: grid; grid-gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-    .reading { font-size: 2.8rem; }
-    .packet { color: #bebebe; }
-    .card.temperature { color: #fd7e14; }
-    .card.humidity { color: #1b78e2; }
-  </style>
-</head>
-<body>
-  <div class="topnav">
-    <h3>ESP-NOW DASHBOARD</h3>
-  </div>
-  <div class="content">
-    <div class="cards">
-      <div class="card heading">
-        <h4><i class="fas fa-thermometer-half"></i>HEADING</h4><p><span class="reading"><span id="t1"></span> &deg;</span></p><p class="packet">Reading ID: <span id="rt1"></span></p>
-      </div>
-      <div class="card accuracy">
-        <h4><i class="fas fa-tint"></i>ACCURACY</h4><p><span class="reading"><span id="h1"></span>RADs</span></p><p class="packet">Reading ID: <span id="rh1"></span></p>
-      </div>
-      <div class="card cal_status">
-        <h4><i class="fas fa-thermometer-half"></i>CALIBRATION</h4><p><span class="reading"><span id="t2"></span></span></p><p class="packet">Reading ID: <span id="rt2"></span></p>
-      </div>
-    </div>
-  </div>
-<script>
-if (!!window.EventSource) {
- var source = new EventSource('/events');
- 
- source.addEventListener('open', function(e) {
-  console.log("Events Connected");
- }, false);
- source.addEventListener('error', function(e) {
-  if (e.target.readyState != EventSource.OPEN) {
-    console.log("Events Disconnected");
-  }
- }, false);
- 
- source.addEventListener('message', function(e) {
-  console.log("message", e.data);
- }, false);
- 
- source.addEventListener('new_readings', function(e) {
-  console.log("new_readings", e.data);
-  var obj = JSON.parse(e.data);
-  document.getElementById("t"+obj.id).innerHTML = obj.temperature.toFixed(2);
-  document.getElementById("h"+obj.id).innerHTML = obj.humidity.toFixed(2);
-  document.getElementById("rt"+obj.id).innerHTML = obj.readingId;
-  document.getElementById("rh"+obj.id).innerHTML = obj.readingId;
- }, false);
-}
-</script>
-</body>
-</html>)rawliteral";
-*/
 
 void compassCommand() {
   outCommand.compassOnToggle = compassOnToggle;
@@ -210,7 +91,6 @@ void compassCommand() {
 
 // Init ESP-NOW
 void setupESPNOW() {
-  
   if (esp_now_init() != ESP_OK) {
     Serial.println("Error initializing ESP-NOW");
     return;
@@ -235,30 +115,26 @@ void setupESPNOW() {
   if (err=esp_now_add_peer(&peerInfo) != ESP_OK){
     Serial.printf("Failed to add peer: %d\n", err);
     return;
-  }
-/* turning off for now to save space because I'm not using ESPnow for compass data
-  server.on("/espnow", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/html", index_html);
-  });
-*/
+  } else Serial.println("ESP-NOW peer added");
 }
 
 // get heading from (local) compass
 // called when we get a Heading PGN on the wind bus (which means mast compass transmitted)
 // so frequency of update is going to depend on how often we get a Heading PGN from the mast
 // also called as a Reaction in case we're not connected to mast compass
+// TBD: read calibration status
 float getCompass(int correction) {
   //Serial.println("getCompass");
-  if (cmps14_ready) {}
-  Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
-  Wire.write(ANGLE_8);                     // Sends the register we wish to start reading from
-  Wire.endTransmission();
-  //if (!error) { // we found CMPS14
+  if (cmps14_ready) {
+    Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
+    Wire.write(ANGLE_8);                     // Sends the register we wish to start reading from
+    Wire.endTransmission();
+    //if (!error) { // we found CMPS14
     // Request 5 bytes from the CMPS12
     // this will give us the 8 bit bearing, 
     // both bytes of the 16 bit bearing, pitch and roll
     Wire.requestFrom(CMPS14_ADDRESS, 5); 
-    while((Wire.available() < 5)); // (hang)
+    while((Wire.available() < 5)); // (this can hang)
 /*
     int cycles = 0;
     int availbytes = 0;
@@ -270,7 +146,8 @@ float getCompass(int correction) {
     if (cycles == 100) {
       Serial.printf("timeout on CMPS14 read\n");
       return -1.0;
-    } else */
+    } else 
+*/
     angle8 = Wire.read();               // Read back the 5 bytes
     comp8 = map(angle8, 0, 255, 0, 359);
     comp8 = (comp8 + correction + 360) % 360;
@@ -303,6 +180,8 @@ float getCompass(int correction) {
     Serial.println(comp8, DEC);
 #endif
     return (float)comp16;
+  }
+  return -1.0;
 }
 
 /*

@@ -26,13 +26,9 @@ branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, sin
 #include <movingAvg.h>
 #include "elapsedMillis.h"
 #include "windparse.h"
-//#include <mcp_can.h>
-//#include <mcp_can_dfs.h>
 #include <Arduino.h>
 #include <N2kMessages.h>
-//#include <driver/adc.h>
 #include <Adafruit_ADS1X15.h>
-//#include <Fonts/FreeMono9pt7b.h>
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -61,6 +57,8 @@ MCP2515 n2kWind(5); // CAN0 interface CS
 // Interrupt Signals
 const int CAN0_INT = 26;    // RPi Pin 16 - GPIO23 - IO26
 //const int CAN1_INT = 34;    // RPi Pin 22 - GPIO25 - IO34
+#define SDA_PIN 21
+#define SCL_PIN 22
 #endif
 #ifdef SH_ESP32
 //#define CAN_TX_PIN GPIO_NUM_32
@@ -74,12 +72,12 @@ const int CAN0_INT = 26;    // RPi Pin 16 - GPIO23 - IO26
 //#define MISO 19
 //#define SS 5
 //#define SCK 18
-#endif
-
 #define SDA_PIN 16
 #define SCL_PIN 17
 //#define TXD0 18
 //#define RXD0 19
+#endif
+
 
 using namespace reactesp;
 
@@ -96,7 +94,7 @@ Adafruit_SSD1306 *display;
 
 #define RECOVERY_RETRY_MS 1000  // How long to attempt CAN bus recovery
 
-TwoWire *i2c, *i2c2;
+TwoWire *i2c;
 
 //#define PARSENMEA0183
 #ifdef PARSENMEA0183
@@ -110,10 +108,7 @@ tNMEA0183 NMEA0183_3;
 #endif
 extern tBoatData *pBD;
 tBoatData BoatData;
-
-// defs for robotshop CMPS14
-int CMPS14_ADDRESS=0x60;
-bool cmps14_ready=false;
+// TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
 
 //Stream *read_stream = &Serial;
 Stream *forward_stream = &Serial;
@@ -127,6 +122,7 @@ extern int PotValue, PotLo, PotHi;
 extern Adafruit_ADS1015 ads;
 extern int adsInit;
 
+// timing/display
 int num_n2k_messages = 0;
 int num_wind_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
@@ -149,7 +145,7 @@ extern void loopWifi();
 void startWebServer();
 String getSensorReadings();
 void setupESPNOW();
-void sendMastControl();
+bool sendMastControl();
 
 // mast compass
 int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
@@ -165,6 +161,10 @@ int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 
+// robotshop CMPS14 (boat compass)
+int CMPS14_ADDRESS=0x60;
+bool cmps14_ready=false;
+
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
 
@@ -176,45 +176,50 @@ void ToggleLed() {
   led_state = !led_state;
 }
 
-//void WindSpeed(const tN2kMsg &N2kMsg);
 void WindSpeed();
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
-const unsigned long TransmitMessages[] PROGMEM={130306L,0};
-// do I need to add mag heading?
-
-/* if you add more handlers you might want to switch back to this method instead of switch/case
-tNMEA2000Handler NMEA2000Handlers[]={
-  {130306L,&WindSpeed},
-  {0,0}
-};
-*/
+const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 
 // NMEA 2000 message handler for main bus
 void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {   
-  Serial.print("main: "); N2kMsg.Print(&Serial);
+  //Serial.print("main: "); N2kMsg.Print(&Serial);
   num_n2k_messages++;
   time_since_last_can_rx = 0;
   ToggleLed();
   switch (N2kMsg.PGN) {
-#ifdef OTHER_COMPASS  // we only care about 127250 if there is already a boat compass on the N2K bus
-    case 127250L: // magnetic heading
+    case 127250L: // magnetic heading, use to set variation but do not override internal compass
 #ifdef DEBUG
       Serial.println(N2kMsg.PGN);
 #endif
-      if (compassOnToggle) {
-        // got bearing; calculate mast heading
-        tN2kMsg correctN2kMsg;
-        int mastRotate = convertMagHeading(N2kMsg);
-        if (mastRotate > -1) {
-          // for now (until you dive into SensESP), send rotation angle as "rate of turn"
-          SetN2kPGN127251(correctN2kMsg,0xff,(mastRotate+50)*(M_PI/180));
-          n2kMain->SendMsg(correctN2kMsg);
+      unsigned char SID;
+      double heading;
+      double deviation;
+      double variation;
+      tN2kHeadingReference headingRef;
+      // we have boat compass; just update variation from other compass
+      if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
+        if (cmps14_ready) {
+            BoatData.Variation = variation;
+        } else {
+          // no boat compass, use external heading info
+          if (compassOnToggle) {
+            // got bearing; calculate mast heading
+            // TBD: this isn't correct
+            tN2kMsg correctN2kMsg;
+            int mastRotate = convertMagHeading(N2kMsg);
+            if (mastRotate > -1) {
+              // for now (until you dive into SensESP), send rotation angle as "rate of turn"
+              SetN2kPGN127251(correctN2kMsg,0xff,(mastRotate+50)*(M_PI/180));
+              n2kMain->SendMsg(correctN2kMsg);
+            }
+          }
+          // TBD: check if we're getting true or magnetic
+          BoatData.TrueHeading = heading;
+          BoatData.Variation = variation;
         }
       }
-      // set BoatData here?
       break;
-#endif // OTHER_COMPASS
 #ifdef SINGLECAN
     case 130306L:
       WindSpeed(N2kMsg);
@@ -227,10 +232,10 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
       }
       //Serial.printf("PGN Mast Heading: %.2f Boat Heading: %.2f\n", mastCompassDeg, boatCompassDeg);
       break;
+#endif
     case 128259L:
       BoatSpeed(N2kMsg);
       break;
-#endif
 #ifdef REPORTRUDDER
     case 127245L: {
 #ifdef DEBUG
@@ -244,56 +249,8 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
       mastAngle[Instance] = (rudPos * 4068) / 71;   // cheap rads to degree
       break; }
 #endif
-  } 
-}
-
-#if 0 // obsolete since we're parsing natively
-// NMEA 2000 message handler for wind bus: check if message is wind and handle it
-// also checking for Heading (from mast compass)
-void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
-  Serial.print("wind: "); N2kMsg.Print(&Serial);
-  //Serial.printf("t: %d R: %d\n", millis(), N2kMsg.PGN);
-  num_wind_messages++;
-  time_since_last_can_rx = 0;
-  ToggleLed();
-  switch (N2kMsg.PGN) {
-    case 130306L:
-//#define WINDEBUG
-#ifdef WINDEBUG
-      total_time_since_last_wind += time_since_last_wind_rx;
-      avg_time_since_last_wind = total_time_since_last_wind / num_wind_messages;
-      if (num_wind_messages % 100 == 0) {
-        Serial.printf("last wind time: %2.2ld avg wind time: %2.2ld ms", time_since_last_wind_rx, avg_time_since_last_wind);
-        if (time_since_last_wind_rx > 0.0)
-          Serial.printf(" %2.2ld Hz", 1000.0/avg_time_since_last_wind);
-        Serial.println();
-      }
-      time_since_last_wind_rx = 0;
-#endif
-      WindSpeed(N2kMsg);
-      break;
-    case 127250L: // heading; on wind bus should only come from mast compass
-      float mastComp;
-      if ((mastComp = parseMastHeading(N2kMsg)) > -1) {
-        mastCompassDeg = mastComp; // incorrect? radians
-        // we get boatCompassDeg here but we should also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
-        boatCompassDeg = getCompass(mastOrientation);
-      }
-      Serial.printf("PGN Mast Heading: %.2f Boat Heading: %.2f\n", mastCompassDeg, boatCompassDeg);
-      break;
-    case 128259L:
-      BoatSpeed(N2kMsg);
-      break;
-  } 
-  /* this will be useful if we're handling more than one message type later
-  int iHandler;
-  for (iHandler=0; NMEA2000Handlers[iHandler].PGN!=0 && !(N2kMsg.PGN==NMEA2000Handlers[iHandler].PGN); iHandler++);
-  if (NMEA2000Handlers[iHandler].PGN!=0) {
-    NMEA2000Handlers[iHandler].Handler(N2kMsg); 
   }
-  */
 }
-#endif
 
 String can_state;
 
@@ -349,21 +306,19 @@ void OLEDdataWindDebug() {
   display->printf("Wind: %d\n", num_wind_messages);
   display->printf("S/A/R:%2.1f/%2.1f/%2.1f\n", windSpeedKnots, windAngleDegrees,rotateout);
   //display->printf("Rot:%d\n", mastRotate);
-  display->printf("Sensor: %d/%d/%d\n", PotLo, PotValue, PotHi);
-  display->printf("Angle: %d\n", mastAngle[0]);
-  display->printf("M: %.1f B: %.1f\n", mastCompassDeg, boatCompassDeg);
-  display->printf("Delta: %d\n", mastAngle[1]);
+  if (honeywellOnToggle) {
+    display->printf("Sensor: %d/%d/%d\n", PotLo, PotValue, PotHi);
+    display->printf("Angle: %d\n", mastAngle[0]);
+  }
+  if (compassOnToggle) {
+    display->printf("M: %.1f B: %.1f\n", mastCompassDeg, boatCompassDeg);
+    display->printf("Delta: %d\n", mastAngle[1]);
+  }
   //Serial.printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
   display->display();
 }
 
-// used for CAN TBD clean up
-long unsigned int rxId;
-unsigned char len = 0;
-unsigned char rxBuf[8];
-char msgString[128];                        // Array to store serial string
 void ParseWindCAN();
-byte canInit(const int canPort, const CAN_SPEED canSpeed, const int canOpMode);
 
 void setup() {
   // setup serial output
@@ -426,7 +381,7 @@ void setup() {
   n2kMain->SetN2kCANReceiveFrameBufSize(250);
   // Set Product information
   n2kMain->SetProductInformation(
-      "20210331",  // Manufacturer's Model serial code (max 32 chars)
+      "20240608",  // Manufacturer's Model serial code (max 32 chars)
       103,         // Manufacturer's product code
       "SH-ESP32 Wind Correction",  // Manufacturer's Model ID (max 33 chars)
       "0.1.0.0 (2021-03-31)",  // Manufacturer's Software version code (max 40
@@ -435,19 +390,15 @@ void setup() {
   );
   // Set device information
   n2kMain->SetDeviceInformation(
-      1,    // Unique number. Use e.g. Serial number.
-      130,  // Device function=Analog to NMEA 2000 Gateway. See codes on
-            // http://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
-      25,   // Device class=Inter/Intranetwork Device. See codes on
-           // http://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
-      2046  // Just choosen free from code list on
-            // http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf
+      20240608, // serial
+      132, // analog gateway
+      25, // inter/intranetwork device 
+      2046
   );
   //n2kMain->SetForwardStream(forward_stream);
   n2kMain->SetMode(tNMEA2000::N2km_ListenAndSend);
   n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
   //n2kMain->EnableForward(true);
-  //n2kMain->EnableForward(false);
   //n2kMain->SetForwardOwnMessages(true);
   n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
   n2kMain->ExtendTransmitMessages(TransmitMessages);
@@ -464,14 +415,6 @@ void setup() {
         Serial.println("CAN0 Initialization Error.");
         return;
     }
-
-  /*
-  if(canInit(0, CAN_250KBPS, CAN_OP_NORMAL) == CAN_OK)
-        Serial.println("CAN0 Initialized.");
-    else
-  //n2kWind.setMode(CAN_OP_LISTENONLY);
-  //pinMode(CAN0_INT, INPUT);
-  */
 #endif
  
   if (!SPIFFS.begin())
@@ -483,8 +426,7 @@ void setup() {
   Serial.println(WiFi.macAddress());
 
   // check compass
-  //Wire1.setPins(21,22); // SDA (purple), SCL (orange)
-  Wire.begin(21,22);
+  Wire.begin(SDA_PIN,SCL_PIN);
   Wire.beginTransmission(CMPS14_ADDRESS);
   cmps14_ready = (!Wire.endTransmission()); // null return indicates no error; compass present
   if (cmps14_ready)
@@ -498,9 +440,12 @@ void setup() {
   startWebServer();
 
   setupESPNOW();
-  // send settings to mast compass ESP on startup
-  sendMastControl();
-
+  // send settings to mast compass ESP
+  if (sendMastControl())
+    Serial.println("sent control to mast compass OK");
+  else Serial.println("sent control to mast compass failed");
+  // ignore failure for now; we can send again from settings.html if necessary
+  
   Serial.printf("flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
@@ -539,11 +484,16 @@ void setup() {
   app.onRepeat(1000, []() {
     //Serial.println("check for DRD");
     loopWifi();
+    /* send settings to mast compass ESP
+    if (sendMastControl())
+      Serial.println("sent control to mast compass OK");
+    else Serial.println("sent control to mast compass FAILED");
+    */
   });
 
   // check in for new heading 100 msecs = 10Hz
   if (cmps14_ready)
-    app.onRepeat(300, []() {
+    app.onRepeat(10, []() {
       //Serial.println("check for new heading");
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it

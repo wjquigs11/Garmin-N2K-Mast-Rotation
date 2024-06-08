@@ -46,7 +46,6 @@ JSONVar readings;
 unsigned long lastTime = 0;
 int WebTimerDelay = 500;
 
-extern char buf[];
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
 const char* PARAM_INPUT_1 = "output";
 const char* PARAM_INPUT_2 = "state";
@@ -209,9 +208,8 @@ void startWebServer() {
   server.on("/host", HTTP_GET, [](AsyncWebServerRequest *request) {
     Serial.print("hostname: ");
     Serial.println(host.c_str());
-    //sprintf(buf, "host: %s, variation: %d, orientation: %d, timerdelay: %d", host.c_str(), variation, orientation, timerDelay);
-    sprintf(buf, "host %s", host.c_str());
-    request->send_P(200, "text/plain", buf);
+    String buf = "host: " + host + ", webtimerdelay: " + String(WebTimerDelay);
+    request->send_P(200, "text/plain", buf.c_str());
   });
 
   server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -221,8 +219,8 @@ void startWebServer() {
   });
 
   // Send a GET request to <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
-  server.on("/update", HTTP_GET, [] (AsyncWebServerRequest *request) {
-    //Serial.println("update");
+  server.on("/params", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    //Serial.println("params");
     String inputMessage1;
     String inputMessage2;
     // GET input1 value on <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
