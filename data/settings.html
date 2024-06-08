@@ -33,8 +33,8 @@
   <p>Compass MAC address: %compMAC%</p>
 <script>function toggleCheckbox(element) {
   var xhr = new XMLHttpRequest();
-  if(element.checked){ xhr.open("GET", "/update?output="+element.id+"&state=on", true); }
-  else { xhr.open("GET", "/update?output="+element.id+"&state=off", true); }
+  if(element.checked){ xhr.open("GET", "/params?output="+element.id+"&state=on", true); }
+  else { xhr.open("GET", "/params?output="+element.id+"&state=off", true); }
   xhr.send();
 }
 </script>

@@ -5,6 +5,7 @@ struct tBoatData {
   unsigned long DaysSince1970;   // Days since 1970-01-01
   
   double TrueHeading,SOG,COG,Variation,
+         STW, // meters/sec
          GPSTime,// Secs since midnight,
          Latitude, Longitude, Altitude, HDOP, GeoidalSeparation, DGPSAge;
   int GPSQualityIndicator, SatelliteCount, DGPSReferenceStationID;
@@ -16,6 +17,7 @@ public:
     SOG=0;
     COG=0; 
     Variation=0.0;
+    STW=0.0,
     GPSTime=0;
     Altitude=0;
     HDOP=100000;
