@@ -91,12 +91,17 @@ var gaugeHoneyRot = new RadialGauge({
 }).draw();
 
 // Function to get current readings on the webpage when it loads for the first time
+// do we really need this, since our update rate is at least 10Hz?
 function getReadings() {
     var xhr = new XMLHttpRequest();
     xhr.onreadystatechange = function() {
       if (this.readyState == 4 && this.status == 200) {
         var myObj = JSON.parse(this.responseText);
-        updatePage(myObj);
+        gaugeMagRot.value = -myObj.mastDelta;
+        gaugeHoneyRot.value = myObj.mastRotate;
+        document.getElementById('mastRotate').innerHTML = myObj.mastRotate;
+        document.getElementById('windSpeed').innerHTML = myObj.windSpeed;
+        document.getElementById('windAngle').innerHTML = myObj.windAngle;      
       }
     }; 
     xhr.open("GET", "/readings", true);
@@ -124,7 +129,16 @@ function getReadings() {
       console.log("new_readings", e.data);
       var myObj = JSON.parse(e.data);
       console.log(myObj);
-      updatePage(myObj);
+      //updatePage(myObj);
       gaugeMagRot.value = -myObj.mastDelta;
+      gaugeHoneyRot.value = myObj.mastRotate;
+      document.getElementById('mastRotate').innerHTML = myObj.mastRotate;
+      document.getElementById('windSpeed').innerHTML = myObj.windSpeed;
+      document.getElementById('windAngle').innerHTML = myObj.windAngle;
+      document.getElementById('mastHeading').innerHTML = myObj.mastHeading.toFixed(2);
+      document.getElementById('compassHeading').innerHTML = myObj.compassHeading;
+      document.getElementById('mastDelta').innerHTML = myObj.mastDelta;
+      document.getElementById('boatTrue').innerHTML = myObj.boatTrue;
+      document.getElementById('rotateout').innerHTML = myObj.rotateout;
     }, false);
   }

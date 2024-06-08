@@ -179,7 +179,7 @@ void startWebServer() {
   server.addHandler(&events);
 
   // start serving from SPIFFS
-  //server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
   server.serveStatic("/", SPIFFS, "/");
 
   server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
@@ -215,7 +215,7 @@ void startWebServer() {
   });
 
   server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
-    //Serial.println("settings");
+    Serial.println("settings");
     request->send(SPIFFS, "/settings.html", "text/html", false, settings_processor);
     //request->send(SPIFFS, "/settings.html", "text/html");
   });

@@ -6,6 +6,7 @@ Also reads NMEA0183 data from ICOM VHF and injects it onto N2K bus
 Web server for displaying wind speed/angle/mast rotation
 TBD: add wiring from TX on Serial(1) to Autohelm plug; port autopilot code here and modify web interface
 TBD: translate apparent wind to Seatalk1 and send to tiller pilot
+branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, since it's not working
 */
 
 #include <Arduino.h>
@@ -25,11 +26,9 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <movingAvg.h>
 #include "elapsedMillis.h"
 #include "windparse.h"
-#include <mcp_can.h>
-#include <mcp_can_dfs.h>
+//#include <mcp_can.h>
+//#include <mcp_can_dfs.h>
 #include <Arduino.h>
-#include <NMEA2000_mcp.h>
-//#include <NMEA2000_CAN.h>  // This will automatically choose right CAN library and create suitable NMEA2000 object
 #include <N2kMessages.h>
 //#include <driver/adc.h>
 #include <Adafruit_ADS1X15.h>
@@ -40,25 +39,28 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
+#include "mcp2515.h"
+#include "can.h"
 
 #define ESPBERRY
 //#define SH_ESP32  // these defs will probably change with SINGLECAN
 //#define SINGLECAN  // for testing (or non-Garmin) we can use one bus 
 
 #ifdef ESPBERRY
-#define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
-#define CAN_RX_PIN GPIO_NUM_35
-#define N2k_SPI_CS_PIN 5    
-#define N2k_CAN_INT_PIN 26
-/* espBerry Settings (will need modification for other ESP32 systems)
+#define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, RPI header pin 16
+#define CAN_RX_PIN GPIO_NUM_35 // RPI header pin 15
+//#define N2k_SPI_CS_PIN 5    
+//#define N2k_CAN_INT_PIN 26
+// espBerry Settings (will need modification for other ESP32 systems)
 // ------------------------------------------------------------------------
 // Define CAN Ports and their Chip Select/Enable
-MCP2515 CAN0(5);            // CAN0 interface CS
-MCP2515 CAN1(17);           // CAN1 interface CS
+// the Artist formerly known as "n2kWind"...
+//#define CAN_RX_INTERRUPT_MODE 0
+MCP2515 n2kWind(5); // CAN0 interface CS
+//MCP2515 CAN1(17); // CAN1 interface CS
 // Interrupt Signals
 const int CAN0_INT = 26;    // RPi Pin 16 - GPIO23 - IO26
-const int CAN1_INT = 34;    // RPi Pin 22 - GPIO25 - IO34
-*/
+//const int CAN1_INT = 34;    // RPi Pin 22 - GPIO25 - IO34
 #endif
 #ifdef SH_ESP32
 //#define CAN_TX_PIN GPIO_NUM_32
@@ -96,23 +98,27 @@ Adafruit_SSD1306 *display;
 
 TwoWire *i2c, *i2c2;
 
+//#define PARSENMEA0183
+#ifdef PARSENMEA0183
 #define NMEA0183serial Serial1
 #define NMEA0183RX 16 // ESPberry RX0 = IO16? 
 // SK Pang says it's mapped to /dev/ttyS0 which is 14(tx) and 15(rx) on RPI
 // but that's RPI GPIOs, and RPI GPIO 15 is mapped to IO16 on ESPBerry
 //#define SER_BUF_SIZE (unsigned int)(1024)
 #define NMEA0183BAUD 4800
+tNMEA0183 NMEA0183_3;
+#endif
 extern tBoatData *pBD;
 tBoatData BoatData;
-tNMEA0183 NMEA0183_3;
+
+// defs for robotshop CMPS14
+int CMPS14_ADDRESS=0x60;
+bool cmps14_ready=false;
 
 //Stream *read_stream = &Serial;
 Stream *forward_stream = &Serial;
 
 tNMEA2000 *n2kMain;
-#ifndef SINGLECAN
-tNMEA2000 *n2kWind;
-#endif
 
 // Honeywell sensor
 extern movingAvg honeywellSensor;                // define the moving average object
@@ -170,7 +176,8 @@ void ToggleLed() {
   led_state = !led_state;
 }
 
-void WindSpeed(const tN2kMsg &N2kMsg);
+//void WindSpeed(const tN2kMsg &N2kMsg);
+void WindSpeed();
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,0};
@@ -240,6 +247,7 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
   } 
 }
 
+#if 0 // obsolete since we're parsing natively
 // NMEA 2000 message handler for wind bus: check if message is wind and handle it
 // also checking for Heading (from mast compass)
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
@@ -267,7 +275,7 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     case 127250L: // heading; on wind bus should only come from mast compass
       float mastComp;
       if ((mastComp = parseMastHeading(N2kMsg)) > -1) {
-        mastCompassDeg = mastComp;
+        mastCompassDeg = mastComp; // incorrect? radians
         // we get boatCompassDeg here but we should also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
         boatCompassDeg = getCompass(mastOrientation);
       }
@@ -285,6 +293,7 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
   }
   */
 }
+#endif
 
 String can_state;
 
@@ -348,6 +357,14 @@ void OLEDdataWindDebug() {
   display->display();
 }
 
+// used for CAN TBD clean up
+long unsigned int rxId;
+unsigned char len = 0;
+unsigned char rxBuf[8];
+char msgString[128];                        // Array to store serial string
+void ParseWindCAN();
+byte canInit(const int canPort, const CAN_SPEED canSpeed, const int canOpMode);
+
 void setup() {
   // setup serial output
   Serial.begin(115200);
@@ -383,13 +400,14 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   app.onRepeatMicros(1e6 / 1, []() { ToggleLed(); });
 
-  // TBD if honeywell on
-  honeywellSensor.begin();    // Instantiates the moving average object
-  if (!(adsInit = ads.begin()))  // start ADS1015 ADC
+  if (!(adsInit = ads.begin())) {  // start ADS1015 ADC
     Serial.println("ads sensor not found");
+    honeywellOnToggle = false;
+  } else honeywellSensor.begin();    // Instantiates the moving average object
 
   // Set up NMEA0183 ports and handlers
   pBD=&BoatData;
+#ifdef PARSENMEA0183
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
   //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, -1);
@@ -400,14 +418,9 @@ void setup() {
     Serial.println("failed to open NMEA0183 serial port");
   else
     Serial.println("opened NMEA0183 serial port");
-
-  // instantiate the NMEA2000 object for the main bus
-#ifdef SINGLECAN
-  n2kMain = new tNMEA2000_esp32(CAN_TX_PIN, CAN_RX_PIN);
-#else
-  n2kMain = new tNMEA2000_mcp(N2k_SPI_CS_PIN,MCP_16MHz);
-  //n2kMain = new tNMEA2000_mcp(N2k_SPI_CS_PIN,N2k_CAN_INT_PIN,MCP_16MHz);
 #endif
+  // instantiate the NMEA2000 object for the main bus
+  n2kMain = new tNMEA2000_esp32(CAN_TX_PIN, CAN_RX_PIN);
   // Reserve enough buffer for sending all messages.
   n2kMain->SetN2kCANSendFrameBufSize(250);
   n2kMain->SetN2kCANReceiveFrameBufSize(250);
@@ -430,32 +443,35 @@ void setup() {
       2046  // Just choosen free from code list on
             // http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf
   );
-  n2kMain->SetForwardStream(forward_stream);
+  //n2kMain->SetForwardStream(forward_stream);
   n2kMain->SetMode(tNMEA2000::N2km_ListenAndSend);
   n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
-  n2kMain->EnableForward(true);
-  n2kMain->SetForwardOwnMessages(true);
-  n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
+  //n2kMain->EnableForward(true);
   //n2kMain->EnableForward(false);
+  //n2kMain->SetForwardOwnMessages(true);
+  n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
   n2kMain->ExtendTransmitMessages(TransmitMessages);
   Serial.println("opening n2kMain");
   n2kMain->Open();
 
 #ifndef SINGLECAN
-  // instantiate the NMEA2000 object for the wind bus
-  // does not need to register since it's only listening
-  //n2kWind = new tNMEA2000_mcp(N2k_SPI_CS_PIN,MCP_16MHz);
-  n2kWind = new tNMEA2000_esp32(CAN_TX_PIN, CAN_RX_PIN);
-  n2kWind->SetN2kCANMsgBufSize(8);
-  n2kWind->SetN2kCANReceiveFrameBufSize(100);
-  n2kWind->SetMode(tNMEA2000::N2km_ListenAndSend);
-  //n2kWind->SetForwardStream(forward_stream);
-  n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
-  //n2kWind->EnableForward(false); 
-  n2kWind->SetForwardOwnMessages(true);
-  n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
-  Serial.println("opening n2kWind");
-  n2kWind->Open();
+  // Initialize the CAN port
+    n2kWind.reset();
+    int cRetCode;
+    if ((n2kWind.setBitrate(CAN_250KBPS, MCP_16MHZ) == CAN_OK) && (cRetCode = n2kWind.setListenOnlyMode() == CAN_OK))
+        Serial.println("CAN0 Initialized.");
+    else {
+        Serial.println("CAN0 Initialization Error.");
+        return;
+    }
+
+  /*
+  if(canInit(0, CAN_250KBPS, CAN_OP_NORMAL) == CAN_OK)
+        Serial.println("CAN0 Initialized.");
+    else
+  //n2kWind.setMode(CAN_OP_LISTENONLY);
+  //pinMode(CAN0_INT, INPUT);
+  */
 #endif
  
   if (!SPIFFS.begin())
@@ -466,28 +482,37 @@ void setup() {
   Serial.print("ESP local MAC addr: ");
   Serial.println(WiFi.macAddress());
 
+  // check compass
+  //Wire1.setPins(21,22); // SDA (purple), SCL (orange)
+  Wire.begin(21,22);
+  Wire.beginTransmission(CMPS14_ADDRESS);
+  cmps14_ready = (!Wire.endTransmission()); // null return indicates no error; compass present
+  if (cmps14_ready)
+    Serial.println("CMPS14 present");
+  else {
+    Serial.println("CMPS14 not found");
+    return;
+  }
+
   setupWifi();
   startWebServer();
-  Wire1.setPins(21,22);
-  Wire1.begin();
+
   setupESPNOW();
   // send settings to mast compass ESP on startup
   sendMastControl();
 
-  Serial.printf("flash size %d\n", ESP.getFlashChipSize()); // 4194304
+  Serial.printf("flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
-  app.onRepeat(1, []() {
+  app.onRepeat(10, []() {
     PollCANStatus();
     n2kMain->ParseMessages();
 #ifndef SINGLECAN
-    n2kWind->ParseMessages();
+    ParseWindCAN();
 #endif
+#ifdef PARSENMEA0183
     NMEA0183_3.ParseMessages(); // GPS from ICOM
-    /*while (Serial1.available()) {
-      char byte = Serial1.read();
-      Serial.print(byte);
-    }*/
+#endif
   });
 /*
   app.onRepeat(100, []() {
@@ -504,6 +529,7 @@ void setup() {
 
   // update web page
   app.onRepeat(WebTimerDelay, []() {
+    //Serial.println("transmit sensor readings");
     // Send Events to the client with the Sensor Readings Every x seconds
     events.send("ping",NULL,millis());
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
@@ -511,19 +537,25 @@ void setup() {
 
   // check for DRD
   app.onRepeat(1000, []() {
+    //Serial.println("check for DRD");
     loopWifi();
   });
 
   // check in for new heading 100 msecs = 10Hz
-  app.onRepeat(100, []() {
-    // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
-    // TBD: set Variation if we get a Heading PGN on main bus that includes it
-    // this will be used in settings.html and compass.html
-    BoatData.TrueHeading = getCompass(BoatData.Variation);
-  });
+  if (cmps14_ready)
+    app.onRepeat(300, []() {
+      //Serial.println("check for new heading");
+      // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
+      // TBD: set Variation if we get a Heading PGN on main bus that includes it
+      // this will be used in settings.html and compass.html
+      BoatData.TrueHeading = getCompass(BoatData.Variation);
+      // the global boatCompassDeg will always contain the boat compass (magnetic), adjusted for orientation between the boat compass and the mast compass
+      boatCompassDeg = getCompass(mastOrientation);
+    });
 
   // update results
   app.onRepeat(1000, []() {
+    //Serial.println("update results");
     if (displayOnToggle)
       OLEDdataWindDebug();
     else {
@@ -533,7 +565,7 @@ void setup() {
       num_n2k_messages = 0;
       num_wind_messages = 0;
     }
-    Serial.printf("Boat Heading: %.2f Variation %.2f\n", BoatData.TrueHeading, BoatData.Variation);
+    //Serial.printf("Boat Heading: %.2f Variation %.2f\n", BoatData.TrueHeading, BoatData.Variation);
   });
 
 }
