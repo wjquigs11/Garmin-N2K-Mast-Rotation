@@ -15,7 +15,8 @@
 // defs for robotshop CMPS14
 extern int CMPS14_ADDRESS;  // Address of CMPS14 shifted right one bit for arduino wire library
 extern bool cmps14_ready;
-#define ANGLE_8  1           // Register to read 8bit angle from
+#define ANGLE_8  1          // Register to read 8bit angle from (starting...we read 5 bytes)
+#define CAL_STATE 0x1E      // register to read calibration state
 
 unsigned char high_byte, low_byte, angle8;
 char pitch, roll;
@@ -24,6 +25,7 @@ unsigned int angle16, comp8, comp16;
 static int variation;
 float mastCompassDeg; 
 float boatCompassDeg;
+int boatCompassCalStatus;
 // how is the compass oriented on the board relative to boat compass
 // when mast is centered, mast compass+orientation == boat compass
 int mastOrientation;
@@ -129,7 +131,6 @@ float getCompass(int correction) {
     Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
     Wire.write(ANGLE_8);                     // Sends the register we wish to start reading from
     Wire.endTransmission();
-    //if (!error) { // we found CMPS14
     // Request 5 bytes from the CMPS12
     // this will give us the 8 bit bearing, 
     // both bytes of the 16 bit bearing, pitch and roll
@@ -179,6 +180,13 @@ float getCompass(int correction) {
     Serial.print("     comp8: ");        // Display 8bit angle
     Serial.println(comp8, DEC);
 #endif
+    Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
+    Wire.write(CAL_STATE);                     // Sends the register we wish to start reading from
+    Wire.endTransmission();
+    Wire.requestFrom(CMPS14_ADDRESS, 5); 
+    while((Wire.available() < 1)); // (this can hang)
+    boatCompassCalStatus = Wire.read() & 0x3;
+    //Serial.printf("calStatus: 0x%x\n", calStatus);
     return (float)comp16;
   }
   return -1.0;
