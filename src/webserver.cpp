@@ -32,6 +32,7 @@ void sendMastControl();
 extern uint8_t compassAddress[];
 extern esp_now_peer_info_t peerInfo;
 extern float mastCompassDeg, boatCompassDeg;
+extern int boatCompassCalStatus;
 extern tBoatData BoatData;
 
 // Create AsyncWebServer object on port 80
@@ -59,6 +60,7 @@ String getSensorReadings() {
   if (compassOnToggle) {
     readings["mastHeading"] = mastCompassDeg;
     readings["compassHeading"] = boatCompassDeg;
+    readings["calstatus"] = boatCompassCalStatus;
     int delta = mastCompassDeg-boatCompassDeg;
     if (delta > 180) delta -= 360;
       else if (delta < -180) delta += 360;    
@@ -215,7 +217,11 @@ void startWebServer() {
   server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
     Serial.println("settings");
     request->send(SPIFFS, "/settings.html", "text/html", false, settings_processor);
-    //request->send(SPIFFS, "/settings.html", "text/html");
+  });
+
+  server.on("/compass", HTTP_GET, [](AsyncWebServerRequest *request) {
+    Serial.println("compass");
+    request->send(SPIFFS, "/compass.html", "text/html");
   });
 
   // Send a GET request to <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>

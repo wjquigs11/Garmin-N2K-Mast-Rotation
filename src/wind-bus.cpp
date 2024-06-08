@@ -493,7 +493,7 @@ void setup() {
 
   // check in for new heading 100 msecs = 10Hz
   if (cmps14_ready)
-    app.onRepeat(10, []() {
+    app.onRepeat(500, []() {
       //Serial.println("check for new heading");
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
