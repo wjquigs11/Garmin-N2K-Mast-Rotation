@@ -17,6 +17,8 @@
 //#include <driver/adc.h>
 #include <Adafruit_ADS1X15.h>
 #include <Arduino_JSON.h>
+#include "mcp2515.h"
+#include "can.h"
 
 double rotateout;
 // analog values from rotation sensor
@@ -27,6 +29,8 @@ extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
 extern int mastAngle[]; // range from -50 to +50, TBD set range in calibration
 extern bool compassOnToggle, honeywellOnToggle;
 extern float mastCompassDeg, boatCompassDeg;
+extern int mastOrientation;   // delta between mast compass and boat compass
+float getCompass(int correction);
 
 // Initialize static variables for RotationSensor Class
 int RotationSensor::newValue{0};
@@ -91,6 +95,7 @@ int readAnalogRotationValue() {
   sprintf(buf, " pot(l/v/h): %d/%d/%d ", PotLo, PotValue, PotHi);
   Serial.print(buf);
   #endif
+  // the moving average variable is only initialized if ADC is present
   int newValue = honeywellSensor.reading(PotValue);    // calculate the moving average
   int oldValue = RotationSensor::oldValue;
   
@@ -111,7 +116,163 @@ int readAnalogRotationValue() {
   return mastAngle[0]; 
 }
 
-void WindSpeed(const tN2kMsg &N2kMsg) {
+// the OLD WindSpeed parsed an N2kMsg. The NEW WindSpeed needs to parse a CAN buffer
+//void WindSpeed(const tN2kMsg &N2kMsg) {
+
+extern long unsigned int rxId;
+extern unsigned char len;
+extern unsigned char rxBuf;
+
+#define DEBUGCAN2
+extern MCP2515 n2kWind;
+byte canRx(byte cPort, unsigned long* lMsgID, byte* cMessageIDFormat, byte* cData, byte* cDataLen);
+
+void ParseWindCAN() {
+  double windSpeedMeters;
+  double windSpeedKnots;
+  double windAngleRadians;
+  int windAngleDegrees;
+  int mastRotate;
+  unsigned long t = millis();
+  int PGN;
+  tN2kMsg correctN2kMsg;
+
+  byte result;
+  byte cRetCode = CAN_NOMSG;
+  struct can_frame canMsg;
+  byte cDataLen;
+  byte cData[8];
+
+  // Check for dataframe at CAN0
+    // Read the message
+    if((cRetCode = n2kWind.readMessage(&canMsg)) == CAN_OK) {
+      PGN = ((canMsg.can_id & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
+      // Determine Message Format
+      //*cMessageIDFormat = ((canMsg.can_id & 0x80000000) >> 31);
+      // Copy Data
+      cDataLen = canMsg.can_dlc;
+      // why are we copying the array?
+      for(int nIndex = 0; nIndex < canMsg.can_dlc; nIndex++) {
+        //sprintf(buf, " 0x%.2X", canMsg.data[nIndex]);
+        //Serial.print(buf);
+        cData[nIndex] = canMsg.data[nIndex];
+      }
+      Serial.print(" ");
+    //Serial.print(millis());
+    //PGN = (lMsgID>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
+    #ifdef DEBUG
+    Serial.printf("can2 id: %x PGN: %d LEN: %d\n", lMsgID, PGN, cDataLen);
+    #endif
+  } else {
+    // not an error just means no data on CAN bus
+    //Serial.printf("wind CAN read error: %d\n", cRetCode);
+    return;
+  }
+  if (PGN == 130306) {  // wind PGN
+    int SID = cData[0];
+    double windSpeed = ((cData[2] << 8) | cData[1]);
+    windSpeedMeters = windSpeed / 100;
+    windSpeedKnots =  windSpeedMeters * 1.943844; // convert m/s to kts
+    double wAngle = ((cData[4] << 8) | cData[3]);
+    float windAngleRadians = wAngle / 10000.0;
+    float windAngleDegrees = windAngleRadians * (180/M_PI);
+    uint8_t wRef = cData[5];
+    #ifdef DEBUG
+    snprintf(prbuf, PRBUF, "SID: %d speed(kts): %2.2f angle %2.2f/%2.2f ref %d", SID, windSpeedKnots, wAngle, windAngleDegrees, wRef);
+    Serial.println(prbuf);
+    #endif
+    WindSensor::windSpeedMeters = windSpeedMeters;
+    WindSensor::windSpeedKnots = windSpeedKnots;
+    readings["windSpeed"] = String(windSpeedKnots);
+    WindSensor::windAngleRadians = windAngleRadians;
+    WindSensor::windAngleDegrees = windAngleDegrees;
+    readings["windAngle"] = String(windAngleDegrees);
+    if (wRef != 2) { // N2kWind_Apparent
+      Serial.printf("got wind PGN not apparent! %d\n", wRef);
+      return;
+    }
+    // read rotation value and correct
+    // either read from Honeywell sensor, or from external compass, or both
+    // if external compass, reading will be updated in espnow.cpp
+    mastRotate = 0;
+    if (honeywellOnToggle) {
+      mastRotate = readAnalogRotationValue();
+      Serial.printf("honeywell mastrotate = %d(/10)\n", mastRotate);
+    }
+    if (compassOnToggle) {
+      float delta = mastCompassDeg-boatCompassDeg;
+      if (delta > 180) {
+        delta -= 360;
+      } else if (delta < -180) {
+        delta += 360;
+      }
+      mastAngle[1] = (int)delta;
+      readings["mastHeading"] = String(mastCompassDeg);
+      readings["boatHeading"] = String(boatCompassDeg);
+      readings["mastDelta"] = String(delta);
+      Serial.printf("ParseWindCAN mast %.2f boat %.2f mastrotate = %.2f\n", mastCompassDeg, boatCompassDeg, delta);
+      // if both are enabled/present, use Honeywell
+      if (!honeywellOnToggle)
+        mastRotate = delta*10.0;
+    }
+    #ifdef DEBUG
+    Serial.print(" mastRotate: ");
+    Serial.print(mastRotate);
+    #endif
+    double anglesum = windAngleDegrees + mastRotate/10;    // sensor AFT of mast so subtract rotation
+    // ensure sum is 0-359; rotateout holds the corrected AWA
+    if (anglesum<0) {                             
+      rotateout = anglesum + 360;
+    }              
+    else if (anglesum>359) {   
+      rotateout = anglesum - 360;               
+    }
+    else {
+      rotateout = anglesum;               
+    }
+    readings["rotateout"] = String(rotateout);
+    #ifdef DEBUG
+    snprintf(prbuf, PRBUF, "rotate now %d low %d high %d", PotValue, PotLo, PotHi);
+    Serial.println(prbuf);
+    snprintf(prbuf, PRBUF, "mastRotate %d anglesum %d rotateout %d", mastRotate, anglesum, rotateout);
+    Serial.println(prbuf);
+    #endif
+    // send corrected wind on main bus
+    // note we are sending the original speed reading in m/s
+    // and the AWA converted from rads to degrees, corrected, and converted back to rads
+    SetN2kPGN130306(correctN2kMsg, 0xFF, windSpeedMeters, rotateout*(M_PI/180), N2kWind_Apparent); 
+    n2kMain->SendMsg(correctN2kMsg);
+    // for now (until you dive into SensESP), send rotation angle as rudder
+    SetN2kPGN127245(correctN2kMsg, ((mastRotate/10)+50)*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
+    n2kMain->SendMsg(correctN2kMsg);
+    // calculate TWS/TWA from boat speed and send another wind PGN
+    calcTrueWind();
+    SetN2kPGN130306(correctN2kMsg, 0xFF, TWS, TWA, N2kWind_True_water);
+    n2kMain->SendMsg(correctN2kMsg);
+  } else if (PGN == 127250) {  // heading PGN; on wind bus must come from mast compass
+    // TBD break this into 2 functions
+    // update mast heading
+    double mastComp;
+    int SID = cData[0];
+    mastComp = ((cData[2] << 8) | cData[1]) / 10000.0; // radians
+    // TBD get "reference" to confirm it's N2khr_Unavailable
+    if (mastComp > -1) {
+      //Serial.printf("mastComp: %.2f, deg %.2f\n", mastComp, mastComp * 57.296);
+      mastCompassDeg = mastComp * 57.296;
+      // we get boatCompassDeg here but we should also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
+      boatCompassDeg = getCompass(mastOrientation);
+    }
+    //Serial.printf("heading PGN Mast: %.2f Boat: %.2f\n", mastCompassDeg, boatCompassDeg);
+  } else {
+    //Serial.printf("unknown PGN: %d LEN: %d\n", PGN, cDataLen);
+  }
+}
+
+
+
+
+#if 0
+void WindSpeed() {
   unsigned char SID;
   double windSpeedMeters;
   double windSpeedKnots;
@@ -120,7 +281,10 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
   tN2kWindReference WindReference;
   tN2kMsg correctN2kMsg;
   int mastRotate;
-//#define DEBUG
+
+  int PGN = (rxId>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
+  Serial.printf("wind bus id: %x PGN: %x LEN: %d\n", rxId, PGN, len);
+  return;
   if (ParseN2kWindSpeed(N2kMsg,SID, windSpeedMeters, windAngleRadians, WindReference)) {
     if (WindReference != N2kWind_Apparent) {
       Serial.printf("got wind PGN not apparent! %d\n", WindReference);
@@ -198,7 +362,7 @@ void WindSpeed(const tN2kMsg &N2kMsg) {
     SetN2kPGN130306(correctN2kMsg, 0xFF, TWS, TWA, N2kWind_True_water);
     n2kMain->SendMsg(correctN2kMsg);
    } 
-}
+#endif // 0
 
 void BoatSpeed(const tN2kMsg &N2kMsg) {
   unsigned char SID;
@@ -222,7 +386,7 @@ void calcTrueWind() {
   double AWS_parallel = AWS * sin(AWA);
   // Calculate the angle between the true wind direction and the vessel's heading
   TWA = acos((STW * cos(AWA) - AWS_parallel) / TWS);
-#define DEBUG
+//#define DEBUG
 #ifdef DEBUG
   Serial.printf("STW(k): %2.2f TWS(k): %2.2f TWA(d): %2.2f\n", STW*1.943844, TWS*1.943844, TWA*(180/M_PI));
 #endif

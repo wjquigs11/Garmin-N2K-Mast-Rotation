@@ -13,13 +13,16 @@
 #include <Wire.h>
 
 // defs for robotshop CMPS14
-#define CMPS12_ADDRESS 0x60  // Address of CMPS12 shifted right one bit for arduino wire library
+extern int CMPS14_ADDRESS;  // Address of CMPS14 shifted right one bit for arduino wire library
+extern bool cmps14_ready;
 #define ANGLE_8  1           // Register to read 8bit angle from
 // ESP32
 // purple wire SDA 21
 // orange wire SCL 22
 // SH-ESP32 16/17
-//extern TwoWire *i2c2;
+// ESPberry
+// SDA RPI GPIO2 IO21
+// SCL RPI GPIO3 IO22
 
 unsigned char high_byte, low_byte, angle8;
 char pitch, roll;
@@ -246,47 +249,69 @@ void setupESPNOW() {
 // also called as a Reaction in case we're not connected to mast compass
 float getCompass(int correction) {
   //Serial.println("getCompass");
-  Wire1.beginTransmission(CMPS12_ADDRESS);  // starts communication with CMPS14
-  Wire1.write(ANGLE_8);                     // Sends the register we wish to start reading from
-  Wire1.endTransmission();
- 
-  // Request 5 bytes from the CMPS12
-  // this will give us the 8 bit bearing, 
-  // both bytes of the 16 bit bearing, pitch and roll
-  Wire1.requestFrom(CMPS12_ADDRESS, 5);       
-  
-  while(Wire1.available() < 5);        // Wait for all bytes to come back
-  
-  angle8 = Wire1.read();               // Read back the 5 bytes
-  comp8 = map(angle8, 0, 255, 0, 359);
-  comp8 = (comp8 + correction + 360) % 360;
-  high_byte = Wire1.read();
-  low_byte = Wire1.read();
-  pitch = Wire1.read();
-  roll = Wire1.read();
-  
-  angle16 = high_byte;                 // Calculate 16 bit angle
-  angle16 <<= 8;
-  angle16 += low_byte;
-  comp16 = ((angle16/10) + correction + 360) % 360;
+  if (cmps14_ready) {}
+  Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
+  Wire.write(ANGLE_8);                     // Sends the register we wish to start reading from
+  Wire.endTransmission();
+  //if (!error) { // we found CMPS14
+    // Request 5 bytes from the CMPS12
+    // this will give us the 8 bit bearing, 
+    // both bytes of the 16 bit bearing, pitch and roll
+    Wire.requestFrom(CMPS14_ADDRESS, 5); 
+    while((Wire.available() < 5)); // (hang)
+/*
+    int cycles = 0;
+    int availbytes = 0;
+    while (availbytes < 5 && cycles++ < 1000) {
+      availbytes += Wire.available();
+    }
+    // Wait for all bytes to come back, hangs if no CMPS14 attached  
+    while((Wire.available() < 5) && cycles++ < 100) delay(10);
+    if (cycles == 100) {
+      Serial.printf("timeout on CMPS14 read\n");
+      return -1.0;
+    } else */
+    angle8 = Wire.read();               // Read back the 5 bytes
+    comp8 = map(angle8, 0, 255, 0, 359);
+    comp8 = (comp8 + correction + 360) % 360;
+    high_byte = Wire.read();
+    low_byte = Wire.read();
+    pitch = Wire.read();
+    roll = Wire.read();
+    
+    angle16 = high_byte;                 // Calculate 16 bit angle
+    angle16 <<= 8;
+    angle16 += low_byte;
+    comp16 = ((angle16/10) + correction + 360) % 360;
+//#define DEBUG
 #ifdef DEBUG
-  Serial.print("roll: ");               // Display roll data
-  Serial.print(roll, DEC);
-  
-  Serial.print("    pitch: ");          // Display pitch data
-  Serial.print(pitch, DEC);
-  
-  Serial.print("    angle full: ");     // Display 16 bit angle with decimal place
-  Serial.print(angle16 / 10, DEC);
-  Serial.print(".");
-  Serial.print(angle16 % 10, DEC);
+    Serial.print("roll: ");               // Display roll data
+    Serial.print(roll, DEC);
+    
+    Serial.print("    pitch: ");          // Display pitch data
+    Serial.print(pitch, DEC);
+    
+    Serial.print("    angle full: ");     // Display 16 bit angle with decimal place
+    Serial.print(angle16 / 10, DEC);
+    Serial.print(".");
+    Serial.print(angle16 % 10, DEC);
 
-  Serial.print("    comp16: ");
-  Serial.print(comp16, DEC);
-  
-  Serial.print("     comp8: ");        // Display 8bit angle
-  Serial.println(comp8, DEC);
+    Serial.print("    comp16: ");
+    Serial.print(comp16, DEC);
+    
+    Serial.print("     comp8: ");        // Display 8bit angle
+    Serial.println(comp8, DEC);
 #endif
-  return (float)comp16/10.0;
+    return (float)comp16;
 }
 
+/*
+https://www.arduino.cc/reference/en/language/functions/communication/wire/endtransmission/
+endTransmission() returns:
+0: success.
+1: data too long to fit in transmit buffer.
+2: received NACK on transmit of address.
+3: received NACK on transmit of data.
+4: other error.
+5: timeout
+*/
