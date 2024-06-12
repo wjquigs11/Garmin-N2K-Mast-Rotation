@@ -30,17 +30,26 @@ branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, sin
 #include <N2kMessages.h>
 #include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
+//#include <AsyncTCP.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 #include "mcp2515.h"
 #include "can.h"
+#include "Async_ConfigOnDoubleReset_Multi.h"
+#include <ESPAsyncWebServer.h>
+#include <ElegantOTA.h>
+#include <WebSerial.h>
 
-#define ESPBERRY
+/* hardware type moved to windparse.h do not uncomment here!!!
+//#define ESPBERRY
 //#define SH_ESP32  // these defs will probably change with SINGLECAN
 //#define SINGLECAN  // for testing (or non-Garmin) we can use one bus 
+//#define PICANM // v1 version on Tatiana
+*/
+
+#define SCREEN_WIDTH 128  // OLED display width, in pixels
+#define SCREEN_HEIGHT 64  // OLED display height, in pixels
 
 #ifdef ESPBERRY
 #define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, RPI header pin 16
@@ -59,7 +68,25 @@ const int CAN0_INT = 26;    // RPi Pin 16 - GPIO23 - IO26
 //const int CAN1_INT = 34;    // RPi Pin 22 - GPIO25 - IO34
 #define SDA_PIN 21
 #define SCL_PIN 22
+// Declaration for SSD1306 display connected using software SPI (default case):
+#define OLED_MOSI  23
+#define OLED_CLK   18
+#define OLED_CS    5
+#define OLED_DC    13 // RPI pin 7
+#define OLED_RESET 14 // RPI pin 31
+//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT,OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
+#endif // ESPBERRY
+
+#ifdef PICANM  // v1 of the controller uses PICAN-M HAT
+#define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
+#define CAN_RX_PIN GPIO_NUM_35
+#define N2k_SPI_CS_PIN 5    // If you use mcp_can and CS pin is not 53, uncomment this and modify definition to match your CS pin.
+#define N2k_CAN_INT_PIN 22   // If you use mcp_can and interrupt pin is not 21, uncomment this and modify definition to match your interrupt pin.
+tNMEA2000 *n2kWind;
+// v1 uses Wire for I2C at standard pins, no defs needed
+#define OLED_RESET -1
 #endif
+
 #ifdef SH_ESP32
 //#define CAN_TX_PIN GPIO_NUM_32
 //#define CAN_RX_PIN GPIO_NUM_34
@@ -76,28 +103,24 @@ const int CAN0_INT = 26;    // RPi Pin 16 - GPIO23 - IO26
 #define SCL_PIN 17
 //#define TXD0 18
 //#define RXD0 19
-#endif
-
-
-using namespace reactesp;
-
-ReactESP app;
-
-#define SCREEN_WIDTH 128  // OLED display width, in pixels
-#define SCREEN_HEIGHT 64  // OLED display height, in pixels
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 // RPI pin 24 = CP0/GPIO8 = IO5
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 //Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#endif // SH_ESP32
+
+using namespace reactesp;
+
+ReactESP app;
+
 Adafruit_SSD1306 *display;
 
 #define RECOVERY_RETRY_MS 1000  // How long to attempt CAN bus recovery
 
 TwoWire *i2c;
 
-//#define PARSENMEA0183
-#ifdef PARSENMEA0183
+#ifdef PICANM
 #define NMEA0183serial Serial1
 #define NMEA0183RX 16 // ESPberry RX0 = IO16? 
 // SK Pang says it's mapped to /dev/ttyS0 which is 14(tx) and 15(rx) on RPI
@@ -134,6 +157,7 @@ unsigned long avg_time_since_last_wind = 0.0;
 void initWebSocket();
 //void notifyClients(String);
 extern AsyncWebServer server;
+bool serverStarted=false;
 extern char *hostname;
 extern int WebTimerDelay;
 //extern AsyncWebSocket ws;
@@ -146,10 +170,13 @@ void startWebServer();
 String getSensorReadings();
 void setupESPNOW();
 bool sendMastControl();
+extern DoubleResetDetector* drd;
+extern void check_status();
 
 // mast compass
 int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
 float parseMastHeading(const tN2kMsg &N2kMsg);  // mast heading
+float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external source
 float getCompass(int correction);      // boat heading from internal ESP32 CMPS14
 void httpInit(const char* serverName);
 extern const char* serverName;
@@ -176,7 +203,11 @@ void ToggleLed() {
   led_state = !led_state;
 }
 
+#ifdef ESPBERRY
 void WindSpeed();
+#else
+void WindSpeed(const tN2kMsg &N2kMsg);
+#endif
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
@@ -213,24 +244,19 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
               SetN2kPGN127251(correctN2kMsg,0xff,(mastRotate+50)*(M_PI/180));
               n2kMain->SendMsg(correctN2kMsg);
             }
-          }
+          } 
+          // !compassOnToggle (no internal compass), so set boat heading here
           // TBD: check if we're getting true or magnetic
           BoatData.TrueHeading = heading;
           BoatData.Variation = variation;
-        }
+        } // else
       }
       break;
-#ifdef SINGLECAN
     case 130306L:
+#ifdef SINGLECAN
       WindSpeed(N2kMsg);
-      break;
-    case 127250L: // heading; on wind bus should only come from mast compass
-      int mastComp;
-      if ((mastComp = parseMastHeading(N2kMsg)) > -1) {
-        mastCompassDeg = mastComp;
-        boatCompassDeg = getCompass(mastOrientation);
-      }
-      //Serial.printf("PGN Mast Heading: %.2f Boat Heading: %.2f\n", mastCompassDeg, boatCompassDeg);
+#else
+      Serial.printf("problem: wind PGN on main bus\n");
       break;
 #endif
     case 128259L:
@@ -251,6 +277,41 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
 #endif
   }
 }
+
+#ifdef PICANM
+// This is problematic. If you keep the second bus on the original controller, 
+// you need to split the wind parse into several pieces
+// because now it's parsing manually. PITA!
+
+// NMEA 2000 message handler for wind bus: check if message is wind and handle it
+void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
+  //N2kMsg.Print(&Serial);
+  //Serial.printf("t: %d R: %d\n", millis(), N2kMsg.PGN);
+  num_wind_messages++;
+  time_since_last_can_rx = 0;
+  ToggleLed();
+  switch (N2kMsg.PGN) {
+    case 130306L:
+//#define WINDEBUG
+#ifdef WINDEBUG
+      total_time_since_last_wind += time_since_last_wind_rx;
+      avg_time_since_last_wind = total_time_since_last_wind / num_wind_messages;
+      if (num_wind_messages % 100 == 0) {
+        Serial.printf("last wind time: %2.2ld avg wind time: %2.2ld ms", time_since_last_wind_rx, avg_time_since_last_wind);
+        if (time_since_last_wind_rx > 0.0)
+          Serial.printf(" %2.2ld Hz", 1000.0/avg_time_since_last_wind);
+        Serial.println();
+      }
+      time_since_last_wind_rx = 0;
+#endif
+      WindSpeed(N2kMsg);
+      break;
+    case 128259L:
+      BoatSpeed(N2kMsg);
+      break; 
+  } 
+}
+#endif
 
 String can_state;
 
@@ -318,6 +379,73 @@ void OLEDdataWindDebug() {
   display->display();
 }
 
+void logToAll(String s) {
+  Serial.print(s);
+  //consLog.print(s);
+  if (serverStarted)
+    WebSerial.print(s);
+  s = String();
+}
+
+void i2cScan() {
+  byte error, address;
+  int nDevices = 0;
+  logToAll("Scanning...");
+  for (address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission(); 
+    char buf[16];
+    sprintf(buf, "%2X", address); // Formats value as uppercase hex
+    if (error == 0) {
+      logToAll("I2C device found at address 0x" + String(buf) + "\n");
+      nDevices++;
+    }
+    else if (error == 4) {
+      logToAll("error at address 0x" + String(buf) + "\n");
+    }
+  }
+  if (nDevices == 0) {
+    logToAll("No I2C devices found\n");
+  }
+  else {
+    logToAll("done\n");
+  }
+}
+
+void WebSerialonMessage(uint8_t *data, size_t len) {
+    Serial.printf("Received %lu bytes from WebSerial: ", len);
+    Serial.write(data, len);
+    Serial.println();
+    WebSerial.println("Received Data...");
+    String d = "";
+    for(size_t i = 0; i < len; i++){
+      d += char(data[i]);
+    }
+    WebSerial.println(d);
+    if (d.equals("spiffs")) {
+      SPIFFS.format();
+      WebSerial.println("SPIFFS formatted");
+    }
+    if (d.equals("restart")) {
+      ESP.restart();
+    }
+    if (d.equals("ls")) {
+      File root = SPIFFS.open("/");
+      File file = root.openNextFile();
+      while(file){
+        WebSerial.println(file.name());
+        file.close(); 
+        file = root.openNextFile();
+      }
+      root.close();
+      WebSerial.println("done");
+    }
+    if (d.equals("scan")) {
+      i2cScan();
+    }
+    d = String();
+}
+
 void ParseWindCAN();
 
 void setup() {
@@ -329,40 +457,56 @@ void setup() {
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
   
-#ifdef ESPBERRY
+#if defined(ESPBERRY) || defined(PICANM)
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
   digitalWrite(OLED_RESET, LOW);
   delay(500);
   digitalWrite(OLED_RESET, HIGH);
+#endif
+#ifdef PICANM
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#endif
+#ifdef ESPBERRY
+  display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT,OLED_MOSI, OLED_CLK, OLED_DC, OLED_RESET, OLED_CS);
+#endif
+#if defined(ESPBERRY) || defined(PICANM)
+  if(!display->begin(SSD1306_SWITCHCAPVCC))
+    Serial.println(F("SSD1306 allocation failed"));
+  else
+    Serial.println(F("SSD1306 allocation success"));
 #endif
 #ifdef SH_ESP32
   i2c = new TwoWire(0);
   i2c->begin(SDA_PIN, SCL_PIN);
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
-#endif
   if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
     Serial.println(F("SSD1306 allocation failed"));
   else
     Serial.println(F("SSD1306 allocation success"));
+#endif
+  display->clearDisplay();
   display->setTextSize(1);
   display->setTextColor(WHITE);
   display->setRotation(2);
   //display->setFont(&FreeMono9pt7b);  
   display->setFont(NULL);  
+  display->printf("ESP32 Mast\nRotation\nCorrection");
+  display->display();
 
   // toggle the LED pin at rate of 1 Hz
   pinMode(LED_BUILTIN, OUTPUT);
   app.onRepeatMicros(1e6 / 1, []() { ToggleLed(); });
-
+#ifndef PICANM
   if (!(adsInit = ads.begin())) {  // start ADS1015 ADC
     Serial.println("ads sensor not found");
     honeywellOnToggle = false;
-  } else honeywellSensor.begin();    // Instantiates the moving average object
+  } 
+#endif
+  honeywellSensor.begin();    // Instantiates the moving average object
 
   // Set up NMEA0183 ports and handlers
   pBD=&BoatData;
-#ifdef PARSENMEA0183
+#ifdef PICANM
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
   //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, -1);
@@ -405,7 +549,22 @@ void setup() {
   Serial.println("opening n2kMain");
   n2kMain->Open();
 
-#ifndef SINGLECAN
+#if defined(PICANM) 
+  // instantiate the NMEA2000 object for the wind bus
+  // does not need to register since it's only listening
+  //n2kWind = new tNMEA2000_mcp(N2k_SPI_CS_PIN,MCP_16MHz);
+  n2kWind = new tNMEA2000_esp32(CAN_TX_PIN, CAN_RX_PIN);
+  n2kWind->SetN2kCANMsgBufSize(8);
+  n2kWind->SetN2kCANReceiveFrameBufSize(100);
+  n2kWind->SetMode(tNMEA2000::N2km_ListenAndSend);
+  //n2kWind->SetForwardStream(forward_stream);
+  n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
+  n2kWind->EnableForward(false); 
+  n2kWind->SetForwardOwnMessages(true);
+  n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
+  Serial.println("opening n2kWind");
+  n2kWind->Open();
+#else
   // Initialize the CAN port
     n2kWind.reset();
     int cRetCode;
@@ -413,7 +572,6 @@ void setup() {
         Serial.println("CAN0 Initialized.");
     else {
         Serial.println("CAN0 Initialization Error.");
-        return;
     }
 #endif
  
@@ -425,19 +583,26 @@ void setup() {
   Serial.print("ESP local MAC addr: ");
   Serial.println(WiFi.macAddress());
 
+#ifndef PICANM
   // check compass
   Wire.begin(SDA_PIN,SCL_PIN);
   Wire.beginTransmission(CMPS14_ADDRESS);
-  cmps14_ready = (!Wire.endTransmission()); // null return indicates no error; compass present
-  if (cmps14_ready)
+  // null return indicates no error; compass present
+  if (cmps14_ready = (!Wire.endTransmission()))
     Serial.println("CMPS14 present");
   else {
     Serial.println("CMPS14 not found");
-    return;
   }
+#endif
 
   setupWifi();
   startWebServer();
+  serverStarted=true;
+
+  ElegantOTA.begin(&server);
+
+  WebSerial.begin(&server);
+  WebSerial.onMessage(WebSerialonMessage);
 
   setupESPNOW();
   // send settings to mast compass ESP
@@ -452,10 +617,11 @@ void setup() {
   app.onRepeat(10, []() {
     PollCANStatus();
     n2kMain->ParseMessages();
-#ifndef SINGLECAN
+#ifdef ESPBERRY
     ParseWindCAN();
 #endif
-#ifdef PARSENMEA0183
+#ifdef PICANM
+    n2kWind->ParseMessages();
     NMEA0183_3.ParseMessages(); // GPS from ICOM
 #endif
   });
@@ -481,14 +647,12 @@ void setup() {
   });
 
   // check for DRD
-  app.onRepeat(1000, []() {
+  app.onRepeat(100, []() {
     //Serial.println("check for DRD");
-    loopWifi();
-    /* send settings to mast compass ESP
-    if (sendMastControl())
-      Serial.println("sent control to mast compass OK");
-    else Serial.println("sent control to mast compass FAILED");
-    */
+    drd->loop();
+    ElegantOTA.loop();
+    check_status();  
+    WebSerial.loop();
   });
 
   // check in for new heading 100 msecs = 10Hz

@@ -13,14 +13,16 @@
 #include <esp_now.h>
 #include "BoatData.h"
 
-String host = "ESPwind";
+String host = "ESPwind0";
 
 Preferences preferences;     
 
 // calibration; saved to preferences
 int portRange=50, stbdRange=50; // NB BOTH are positive
 extern Adafruit_ADS1015 ads;
+#ifndef PICANM
 extern int adsInit;
+#endif
 extern int PotValue;
 int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/stbdRange
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
@@ -51,6 +53,8 @@ extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
 const char* PARAM_INPUT_1 = "output";
 const char* PARAM_INPUT_2 = "state";
 
+void logToAll(String s);
+
 // Get Sensor Readings and return JSON object
 String getSensorReadings() {
   // speed/angle/rotateout are assigned in windparse.cpp
@@ -69,7 +73,7 @@ String getSensorReadings() {
   // add true boat compass for compass.html
   readings["boatTrue"] = BoatData.TrueHeading;
   String jsonString = JSON.stringify(readings);
-  //Serial.println(readings);
+  logToAll(jsonString + "\n");
   return jsonString;
 }
 
@@ -152,24 +156,26 @@ String cal_processor(const String& var) {
 
 void startWebServer() {
 
-  Serial.println("starting web server");
+  logToAll("starting web server\n");
 
   preferences.begin("ESPwind", false);
   displayOnToggle = preferences.getBool("displayOnToggle", true);
   compassOnToggle = preferences.getBool("compassOnToggle", false);
+  readings["compass"] = (compassOnToggle ? 1 : 0);
   honeywellOnToggle = preferences.getBool("honeywellOnToggle", false);
+  readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
   mastOrientation = preferences.getInt("mastOrientation", 0);
   mastFrequency = preferences.getInt("mastFrequency", 0);
   BoatData.Variation = preferences.getFloat("variation", 0);
 
   if (!MDNS.begin(host.c_str()) ) {
-    Serial.println(F("Error starting MDNS responder!"));
+    logToAll("Error starting MDNS responder.\n");
   } else
-      Serial.printf("MDNS started %s\n", host.c_str());
+      logToAll("MDNS started " + host + "\n");
 
   // Add service to MDNS-SD
   if (!MDNS.addService("http", "tcp", HTTP_PORT)) {
-    Serial.printf("MDNS add service failed\n");
+    logToAll("MDNS add service failed\n");
   }
   
   // SERVER INIT
@@ -183,8 +189,14 @@ void startWebServer() {
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
   server.serveStatic("/", SPIFFS, "/");
 
-  server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
-    Serial.println("got /heap HTTP request");
+  // here's another bit of ugliness, until I figure out how to dynamically show/hide gauges in JS
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
+    logToAll("index.html\n");
+    request->send(SPIFFS, "/index.html", "text/html");
+  });
+
+    server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
+    logToAll("heap.html\n");
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
   
@@ -202,39 +214,49 @@ void startWebServer() {
      So any page that needs windSpeed can create an element with that label and get the value 
   */
   server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request) {
-    String json = getSensorReadings();
+    logToAll("readings\n");
+    String json;
+    //json.reserve(512);
+    json = getSensorReadings();
+    logToAll("sending readings " + String(json.length()) + "\n");
     request->send(200, "application/json", json);
+    logToAll("readings sent\n");
     json = String();
   });
 
   server.on("/host", HTTP_GET, [](AsyncWebServerRequest *request) {
-    Serial.print("hostname: ");
-    Serial.println(host.c_str());
     String buf = "host: " + host + ", webtimerdelay: " + String(WebTimerDelay);
+    logToAll(buf + "\n");
     request->send_P(200, "text/plain", buf.c_str());
+    buf = String();
   });
 
   server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
-    Serial.println("settings");
+    logToAll("settings.html\n");
     request->send(SPIFFS, "/settings.html", "text/html", false, settings_processor);
   });
 
   server.on("/compass", HTTP_GET, [](AsyncWebServerRequest *request) {
-    Serial.println("compass");
+    logToAll("compass.html\n");
     request->send(SPIFFS, "/compass.html", "text/html");
   });
 
-  // Send a GET request to <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
+  server.on("/mastcompass", HTTP_GET, [](AsyncWebServerRequest *request) {
+    logToAll("mastcompass.html\n");
+    request->send(SPIFFS, "/mastcompass.html", "text/html");
+  });
+
+  // Send a GET request to <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
   server.on("/params", HTTP_GET, [] (AsyncWebServerRequest *request) {
-    //Serial.println("params");
+    logToAll("params.html\n");
     String inputMessage1;
     String inputMessage2;
-    // GET input1 value on <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
+    // GET input1 value on <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
     if (request->hasParam(PARAM_INPUT_1) && request->hasParam(PARAM_INPUT_2)) {
       inputMessage1 = request->getParam(PARAM_INPUT_1)->value();
       inputMessage2 = request->getParam(PARAM_INPUT_2)->value();
       //digitalWrite(inputMessage1.toInt(), inputMessage2.toInt());
-      //Serial.printf("/update got %s %s\n", inputMessage1, inputMessage2);
+      //Serial.printf("/params got %s %s\n", inputMessage1, inputMessage2);
       if (inputMessage1 == "display") {
         if (inputMessage2 == "off")
           displayOnToggle = false;
@@ -243,18 +265,24 @@ void startWebServer() {
         preferences.putBool("displayOnToggle", displayOnToggle);
       }
       if (inputMessage1 == "compass") {
-        if (inputMessage2 == "off")
+        if (inputMessage2 == "off") {
           compassOnToggle = false;
-        else
+          readings["compass"] = 0;
+        } else {
           compassOnToggle = true;
+          readings["compass"] = 1;
+        }
         preferences.putBool("compassOnToggle", compassOnToggle);
         sendMastControl();
       }
       if (inputMessage1 == "honeywell") {
-        if (inputMessage2 == "off")
+        if (inputMessage2 == "off") {
           honeywellOnToggle = false;
-        else
+          readings["honeywell"] = 0;
+        } else {
           honeywellOnToggle = true;
+          readings["honeywell"] = 1;
+        }
         preferences.putBool("honeywellOnToggle", honeywellOnToggle);
       }
     }
@@ -263,6 +291,8 @@ void startWebServer() {
       inputMessage2 = "No message sent";
     }
     request->send(200, "text/plain", "OK");
+    inputMessage1 = String();
+    inputMessage2 = String();
   });
 
   server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -303,8 +333,10 @@ void startWebServer() {
       }
     }*/
     // RN post isn't including PotValue actual value so I'll just read it and hope they don't move the mast
+  #ifndef PICANM
     if (adsInit)
       preferences.putInt("Honeywell.left", ads.readADC_SingleEnded(0));
+  #endif
     if (mastAngle[1])
       preferences.putInt("Mast.left", mastAngle[1]);
     request->send(SPIFFS, "/calibrate3.html", "text/html");
@@ -312,8 +344,10 @@ void startWebServer() {
 
   // POST on calibrate3 means mast is all the way to starboard
   server.on("/calibrate3", HTTP_POST, [](AsyncWebServerRequest *request) {
+  #ifndef PICANM
     if (adsInit)
       preferences.putInt("Honeywell.right", ads.readADC_SingleEnded(0));    
+  #endif
     if (mastAngle[1])
       preferences.putInt("Mast.right", mastAngle[1]);
     request->send(SPIFFS, "/calibrate4.html", "text/html");

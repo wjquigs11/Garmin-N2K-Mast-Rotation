@@ -38,6 +38,29 @@ extern int mastAngle[];
 void httpInit(const char* serverURL);
 String httpGETRequest(const char* serverURL);
 
+// got heading PGN on main bus; only called if we do not have internal compass
+float parseN2KHeading(const tN2kMsg &N2kMsg) {
+  unsigned char SID;
+  double heading;
+  double deviation;
+  double variation;
+  tN2kHeadingReference headingRef;
+
+  //N2kMsg.Print(&Serial);
+  if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
+    //#define DEBUG2
+    #ifdef DEBUG2
+    Serial.print("parseN2KHeading deviation: "); Serial.print(deviation);
+    Serial.print(" variation: "); Serial.print(variation);
+    Serial.print(" headingRef: "); Serial.print(headingRef);
+    Serial.println();
+    #endif
+    if (heading >= 0) 
+      return heading * (180/M_PI);
+  } else Serial.printf("could not parse mast heading\n");
+  return -1.0;
+}
+
 // got heading PGN on wind bus; set mast heading
 // when we get a Wind PGN on bus, we will calculate heading difference and correct
 // all we're doing here is setting mastHeadingDeg
