@@ -48,8 +48,10 @@ double TWS; // meters/sec
 int TWA; // radians
 
 movingAvg honeywellSensor(10);
+#ifndef PICANM
 Adafruit_ADS1015 ads;
 int adsInit;
+#endif
 
 extern tNMEA2000 *n2kMain;
 extern int num_wind_messages;
@@ -64,9 +66,14 @@ int readAnalogRotationValue() {
   const int lowset = 56;
   const int highset = 311;
   
-  //PotValue = analogRead(POT_PIN);
+#if defined(PICANM) || defined(SH_ESP32)
+// TBD: check whether you put an ADC into the controller on the boat
+  PotValue = analogRead(POT_PIN);
+#endif
+#ifdef ESPBERRY
   if (adsInit)
     PotValue = ads.readADC_SingleEnded(0);
+#endif
   //int AltValue = adc1_get_raw(ADC1_CHANNEL_5);
   if (!PotValue)
     return 0;
@@ -113,6 +120,10 @@ int readAnalogRotationValue() {
 #define DEBUGCAN2
 extern MCP2515 n2kWind;
 byte canRx(byte cPort, unsigned long* lMsgID, byte* cMessageIDFormat, byte* cData, byte* cDataLen);
+
+#ifdef PICANM
+void WindSpeed(const tN2kMsg &N2kMsg) {};
+#endif
 
 void ParseWindCAN() {
   double windSpeedMeters;

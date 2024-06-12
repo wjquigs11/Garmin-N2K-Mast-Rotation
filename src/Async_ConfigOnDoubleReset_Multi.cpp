@@ -42,7 +42,9 @@ DoubleResetDetector* drd;
 const int PIN_LED = 2; // D4 on NodeMCU and WeMos. GPIO2/ADC12 of ESP32. Controls the onboard LED.
 
 // SSID and PW for Config Portal
-String ssid = "ESP_" + String(ESP_getChipId(), HEX);
+extern String host;
+String ssid = host;
+//String ssid = "ESP_" + String(ESP_getChipId(), HEX);
 String password = "password";
 //extern const char* password;    // = "your_password";
 

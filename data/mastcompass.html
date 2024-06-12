@@ -1,20 +1,40 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Mast Rotation Sensor</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="icon" type="image/png" href="favicon.ico">
-        <link rel="stylesheet" type="text/css" href="style.css">
-        <script src="gauge.min.js"></script>
-    </head>
-    <body>
-        <div class="topnav">
-            <h1>Mast Rotation Sensor</h1>
-        </div>
-        <p>Center mast and press Confirm</p>
+
+<head>
+    <title>Mast Rotation Sensor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="icon" type="image/png" href="favicon.ico">
+      <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="gauge.min.js"></script>
+</head>
+
+<body>
+    <div class="topnav">
+        <!-- Simulate a smartphone / tablet -->
+        <div class="mobile-container">
+            <div class="topnav">
+                <a href="#home" class="active">
+                    <h1>Mast Compass</h1>
+                </a>
+                <div id="myLinks">
+                    <a href="/settings">Settings</a>
+                    <a href="/calibrate">Calibrate</a>
+                    <a href="/mastcompass">Mast Compass</a>
+                    <a href="/compass">Compass</a>
+                    <a href="/update">Update</a>
+                    <a href="/host">Host info</a>
+                </div>
+                <a href="javascript:void(0);" class="icon" onclick="menuFun()">
+                    <i class="fa fa-bars"></i>
+                </a>
+            </div>
         <div class="content">
-            <div class="card-grid">
-            <!--        <p class="card-title">Rotation</p>
+            <p>Center mast and press Confirm</p>
+            <div class="content">
+                <div class="card-grid">
+                    <!--        <p class="card-title">Rotation</p>
                     <canvas id="gauge-honeyrot"></canvas>
                 </div>
                 <div>
@@ -22,23 +42,25 @@
                 </div>
                 <br>
             -->
-                <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Mast Heading</p>
-                    <p class="reading"><span id="mastHeading"></span></p>
+                    <div class="card">
+                        <p class="card-title"><i style="color:#059e8a;"></i>Mast Heading</p>
+                        <p class="reading"><span id="mastHeading"></span></p>
+                    </div>
+                    <div class="card">
+                        <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading</p>
+                        <p class="reading"><span id="boatHeading"></span></p>
+                    </div>
+                    <div class="card">
+                        <p class="card-title"><i style="color:#059e8a;"></i>Mast Delta</p>
+                        <p class="reading"><span id="mastDelta"></span></p>
+                    </div>
+                    <form action="/mastcompass" method="post">
+                        <button type="submit">Confirm</button>
+                    </form>
                 </div>
-                <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading</p>
-                    <p class="reading"><span id="boatHeading"></span></p>
-                </div>
-                <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Mast Delta</p>
-                    <p class="reading"><span id="mastDelta"></span></p>
-                </div>
-                <form action="/mastcompass" method="post">
-                    <button type="submit">Confirm</button>
-                </form>
             </div>
         </div>
         <script src="main-script.js"></script>
-    </body>
+</body>
+
 </html>
