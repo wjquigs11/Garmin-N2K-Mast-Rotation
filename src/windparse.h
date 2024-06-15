@@ -1,3 +1,4 @@
+#include "elapsedMillis.h"
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21
@@ -5,10 +6,10 @@
 
 void IRAM_ATTR NewDataReadyISR();
 
-//#define ESPBERRY
+#define ESPBERRY
 //#define SH_ESP32  // these defs will probably change with SINGLECAN
 //#define SINGLECAN  // for testing (or non-Garmin) we can use one bus 
-#define PICANM // v1 version on Tatiana
+//#define PICANM // v1 version on Tatiana
 
 #ifdef SH_ESP32
 #define POT_PIN 36 // SH_ESP32
@@ -41,7 +42,7 @@ void WindSpeed(const tN2kMsg &N2kMsg);
 
 extern tNMEA2000Handler NMEA2000Handlers[];
 
-int readAnalogRotationValue();
+float readAnalogRotationValue();
 void ParseWindCAN();
 double ReadWindAngle(int);
 double ReadWindSpeed();
@@ -50,3 +51,11 @@ void SendN2kWind(int);
 
 #define WindUpdatePeriod 500
 
+// timing/display
+extern int num_n2k_messages;
+extern int num_wind_messages;
+extern elapsedMillis time_since_last_can_rx;
+extern elapsedMillis time_since_last_wind_rx;
+extern unsigned long total_time_since_last_wind;
+extern unsigned long avg_time_since_last_wind;
+extern String host;

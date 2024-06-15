@@ -11,6 +11,7 @@
 #include "ESPAsyncWebServer.h"
 #include <Arduino_JSON.h>
 #include <Wire.h>
+#include "compass.h"
 
 // defs for robotshop CMPS14
 extern int CMPS14_ADDRESS;  // Address of CMPS14 shifted right one bit for arduino wire library
@@ -26,6 +27,7 @@ static int variation;
 float mastCompassDeg; 
 float boatCompassDeg;
 int boatCompassCalStatus;
+float mastDelta;
 // how is the compass oriented on the board relative to boat compass
 // when mast is centered, mast compass+orientation == boat compass
 int mastOrientation;
@@ -36,12 +38,6 @@ extern JSONVar readings;
 uint8_t compassAddress[] = {0xE4, 0x65, 0xB8, 0x78, 0xE9, 0x7C};
 esp_now_peer_info_t peerInfo;
 
-// struct we will send to compass
-typedef struct control_s {
-  bool compassOnToggle;
-  int orientation;
-  int frequency;
-} control_s;
 control_s outCommand;
 
 extern bool compassOnToggle;
