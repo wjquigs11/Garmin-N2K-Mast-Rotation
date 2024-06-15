@@ -145,7 +145,7 @@ void setupWifi() {
 #else
   AsyncDNSServer dnsServer;
 
-  ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "AsyncConfigOnDoubleReset");
+  ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "ESPWINDConf");
 #endif
 
 #if USE_CUSTOM_AP_IP

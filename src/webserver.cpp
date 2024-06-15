@@ -12,15 +12,14 @@
 #include "windparse.h"
 #include <esp_now.h>
 #include "BoatData.h"
-
-String host = "ESPwind0";
+#include <Adafruit_SSD1306.h>
 
 Preferences preferences;     
 
 // calibration; saved to preferences
 int portRange=50, stbdRange=50; // NB BOTH are positive
-extern Adafruit_ADS1015 ads;
 #ifndef PICANM
+extern Adafruit_ADS1015 ads;
 extern int adsInit;
 #endif
 extern int PotValue;
@@ -30,7 +29,7 @@ extern int mastOrientation; // mast compass position relative to boat compass po
 int mastFrequency;
 extern int mastRotate, rotateout;
 extern int mastAngle[];
-void sendMastControl();
+bool sendMastControl();
 extern uint8_t compassAddress[];
 extern esp_now_peer_info_t peerInfo;
 extern float mastCompassDeg, boatCompassDeg;
@@ -50,6 +49,7 @@ unsigned long lastTime = 0;
 int WebTimerDelay = 500;
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
+extern Adafruit_SSD1306 display;
 const char* PARAM_INPUT_1 = "output";
 const char* PARAM_INPUT_2 = "state";
 
@@ -73,7 +73,7 @@ String getSensorReadings() {
   // add true boat compass for compass.html
   readings["boatTrue"] = BoatData.TrueHeading;
   String jsonString = JSON.stringify(readings);
-  logToAll(jsonString + "\n");
+  //logToAll(jsonString + "\n");
   return jsonString;
 }
 
@@ -165,7 +165,7 @@ void startWebServer() {
   honeywellOnToggle = preferences.getBool("honeywellOnToggle", false);
   readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
   mastOrientation = preferences.getInt("mastOrientation", 0);
-  mastFrequency = preferences.getInt("mastFrequency", 0);
+  mastFrequency = preferences.getInt("mastFrequency", 100);
   BoatData.Variation = preferences.getFloat("variation", 0);
 
   if (!MDNS.begin(host.c_str()) ) {
@@ -214,13 +214,13 @@ void startWebServer() {
      So any page that needs windSpeed can create an element with that label and get the value 
   */
   server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request) {
-    logToAll("readings\n");
+    //logToAll("readings\n");
     String json;
     //json.reserve(512);
     json = getSensorReadings();
-    logToAll("sending readings " + String(json.length()) + "\n");
+    //logToAll("sending readings " + String(json.length()) + "\n");
     request->send(200, "application/json", json);
-    logToAll("readings sent\n");
+    //logToAll("readings sent\n");
     json = String();
   });
 
@@ -258,9 +258,10 @@ void startWebServer() {
       //digitalWrite(inputMessage1.toInt(), inputMessage2.toInt());
       //Serial.printf("/params got %s %s\n", inputMessage1, inputMessage2);
       if (inputMessage1 == "display") {
-        if (inputMessage2 == "off")
+        if (inputMessage2 == "off") {
           displayOnToggle = false;
-        else
+          display.clearDisplay();
+        } else
           displayOnToggle = true;
         preferences.putBool("displayOnToggle", displayOnToggle);
       }
@@ -296,6 +297,7 @@ void startWebServer() {
   });
 
   server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request) {
+    logToAll("calibrate.html\n");
     request->send(SPIFFS, "/calibrate.html", "text/html", false, cal_processor);
   });
 
@@ -391,6 +393,7 @@ void startWebServer() {
 
   // POST on mastcompass means mast is centered and we can calculate orientation
   server.on("/mastcompass", HTTP_POST, [](AsyncWebServerRequest *request) {
+    logToAll("mastcompass.html\n");
     int delta = mastCompassDeg-boatCompassDeg;
     if (delta > 180) {
       delta -= 360;
@@ -398,9 +401,10 @@ void startWebServer() {
       delta += 360;
     }
     mastOrientation = delta;
-    Serial.printf("mastcompass: delta=%d\n", delta);
+    logToAll("mast compass orientation: " + String(delta) + "\n");
     preferences.putInt("mastOrientation", mastOrientation);
     // TBD: build a page with a gauge that reflects mast orientation and redirect there
+    // until then, send back to mastcompass.html so user can verify that compasses agree when mast is centered
     request->send(SPIFFS, "/mastcompass.html", "text/html");
   });
 
@@ -448,25 +452,5 @@ void startWebServer() {
   }); // onNotFound
 
   server.begin();
-  Serial.print(F("HTTP server started @ "));
-  Serial.println(WiFi.localIP());
+  logToAll("HTTP server started @ " + String(WiFi.localIP()) + "\n");
 }
-
-/*
-void initWebSocket() {
-  server.addHandler(&events);
-}
-void loop() {
-  if ((millis() - lastTime) > WebTimerDelay) {
-    if (APmodeSwitch) {
-      String sensorReadings = getSensorReadings();
-      Serial.println(sensorReadings);
-      notifyClients(sensorReadings);
-    } else {
-      // we're still in AP mode
-      Serial.print(".");
-    }
-    lastTime = millis();
-  }
-  ws.cleanupClients();
-}*/
