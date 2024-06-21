@@ -1,36 +1,25 @@
 // parse wind speed, correct for mast rotation
+
 #include <Arduino.h>
-#include <ActisenseReader.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+//#include <Adafruit_GFX.h>
+//#include <Adafruit_SSD1306.h>
 #include <N2kMessages.h>
 #include <NMEA2000_esp32.h>
-#include <NMEA0183Msg.h>
-#include <NMEA0183Messages.h>
-#include "NMEA0183Handlers.h"
-#include "BoatData.h"
 #include <ReactESP.h>
 #include <Wire.h>
 #include <esp_int_wdt.h>
 #include <esp_task_wdt.h>
+#include <vector>
+#include <numeric>
 #include <movingAvg.h>
-#include "elapsedMillis.h"
-#include <Arduino.h>
-#include <N2kMessages.h>
+//#include <SPI.h>
+#include "windparse.h"
+//#include <driver/adc.h>
 #include <Adafruit_ADS1X15.h>
-#include <WiFi.h>
-#include "SPIFFS.h"
 #include <Arduino_JSON.h>
-#include <ESPmDNS.h>
 #include "mcp2515.h"
 #include "can.h"
-#include "Async_ConfigOnDoubleReset_Multi.h"
-#include <ESPAsyncWebServer.h>
-#include <ElegantOTA.h>
-#include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
-
-#include "windparse.h"
+#include "BoatData.h"
 
 double rotateout;
 // analog values from rotation sensor
@@ -60,8 +49,10 @@ double TWS; // meters/sec
 int TWA; // radians
 
 movingAvg honeywellSensor(10);
+#ifndef PICANM
 Adafruit_ADS1015 ads;
 int adsInit;
+#endif
 
 extern tNMEA2000 *n2kMain;
 extern int num_wind_messages;
@@ -78,9 +69,11 @@ float readAnalogRotationValue() {
   // Define Constants
   const int lowset = 56;
   const int highset = 311;
-#if defined(SH_ESP32)
+#if defined(PICANM) || defined(SH_ESP32)
+// TBD: check whether you put an ADC into the controller on the boat
   PotValue = analogRead(POT_PIN);
-#else
+#endif
+#if defined(ESPBERRY) && !defined(PICANM)
   if (adsInit)
     PotValue = ads.readADC_SingleEnded(0);
 #endif
@@ -149,7 +142,7 @@ void ParseWindCAN() {
   byte cDataLen;
   byte cData[8];
   num_wind_messages++;
-//#define DEBUG
+#define DEBUG
   // Check for dataframe at CAN0
   // Read the message
   if ((cRetCode = n2kWind.readMessage(&canMsg)) == CAN_OK) {

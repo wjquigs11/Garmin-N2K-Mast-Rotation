@@ -1,36 +1,26 @@
 // parse wind speed, correct for mast rotation
+
 #include <Arduino.h>
-#include <ActisenseReader.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+//#include <Adafruit_GFX.h>
+//#include <Adafruit_SSD1306.h>
 #include <N2kMessages.h>
 #include <NMEA2000_esp32.h>
-#include <NMEA0183Msg.h>
-#include <NMEA0183Messages.h>
-#include "NMEA0183Handlers.h"
-#include "BoatData.h"
 #include <ReactESP.h>
 #include <Wire.h>
 #include <esp_int_wdt.h>
 #include <esp_task_wdt.h>
+#include <vector>
+#include <numeric>
 #include <movingAvg.h>
-#include "elapsedMillis.h"
-#include <Arduino.h>
-#include <N2kMessages.h>
-#include <Adafruit_ADS1X15.h>
-#include <WiFi.h>
-#include "SPIFFS.h"
-#include <Arduino_JSON.h>
-#include <ESPmDNS.h>
-#include "mcp2515.h"
-#include "can.h"
-#include "Async_ConfigOnDoubleReset_Multi.h"
-#include <ESPAsyncWebServer.h>
-#include <ElegantOTA.h>
-#include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
-
+//#include <SPI.h>
 #include "windparse.h"
+//#include <driver/adc.h>
+#include <Adafruit_ADS1X15.h>
+#include <Arduino_JSON.h>
+//#include "mcp2515.h"
+//#include "can.h"
+#include "BoatData.h"
+#include "mcp2515_can.h"
 
 double rotateout;
 // analog values from rotation sensor
@@ -60,8 +50,10 @@ double TWS; // meters/sec
 int TWA; // radians
 
 movingAvg honeywellSensor(10);
+#ifndef PICANM
 Adafruit_ADS1015 ads;
 int adsInit;
+#endif
 
 extern tNMEA2000 *n2kMain;
 extern int num_wind_messages;
@@ -78,9 +70,11 @@ float readAnalogRotationValue() {
   // Define Constants
   const int lowset = 56;
   const int highset = 311;
-#if defined(SH_ESP32)
+#if defined(PICANM) || defined(SH_ESP32)
+// TBD: check whether you put an ADC into the controller on the boat
   PotValue = analogRead(POT_PIN);
-#else
+#endif
+#ifdef ESPBERRY
   if (adsInit)
     PotValue = ads.readADC_SingleEnded(0);
 #endif
@@ -128,7 +122,7 @@ float readAnalogRotationValue() {
 //unsigned char rxBuf;
 
 #define DEBUGCAN2
-extern MCP2515 n2kWind;
+extern mcp2515_can n2kWind;
 byte canRx(byte cPort, unsigned long* lMsgID, byte* cMessageIDFormat, byte* cData, byte* cDataLen);
 
 #ifdef PICANM
@@ -145,29 +139,27 @@ void ParseWindCAN() {
   tN2kMsg correctN2kMsg;
   byte result;
   byte cRetCode = CAN_NOMSG;
-  struct can_frame canMsg;
-  byte cDataLen;
-  byte cData[8];
+  uint32_t id;
+  uint8_t  type; // bit0: ext, bit1: rtr
+  uint8_t  cDatalen;
+  byte cdata[MAX_DATA_SIZE] = {0};
+  //struct can_frame canMsg;
+  //byte cDataLen;
+  //byte cData[8];
   num_wind_messages++;
-//#define DEBUG
+
   // Check for dataframe at CAN0
   // Read the message
-  if ((cRetCode = n2kWind.readMessage(&canMsg)) == CAN_OK) {
-    PGN = ((canMsg.can_id & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
-    // Determine Message Format
-    //*cMessageIDFormat = ((canMsg.can_id & 0x80000000) >> 31);
-    cDataLen = canMsg.can_dlc;
-    // why are we copying the array?
-      //for(int nIndex = 0; nIndex < canMsg.can_dlc; nIndex++) {
-        //sprintf(buf, " 0x%.2X", canMsg.data[nIndex]);
-        //Serial.print(buf);
-        //cData[nIndex] = canMsg.data[nIndex];
-      //}
-      //Serial.print(" ");
-    //Serial.print(millis());
-    #ifdef DEBUG
-    Serial.printf("can PGN: %d LEN: %d\n", PGN, cDataLen);
-    #endif
+  //if ((cRetCode = n2kWind.readMessage(&canMsg)) == CAN_OK) {
+  if (n2kWind.checkReceive() != CAN_MSGAVAIL)
+    return;
+  if ((cRetCode = n2kWind.readMsgBuf(&cDatalen, cdata)) == CAN_OK) {
+    id = n2kWind.getCanId();
+    type = (n2kWind.isExtendedFrame() << 0) | (n2kWind.isRemoteRequest() << 1);
+    PGN = ((id & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
+    //#ifdef DEBUG
+    Serial.printf("can PGN: %d LEN: %d retcode: %d\n", PGN, cDatalen, cRetCode);
+    //#endif
   } else {
     // 5 is not an error just means no data on CAN bus
     if (cRetCode != 5)
@@ -176,14 +168,15 @@ void ParseWindCAN() {
   }
   // wind PGN
   if (PGN == 130306) { 
-    int SID = canMsg.data[0];
-    double windSpeed = ((canMsg.data[2] << 8) | canMsg.data[1]);
+//    int SID = canMsg.data[0];
+    int SID = cdata[0];
+    double windSpeed = ((cdata[2] << 8) | cdata[1]);
     windSpeedMeters = windSpeed / 100;
     windSpeedKnots =  windSpeedMeters * 1.943844; // convert m/s to kts
-    double wAngle = ((canMsg.data[4] << 8) | canMsg.data[3]);
+    double wAngle = ((cdata[4] << 8) | cdata[3]);
     float windAngleRadians = wAngle / 10000.0;
     float windAngleDegrees = windAngleRadians * (180/M_PI);
-    uint8_t wRef = canMsg.data[5];
+    uint8_t wRef = cdata[5];
     #ifdef DEBUG
     snprintf(prbuf, PRBUF, "SID: %d speed(kts): %2.2f angle %2.2f/%2.2f ref %d", SID, windSpeedKnots, wAngle, windAngleDegrees, wRef);
     Serial.println(prbuf);
@@ -216,8 +209,8 @@ void ParseWindCAN() {
         mastRotate = mastDelta;
     }
     #ifdef DEBUG
-    Serial.print(" mastRotate: ");
-    Serial.print(mastRotate);
+    //Serial.print(" mastRotate: ");
+    //Serial.println(mastRotate);
     #endif
     double anglesum = windAngleDegrees + mastRotate;    // sensor AFT of mast so subtract rotation
     // ensure sum is 0-359; rotateout holds the corrected AWA
@@ -253,11 +246,13 @@ void ParseWindCAN() {
     // TBD break this into 2 functions
     // update mast heading
     double mastComp;
-    int SID = canMsg.data[0];
-    mastComp = ((canMsg.data[2] << 8) | canMsg.data[1]) / 10000.0; // radians
+    int SID = cdata[0];
+    mastComp = ((cdata[2] << 8) | cdata[1]) / 10000.0; // radians
     // TBD get "reference" to confirm it's N2khr_Unavailable
     if (mastComp > -1) {
-      //Serial.printf("mastComp: %.2f, deg %.2f\n", mastComp, mastComp * 57.296);
+      #ifdef DEBUG
+      Serial.printf("mastComp: %.2f, deg %.2f\n", mastComp, mastComp * 57.296);
+      #endif
       mastCompassDeg = mastComp * 57.296;
       // we get boatCompassDeg here but we should also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
       boatCompassDeg = getCompass(mastOrientation);
@@ -271,7 +266,7 @@ void ParseWindCAN() {
     }   
     //Serial.printf("heading PGN Mast: %.2f Boat: %.2f\n", mastCompassDeg, boatCompassDeg);
   } else {
-    //Serial.printf("unknown PGN: %d LEN: %d\n", PGN, cDataLen);
+    Serial.printf("unknown PGN: %d LEN: %d\n", PGN, cDatalen);
   }
 }
 
