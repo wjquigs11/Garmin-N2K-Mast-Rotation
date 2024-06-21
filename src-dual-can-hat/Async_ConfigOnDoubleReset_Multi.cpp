@@ -154,8 +154,7 @@ uint8_t connectMultiWiFi()
 
   uint8_t status;
 
-  WiFi.mode(WIFI_AP_STA); // remain in AP mode to serve pages even if not connected to external AP
-  //WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_AP_STA);
 
   Serial.print("ESP Board MAC Address:  ");
   Serial.println(WiFi.macAddress());
@@ -220,16 +219,7 @@ uint8_t connectMultiWiFi()
 #if ESP8266
     ESP.reset();
 #else
-//  ESP.restart();
-// if we cannot connect to wifi, just go into STA mode instead so we can communicate over ESPNOW
-//  WiFi.mode(WIFI_STA);
-  LOGERROR3(F("no wifi connect, AP_STA mode Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP() );
-   Serial.print("Setting AP (Access Point)…");
-  // Remove the password parameter, if you want the AP (Access Point) to be open
-  WiFi.softAP(host); //, password
-  IPAddress IP = WiFi.softAPIP();
-  Serial.print("AP IP address: ");
-  Serial.println(IP);
+    ESP.restart();
 #endif
   }
 

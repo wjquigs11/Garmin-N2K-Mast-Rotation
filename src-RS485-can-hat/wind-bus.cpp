@@ -8,6 +8,7 @@ TBD: add wiring from TX on Serial(1) to Autohelm plug; port autopilot code here 
 TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, since it's not working
 */
+
 #include <Arduino.h>
 #include <ActisenseReader.h>
 #include <Adafruit_GFX.h>
@@ -24,6 +25,7 @@ branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, sin
 #include <esp_task_wdt.h>
 #include <movingAvg.h>
 #include "elapsedMillis.h"
+#include "windparse.h"
 #include <Arduino.h>
 #include <N2kMessages.h>
 #include <Adafruit_ADS1X15.h>
@@ -31,15 +33,11 @@ branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, sin
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
-#include "mcp2515.h"
-#include "can.h"
 #include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
 #include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
-
-#include "windparse.h"
+#include "mcp2515_can.h"
 
 #define SCREEN_WIDTH 128  // OLED display width, in pixels
 #define SCREEN_HEIGHT 64  // OLED display height, in pixels
@@ -58,26 +56,23 @@ branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, sin
 #define OLED_CS    14 // RPI pin 31
 #define OLED_RESET 25 // RPI pin 12 - IO25
 #define OLED_DC    13 // RPI pin 7 - IO13
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
+//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
 #endif // ESPBERRY
 
 // Define CAN Ports and their Chip Select/Enable
 //#define CAN_RX_INTERRUPT_MODE 0
-MCP2515 n2kWind(5); // CAN0 interface CS
+mcp2515_can n2kWind(5);
 const int CAN0_INT = 26;    // RPi Pin 16 - IO26
 
 #ifdef PICANM  // v1 of the controller uses PICAN-M HAT
-#define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
+#define CAN_TX_PIN GPIO_NUM_26 // 26 = IO26, not GPIO26, header pin 16
 #define CAN_RX_PIN GPIO_NUM_35
 // commenting out because I'm trying raw CAN parse
 //#define N2k_SPI_CS_PIN 5    
 //#define N2k_CAN_INT_PIN 22   
 //tNMEA2000 *n2kWind;
-// display
 // v1 uses Wire for I2C at standard pins, no defs needed
-#define OLED_RESET 4
-#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#define OLED_RESET -1
 #endif
 
 #ifdef SH_ESP32
@@ -100,12 +95,14 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 // RPI pin 24 = CP0/GPIO8 = IO5
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #endif // SH_ESP32
 
 using namespace reactesp;
 
 ReactESP app;
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
 
 #define RECOVERY_RETRY_MS 1000  // How long to attempt CAN bus recovery
 
@@ -155,7 +152,7 @@ extern int WebTimerDelay;
 extern AsyncEventSource events;
 extern JSONVar readings;
 extern void setupWifi();
-//extern void loopWifi();
+extern void loopWifi();
 void startWebServer();
 String getSensorReadings();
 void setupESPNOW();
@@ -169,7 +166,7 @@ String host = "ESPwind";
 int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
 float parseMastHeading(const tN2kMsg &N2kMsg);  // mast heading
 float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external source
-float getCompass(int correction);      // boat heading from internal ESP32 compass
+float getCompass(int correction);      // boat heading from internal ESP32 CMPS14
 void httpInit(const char* serverName);
 extern const char* serverName;
 extern int mastOrientation;   // delta between mast compass and boat compass
@@ -177,25 +174,13 @@ extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
 extern float mastDelta;
 void mastHeading();
-float mastAngle[2]; // array for both sensors
+int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 
-//IMUType compassType = NONE; 
-#ifdef CMPS14
 // robotshop CMPS14 (boat compass)
-IMUType compassType = CMPS14;
-#endif
-#ifdef BNO08X
-// compass
-const int CMPS14_ADDRESS = 0x60;
-const int ADABNO = 0x4A;
-const int BNO08X_RESET = -1;
-Adafruit_BNO08x bno08x(BNO08X_RESET);
-sh2_SensorValue_t sensorValue;
-IMUType compassType = BNO085;
-#endif
-bool compassReady=false;
+int CMPS14_ADDRESS=0x60;
+bool cmps14_ready=false;
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -218,16 +203,18 @@ void BoatSpeed(const tN2kMsg &N2kMsg);
 const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 
 // NMEA 2000 message handler for main bus
-void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {   
-  //Serial.print("main: "); N2kMsg.Print(&Serial);
+void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {  
+  #ifdef DEBUG 
+  Serial.print("main: "); N2kMsg.Print(&Serial);
+  #endif
   num_n2k_messages++;
   time_since_last_can_rx = 0;
   ToggleLed();
   switch (N2kMsg.PGN) {
     case 127250L: // magnetic heading, use to set variation but do not override internal compass
-#ifdef DEBUG
+      #ifdef DEBUG
       Serial.println(N2kMsg.PGN);
-#endif
+      #endif
       unsigned char SID;
       double heading;
       double deviation;
@@ -235,7 +222,7 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
       tN2kHeadingReference headingRef;
       // we have boat compass; just update variation from other compass
       if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
-        if (compassReady) {
+        if (cmps14_ready) {
             BoatData.Variation = variation;
         } else {
           // no boat compass, use external heading info
@@ -377,12 +364,8 @@ void OLEDdataWindDebug() {
     display.printf("Angle: %d\n", mastAngle[0]);
   }
   if (compassOnToggle) {
-    #ifdef MASTCOMPASS
     display.printf("M: %.1f B: %.1f\n", mastCompassDeg, boatCompassDeg);
     display.printf("Delta: %d\n", mastAngle[1]);
-    #else
-    display.printf("Heading: %.1f\n", boatCompassDeg);
-    #endif
   }
   //Serial.printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
   display.display();
@@ -390,7 +373,6 @@ void OLEDdataWindDebug() {
 
 void WebSerialonMessage(uint8_t *data, size_t len);
 void logToAll(String s);
-void logToAlln(String s);
 void i2cScan();
 void ParseWindCAN();
 
@@ -401,24 +383,22 @@ void setup() {
 
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
-
-  Wire.begin();
   
-#if !defined(SH_ESP32)
+#if defined(ESPBERRY) || defined(PICANM)
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
   digitalWrite(OLED_RESET, LOW);
   delay(500);
   digitalWrite(OLED_RESET, HIGH);
 #endif
-#ifdef ESPBERRY
-  if(!display.begin(SSD1306_EXTERNALVCC))
-#endif
 #ifdef PICANM
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true))
+  displayPtr = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #endif
+#if defined(ESPBERRY) || defined(PICANM)
+  if(!display.begin(SSD1306_SWITCHCAPVCC))
     Serial.println(F("SSD1306 allocation failed"));
   else
     Serial.println(F("SSD1306 allocation success"));
+#endif
 #ifdef SH_ESP32
   i2c = new TwoWire(0);
   i2c->begin(SDA_PIN, SCL_PIN);
@@ -439,13 +419,14 @@ void setup() {
   // toggle the LED pin at rate of 1 Hz
   pinMode(LED_BUILTIN, OUTPUT);
   app.onRepeatMicros(1e6 / 1, []() { ToggleLed(); });
-  if (!(adsInit = ads.begin())) {  // start ADS1015 ADC default 0x4A
+#ifndef PICANM
+  if (!(adsInit = ads.begin())) {  // start ADS1015 ADC
     Serial.println("ads sensor not found");
     honeywellOnToggle = false;
-  } else {
-    Serial.println("init ADS");
-    honeywellSensor.begin();    // Instantiates the moving average object
-  }
+  } 
+#endif
+  honeywellSensor.begin();    // Instantiates the moving average object
+
   // Set up NMEA0183 ports and handlers
   pBD=&BoatData;
 #ifdef PICANM
@@ -508,12 +489,13 @@ void setup() {
   n2kWind->Open();
 #else
   // Initialize the CAN port
-    n2kWind.reset();
+    //n2kWind.reset();
     int cRetCode;
-    if ((n2kWind.setBitrate(CAN_250KBPS, MCP_16MHZ) == CAN_OK) && (cRetCode = n2kWind.setListenOnlyMode() == CAN_OK))
+    //if ((n2kWind.setBitrate(CAN_250KBPS, MCP_16MHZ) == CAN_OK) && (cRetCode = n2kWind.setListenOnlyMode() == CAN_OK))
+    if ((cRetCode = n2kWind.begin(CAN_250KBPS, MCP_12MHz)) != CAN_OK)
         Serial.println("CAN0 Initialized.");
     else {
-        Serial.println("CAN0 Initialization Error.");
+        Serial.printf("CAN0 Initialization Error: %d\n", cRetCode);
     }
 #endif
  
@@ -525,46 +507,19 @@ void setup() {
   Serial.print("ESP local MAC addr: ");
   Serial.println(WiFi.macAddress());
 
-#if defined(CMPS14)
+#ifdef ESPBERRY
   // check compass
   Wire.begin(SDA_PIN,SCL_PIN);
   Wire.beginTransmission(CMPS14_ADDRESS);
   // null return indicates no error; compass present
-  if (compassReady = (!Wire.endTransmission()))
+  if (cmps14_ready = (!Wire.endTransmission()))
     Serial.println("CMPS14 present");
   else {
     Serial.println("CMPS14 not found");
   }
 #endif
-#ifdef BNO08X
-  compassReady = bno08x.begin_I2C(ADABNO);
-  if (compassReady) {
-    Serial.println("BNO08x Found");
-    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
-      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
-      Serial.println(logString);
-    }
-    if (!bno08x.enableReport(SH2_ROTATION_VECTOR, 100))
-      Serial.println("Could not enable rotation vector");
-    else
-      Serial.println("enabled abs rotation vector");
-  } else
-    Serial.printf("Failed to find BNO08x chip @ 0x%x\n", ADABNO);
-#endif
 
   setupWifi();
-
-#if defined(MASTCOMPASS)
-//  setupESPNOW();
-  // we wait to get a broadcast packet from the compass
-
-  // send settings to mast compass ESP
-  //if (sendMastControl())
-  //  logToAlln("sent control to mast compass OK");
-  //else logToAlln("sent control to mast compass failed");
-  // ignore failure for now; we can send again from settings.html if necessary
-#endif
-
   startWebServer();
   serverStarted=true;
 
@@ -573,13 +528,20 @@ void setup() {
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
 
+  setupESPNOW();
+  // send settings to mast compass ESP
+  if (sendMastControl())
+    Serial.println("sent control to mast compass OK");
+  else Serial.println("sent control to mast compass failed");
+  // ignore failure for now; we can send again from settings.html if necessary
+  
   Serial.printf("flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
   app.onRepeat(10, []() {
     PollCANStatus();
     n2kMain->ParseMessages();
-#if defined(ESPBERRY) || defined(PICANM)
+#ifdef ESPBERRY
     ParseWindCAN();
 #endif
 #ifdef PICANMX
@@ -610,20 +572,17 @@ void setup() {
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
   });
 
+  // check for DRD
   app.onRepeat(100, []() {
-    drd->loop(); // double reset detector
-    WebSerial.loop();
+    //Serial.println("check for DRD");
+    drd->loop();
     ElegantOTA.loop();
-  });
-
-// if wifi not connected, we're only going to attempt reconnect once every 5 minutes
-// if we get in range, it's simpler to reboot than to constantly check
-  app.onRepeat(300000, []() {
-    check_status(); // wifi
+    check_status();  
+    WebSerial.loop();
   });
 
   // check in for new heading 100 msecs = 10Hz
-  if (compassReady)
+  if (cmps14_ready)
     app.onRepeat(500, []() {
       //Serial.println("check for new heading");
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
@@ -633,7 +592,6 @@ void setup() {
       // the global boatCompassDeg will always contain the boat compass (magnetic), adjusted for orientation between the boat compass and the mast compass
       boatCompassDeg = getCompass(mastOrientation);
     });
-    else Serial.println("compass not ready no heading reaction");
 
   // update results
   app.onRepeat(1000, []() {

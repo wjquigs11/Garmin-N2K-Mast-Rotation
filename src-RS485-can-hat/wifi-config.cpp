@@ -51,28 +51,25 @@
 //#include <ESPAsync_WiFiManager-Impl.h>          //https://github.com/khoih-prog/ESPAsync_WiFiManager
 
 int32_t getWiFiChannel(const char *ssid) {
-  int32_t channel = 0;
   if (int32_t n = WiFi.scanNetworks()) {
       for (uint8_t i=0; i<n; i++) {
           if (!strcmp(ssid, WiFi.SSID(i).c_str())) {
-            Serial.printf("found ssid %s channel %d\n", WiFi.SSID(i).c_str(), WiFi.channel(i));
-            channel = WiFi.channel(i);
+              return WiFi.channel(i);
           }
       }
-      return channel;
   }
   return 0;
 }
 
 void setupWifi() {
-  //int32_t channel = getWiFiChannel(ssid.c_str());
-  int32_t channel = 6;  // fixed channel for ESPNOW
+  int32_t channel = getWiFiChannel(ssid.c_str());
 
   WiFi.printDiag(Serial); // Uncomment to verify channel number before
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
   esp_wifi_set_promiscuous(false);
   WiFi.printDiag(Serial); // Uncomment to verify channel change after
+
 
   Serial.print(F("\nStarting Async_ConfigOnDoubleReset_Multi using "));
   Serial.print(FS_Name);
@@ -390,7 +387,6 @@ void setupWifi() {
     Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
 }
 
-/* moved to reaction
 void loopWifi()
 {
   // Call the double reset detector loop method every so often,
@@ -402,4 +398,3 @@ void loopWifi()
   // put your main code here, to run repeatedly
   check_status();
 }
-*/

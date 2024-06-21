@@ -1,7 +1,4 @@
 #include "elapsedMillis.h"
-#include <N2kMessages.h>
-#include <NMEA2000_esp32.h>
-#include <Adafruit_BNO08x.h>
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21
@@ -9,14 +6,10 @@
 
 void IRAM_ATTR NewDataReadyISR();
 
-//#define ESPBERRY
+#define ESPBERRY
 //#define SH_ESP32  // these defs will probably change with SINGLECAN
 //#define SINGLECAN  // for testing (or non-Garmin) we can use one bus 
 #define PICANM // v1 version on Tatiana
-//#define CMPS14
-#define BNO08X
-// skip ESPNOW if no mast compass
-#define MASTCOMPASS
 
 #ifdef SH_ESP32
 #define POT_PIN 36 // SH_ESP32
@@ -66,16 +59,3 @@ extern elapsedMillis time_since_last_wind_rx;
 extern unsigned long total_time_since_last_wind;
 extern unsigned long avg_time_since_last_wind;
 extern String host;
-
-enum IMUType {
-    CMPS14,
-    BNO085,
-    NONE
-};
-extern bool compassReady;
-extern IMUType compassType;
-extern const int CMPS14_ADDRESS;
-extern const int ADABNO;
-extern const int BNO08X_RESET;
-extern Adafruit_BNO08x bno08x;
-extern sh2_SensorValue_t sensorValue;

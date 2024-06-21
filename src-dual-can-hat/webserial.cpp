@@ -15,10 +15,12 @@
 #include <esp_task_wdt.h>
 #include <movingAvg.h>
 #include "elapsedMillis.h"
+#include "windparse.h"
 #include <Arduino.h>
 #include <N2kMessages.h>
 #include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
+//#include <AsyncTCP.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
@@ -28,8 +30,6 @@
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
 #include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
-#include "windparse.h"
 
 extern tBoatData *pBD;
 extern tBoatData BoatData;
@@ -85,8 +85,8 @@ extern float mastAngle[2]; // array for both sensors
 // 1 = compass
 
 // robotshop CMPS14 (boat compass)
-//extern int CMPS14_ADDRESS;
-//extern bool compassReady;
+extern int CMPS14_ADDRESS;
+extern bool cmps14_ready;
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -101,19 +101,12 @@ void WindSpeed(const tN2kMsg &N2kMsg);
 #endif
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
+
 void logToAll(String s) {
   Serial.print(s);
   //consLog.print(s);
   if (serverStarted)
     WebSerial.print(s);
-  s = String();
-}
-
-void logToAlln(String s) {
-  Serial.println(s);
-  //consLog.print(s);
-  if (serverStarted)
-    WebSerial.println(s);
   s = String();
 }
 
@@ -145,10 +138,10 @@ void i2cScan() {
 //String wsCommands[] = {"?", "format", "restart"};
 
 void WebSerialonMessage(uint8_t *data, size_t len) {
-  Serial.printf("Received %lu bytes from WebSerial: ", len);
-  Serial.write(data, len);
-  Serial.println();
-  WebSerial.println("Received Data...");
+    Serial.printf("Received %lu bytes from WebSerial: ", len);
+    Serial.write(data, len);
+    Serial.println();
+    WebSerial.println("Received Data...");
   String dataS = String((char*)data);
   // Split the String into an array of Strings using spaces as delimiters
   String words[10]; // Assuming a maximum of 10 words
@@ -164,8 +157,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       startIndex = endIndex + 1;
     }
   }
-  for (int i = 0; i < wordCount; i++) {   
-    WebSerial.println(words[i]); 
+  for (int i = 0; i < wordCount; i++) {    
     if (words[i].equals("?")) {
       WebSerial.println("format (spiffs)");
       WebSerial.println("restart");

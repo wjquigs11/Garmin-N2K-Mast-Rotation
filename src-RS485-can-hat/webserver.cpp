@@ -1,44 +1,27 @@
+
 #include <Arduino.h>
-#include <ActisenseReader.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <N2kMessages.h>
-#include <NMEA2000_esp32.h>
-#include <NMEA0183Msg.h>
-#include <NMEA0183Messages.h>
-#include "NMEA0183Handlers.h"
-#include "BoatData.h"
-#include <ReactESP.h>
-#include <Wire.h>
-#include <esp_int_wdt.h>
-#include <esp_task_wdt.h>
-#include <movingAvg.h>
-#include "elapsedMillis.h"
-#include <Arduino.h>
-#include <N2kMessages.h>
-#include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
-#include "mcp2515.h"
-#include "can.h"
-#include "Async_ConfigOnDoubleReset_Multi.h"
-#include <ESPAsyncWebServer.h>
-#include <ElegantOTA.h>
-#include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
-
 #include <Preferences.h>
-#include <esp_now.h>
+#include <Adafruit_ADS1X15.h>
+#include <N2kMessages.h>
 #include "windparse.h"
+#include <esp_now.h>
+#include "BoatData.h"
+#include <Adafruit_SSD1306.h>
 
 Preferences preferences;     
 
 // calibration; saved to preferences
 int portRange=50, stbdRange=50; // NB BOTH are positive
+#ifndef PICANM
 extern Adafruit_ADS1015 ads;
 extern int adsInit;
+#endif
 extern int PotValue;
 int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/stbdRange
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
@@ -352,8 +335,10 @@ void startWebServer() {
       }
     }*/
     // RN post isn't including PotValue actual value so I'll just read it and hope they don't move the mast
+  #ifndef PICANM
     if (adsInit)
       preferences.putInt("Honeywell.left", ads.readADC_SingleEnded(0));
+  #endif
     if (mastAngle[1])
       preferences.putInt("Mast.left", mastAngle[1]);
     request->send(SPIFFS, "/calibrate3.html", "text/html");
@@ -361,8 +346,10 @@ void startWebServer() {
 
   // POST on calibrate3 means mast is all the way to starboard
   server.on("/calibrate3", HTTP_POST, [](AsyncWebServerRequest *request) {
+  #ifndef PICANM
     if (adsInit)
       preferences.putInt("Honeywell.right", ads.readADC_SingleEnded(0));    
+  #endif
     if (mastAngle[1])
       preferences.putInt("Mast.right", mastAngle[1]);
     request->send(SPIFFS, "/calibrate4.html", "text/html");
