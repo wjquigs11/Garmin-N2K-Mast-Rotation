@@ -60,7 +60,7 @@ bool initialConfig;    // = false;
 #if ( USE_DHCP_IP )
   // Use DHCP
   #if (_ESPASYNC_WIFIMGR_LOGLEVEL_ > 3)
-    #warning Using DHCP IP
+  //  #warning Using DHCP IP
   #endif
 
   IPAddress stationIP   = IPAddress(0, 0, 0, 0);
@@ -221,12 +221,12 @@ uint8_t connectMultiWiFi()
     ESP.reset();
 #else
 //  ESP.restart();
-// if we cannot connect to wifi, just go into STA mode instead so we can communicate over ESPNOW
+// we cannot connect to wifi
 //  WiFi.mode(WIFI_STA);
   LOGERROR3(F("no wifi connect, AP_STA mode Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP() );
    Serial.print("Setting AP (Access Point)…");
   // Remove the password parameter, if you want the AP (Access Point) to be open
-  WiFi.softAP(host); //, password
+  WiFi.softAP(host,"password");
   IPAddress IP = WiFi.softAPIP();
   Serial.print("AP IP address: ");
   Serial.println(IP);

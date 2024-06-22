@@ -67,11 +67,10 @@ function getReadings() {
       if (elementThis = document.getElementById('mastRotate')) elementThis.innerHTML = myObj.mastRotate;
       if (elementThis = document.getElementById('windSpeed')) elementThis.innerHTML = myObj.windSpeed;
       if (elementThis = document.getElementById('windAngle')) elementThis.innerHTML = myObj.windAngle;
-      if (elementThis = document.getElementById('mastHeading')) elementThis.innerHTML = myObj.mastHeading.toFixed(2);
-      //} else document.getElementById('mastHeading') elementThis.innerHTML = 'undefined';
-      if (elementThis = document.getElementById('compassHeading')) elementThis.innerHTML = myObj.compassHeading.toFixed(2);
+      if (elementThis = document.getElementById('mastHeading') && myObj.mastHeading !== undefined && myObj.mastHeading !== null) elementThis.innerHTML = myObj.mastHeading.toFixed(2);
+      if (elementThis = document.getElementById('compassHeading') && myObj.compassHeading !== undefined && myObj.compassHeading !== null) elementThis.innerHTML = myObj.compassHeading.toFixed(2);
       if (elementThis = document.getElementById('mastDelta')) elementThis.innerHTML = myObj.mastDelta;
-      if (elementThis = document.getElementById('boatTrue')) elementThis.innerHTML = myObj.boatTrue.toFixed(2);
+      if (elementThis = document.getElementById('boatTrue') && myObj.boatTrue !== undefined && myObj.boatTrue !== null) elementThis.innerHTML = myObj.boatTrue.toFixed(2);
       if (elementThis = document.getElementById('rotateout')) elementThis.innerHTML = myObj.rotateout;
     }, false);
   }

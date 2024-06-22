@@ -315,7 +315,7 @@ extern bool initialConfig;    // = false;
 #if ( USE_DHCP_IP )
   // Use DHCP
   #if (_ESPASYNC_WIFIMGR_LOGLEVEL_ > 3)
-    #warning Using DHCP IP
+  //  #warning Using DHCP IP
   #endif
 
   extern IPAddress stationIP;   //   = IPAddress(0, 0, 0, 0);

@@ -15,7 +15,7 @@
         <!-- Simulate a smartphone / tablet -->
         <div class="mobile-container">
             <div class="topnav">
-                <a href="#home" class="active">
+                <a href="/index.html" class="active">
                     <h1>Mast Compass</h1>
                 </a>
                 <div id="myLinks">
@@ -31,17 +31,8 @@
                 </a>
             </div>
             <div class="content">
-                <p>Center mast and press Confirm</p>
                 <div class="content">
                     <div class="card-grid">
-                        <!--        <p class="card-title">Rotation</p>
-                    <canvas id="gauge-honeyrot"></canvas>
-                </div>
-                <div>
-                    <canvas id="gauge-magrot"></canvas>
-                </div>
-                <br>
-                -->
                     <div class="card">
                         <p class="card-title"><i style="color:#059e8a;"></i>Mast Heading</p>
                         <p class="reading"><span id="mastHeading"></span></p>
@@ -54,9 +45,20 @@
                         <p class="card-title"><i style="color:#059e8a;"></i>Mast Delta</p>
                         <p class="reading"><span id="mastDelta"></span></p>
                     </div>
+                    <p>Center mast and press Confirm to change mast compass orientation</p>
                     <form action="/mastcompass" method="post">
                         <button type="submit">Confirm</button>
                     </form>
+                    <br>
+                    <form action="http://ESPcompass.local/config" method="get">
+                        <p>orientation: <input type="text" name="orientation" value=%orientation% size="4"></p>
+                        <button type="submit">OK</button>
+                      </form>
+                      <form action="http://ESPcompass.local/config" method="get">
+                        <p>variation: <input type="text" name="variation" value=%variation% size="4"></p>
+                        <button type="submit">OK</button>
+                      </form>
+                      <p><a href="/"><button class="button">Cancel</button></a></p>
                 </div>
             </div>
         </div>
