@@ -62,7 +62,6 @@ extern void loopWifi();
 void startWebServer();
 String getSensorReadings();
 void setupESPNOW();
-bool sendMastControl();
 extern DoubleResetDetector* drd;
 void check_status();
 
@@ -211,7 +210,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println(readings);
     }
     if (words[i].equals("mast")) {
-      sendMastControl();
+      //sendMastControl();
       //WebSerial.println(readings);
     }
   }

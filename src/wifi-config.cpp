@@ -1,3 +1,7 @@
+/*
+How this is working: on double reset, goes into wifi config mode
+I leave the wifi mode as AP_STA so the compass can connect even if there's not a local hotspot
+*/
 /****************************************************************************************************************************
   Async_ConfigOnDoubleReset_Multi.ino
   For ESP8266 / ESP32 boards
@@ -65,14 +69,7 @@ int32_t getWiFiChannel(const char *ssid) {
 }
 
 void setupWifi() {
-  //int32_t channel = getWiFiChannel(ssid.c_str());
-  int32_t channel = 6;  // fixed channel for ESPNOW
-
-  WiFi.printDiag(Serial); // Uncomment to verify channel number before
-  esp_wifi_set_promiscuous(true);
-  esp_wifi_set_channel(channel, WIFI_SECOND_CHAN_NONE);
-  esp_wifi_set_promiscuous(false);
-  WiFi.printDiag(Serial); // Uncomment to verify channel change after
+  int32_t channel = getWiFiChannel(ssid.c_str());
 
   Serial.print(F("\nStarting Async_ConfigOnDoubleReset_Multi using "));
   Serial.print(FS_Name);
@@ -148,7 +145,7 @@ void setupWifi() {
 #else
   AsyncDNSServer dnsServer;
 
-  ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "ESPWINDConf");
+  ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "ESPWIND");
 #endif
 
 #if USE_CUSTOM_AP_IP

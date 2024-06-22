@@ -38,6 +38,7 @@ branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, sin
 #include <ElegantOTA.h>
 #include <WebSerial.h>
 #include <Adafruit_BNO08x.h>
+#include <HTTPClient.h>
 
 #include "windparse.h"
 
@@ -553,18 +554,6 @@ void setup() {
 #endif
 
   setupWifi();
-
-#if defined(MASTCOMPASS)
-//  setupESPNOW();
-  // we wait to get a broadcast packet from the compass
-
-  // send settings to mast compass ESP
-  //if (sendMastControl())
-  //  logToAlln("sent control to mast compass OK");
-  //else logToAlln("sent control to mast compass failed");
-  // ignore failure for now; we can send again from settings.html if necessary
-#endif
-
   startWebServer();
   serverStarted=true;
 
@@ -647,7 +636,6 @@ void setup() {
       num_n2k_messages = 0;
       num_wind_messages = 0;
     }
-    //Serial.printf("Boat Heading: %.2f Variation %.2f\n", BoatData.TrueHeading, BoatData.Variation);
   });
 
 }

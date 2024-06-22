@@ -28,9 +28,8 @@
 #include <ElegantOTA.h>
 #include <WebSerial.h>
 #include <Adafruit_BNO08x.h>
-
+#include <HTTPClient.h>
 #include <Preferences.h>
-#include <esp_now.h>
 #include "windparse.h"
 
 Preferences preferences;     
@@ -46,9 +45,7 @@ extern int mastOrientation; // mast compass position relative to boat compass po
 int mastFrequency;
 extern int mastRotate, rotateout;
 extern int mastAngle[];
-bool sendMastControl();
 extern uint8_t compassAddress[];
-extern esp_now_peer_info_t peerInfo;
 extern float mastCompassDeg, boatCompassDeg;
 extern int boatCompassCalStatus;
 extern tBoatData BoatData;
@@ -119,20 +116,6 @@ String settings_processor(const String& var) {
   if (var == "frequency") return String(mastFrequency);
   if (var == "controlMAC") return String(WiFi.macAddress());
   if (var == "variation") return String(BoatData.Variation);
-  if (var == "compMAC") {
-    String peerMAC;
-    for (int i=0; i<ESP_NOW_ETH_ALEN; i++) {
-      //peerMAC.concat("0x");
-      //peerMAC.concat(String(peerInfo.peer_addr[i], HEX).toUpperCase());
-      //peerMAC.concat(", ");
-      String hexStr = String(peerInfo.peer_addr[i], HEX);
-      hexStr.toUpperCase();
-      peerMAC += "0x" + hexStr;
-      if (i<ESP_NOW_ETH_ALEN-1) peerMAC += ", ";
-    }
-    Serial.printf("compMAC %s\n", peerMAC);
-    return peerMAC;
-  }
   return String("settings processor: placeholder not found " + var);
 }
 
@@ -291,7 +274,7 @@ void startWebServer() {
           readings["compass"] = 1;
         }
         preferences.putBool("compassOnToggle", compassOnToggle);
-        sendMastControl();
+        //sendMastControl();
       }
       if (inputMessage1 == "honeywell") {
         if (inputMessage2 == "off") {
@@ -398,7 +381,7 @@ void startWebServer() {
           BoatData.Variation = atof(p->value().c_str());
           preferences.putFloat("variation", BoatData.Variation);
         }
-        sendMastControl();  // notify mast compass via ESPNOW
+        //sendMastControl();  // notify mast compass via ESPNOW
       } // isPost
     } // for params
     request->send(SPIFFS, "/index.html", "text/html");

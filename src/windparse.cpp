@@ -149,7 +149,7 @@ void ParseWindCAN() {
   byte cDataLen;
   byte cData[8];
   num_wind_messages++;
-//#define DEBUG
+#define DEBUG
   // Check for dataframe at CAN0
   // Read the message
   if ((cRetCode = n2kWind.readMessage(&canMsg)) == CAN_OK) {
