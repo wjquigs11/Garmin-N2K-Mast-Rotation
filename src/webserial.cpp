@@ -22,8 +22,8 @@
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
-#include "mcp2515.h"
-#include "can.h"
+//#include "mcp2515.h"
+//#include "can.h"
 #include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
@@ -92,7 +92,6 @@ extern float mastAngle[2]; // array for both sensors
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
 
-
 #ifdef ESPBERRY
 void WindSpeed();
 #else
@@ -101,19 +100,45 @@ void WindSpeed(const tN2kMsg &N2kMsg);
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
 void logToAll(String s) {
-  Serial.print(s);
-  //consLog.print(s);
-  if (serverStarted)
-    WebSerial.print(s);
-  s = String();
-}
-
-void logToAlln(String s) {
   Serial.println(s);
-  //consLog.print(s);
+  //consLog.println(s);
   if (serverStarted)
     WebSerial.println(s);
   s = String();
+}
+
+void lsAPconn() {
+  logToAll("AP connections");
+  wifi_sta_list_t wifi_sta_list;
+  tcpip_adapter_sta_list_t adapter_sta_list;
+ 
+  memset(&wifi_sta_list, 0, sizeof(wifi_sta_list));
+  memset(&adapter_sta_list, 0, sizeof(adapter_sta_list));
+ 
+  esp_wifi_ap_get_sta_list(&wifi_sta_list);
+  tcpip_adapter_get_sta_list(&wifi_sta_list, &adapter_sta_list);
+ 
+  logToAll("stations: " + String(adapter_sta_list.num));
+  for (int i = 0; i < adapter_sta_list.num; i++) {
+    tcpip_adapter_sta_info_t station = adapter_sta_list.sta[i];
+    logToAll("station nr " + String(i) + " MAC:");
+    String printS;
+    for(int i = 0; i< 6; i++){
+      sprintf(prbuf, "%02X", station.mac[i]);
+      printS += prbuf;
+      if(i<5) printS += ".";
+    }
+    logToAll(printS);
+    Serial.print("IP: ");  
+    byte octet[4];
+    octet[3] = station.ip.addr & 0xFF;
+    octet[2] = (station.ip.addr >> 8) & 0xFF;
+    octet[1] = (station.ip.addr >> 16) & 0xFF;
+    octet[0] = (station.ip.addr >> 24) & 0xFF;
+    printS = String(octet[3]) + "." + String(octet[2]) + "." + String(octet[1]) + "." + String(octet[0]);
+    logToAll(printS);
+    printS = String();
+    }
 }
 
 void i2cScan() {
@@ -173,6 +198,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println("status");
       WebSerial.println("readings (JSON)");
       WebSerial.println("mast");
+      WebSerial.println("lsap (list access point connections)");
+      WebSerial.println("toggle (check)");
+      WebSerial.println("gps");
     }
     if (words[i].equals("status")) {
       WebSerial.println("          AWS (in): " + String(WindSensor::windSpeedKnots) + "\n");
@@ -212,6 +240,18 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     if (words[i].equals("mast")) {
       //sendMastControl();
       //WebSerial.println(readings);
+    }
+    if (words[i].equals("lsap")) {
+      lsAPconn();
+    }
+    if (words[i].equals("toggle")) {
+      WebSerial.println("Display: " + String(displayOnToggle));
+      WebSerial.println("Compass: " + String(compassOnToggle));
+      WebSerial.println("Honeywell: " + String(honeywellOnToggle));
+    }
+    if (words[i].equals("gps")) {
+      WebSerial.println("Latitude: " + String(pBD->Latitude));
+      WebSerial.println("Longitude: " + String(pBD->Longitude));
     }
   }
   for (int i=0; i<wordCount; i++) words[i] = String();

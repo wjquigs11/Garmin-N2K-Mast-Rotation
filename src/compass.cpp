@@ -1,6 +1,7 @@
 /* 
 Currently receiving Heading PGN from mast compass on N2K network with Wind sensor
 Using HTTP PUT to change mast compass settings
+TBD remove enum for compass type and just compile with different types; change #ifdef back to CMPS14
 */
 #include <Arduino.h>
 #include <ActisenseReader.h>
@@ -25,8 +26,8 @@ Using HTTP PUT to change mast compass settings
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
-#include "mcp2515.h"
-#include "can.h"
+//#include "mcp2515.h"
+//#include "can.h"
 #include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
@@ -36,7 +37,7 @@ Using HTTP PUT to change mast compass settings
 #include "windparse.h"
 
 // defs for robotshop CMPS14
-//extern int CMPS14_ADDRESS;  // Address of CMPS14 shifted right one bit for arduino wire library
+extern const int CMPS14_ADDRESS;  // Address of CMPS14 shifted right one bit for arduino wire library
 #define ANGLE_8  1          // Register to read 8bit angle from (starting...we read 5 bytes)
 #define CAL_STATE 0x1E      // register to read calibration state
 
@@ -51,7 +52,7 @@ int boatCompassCalStatus;
 float mastDelta;
 // how is the compass oriented on the board relative to boat compass
 // when mast is centered, mast compass+orientation == boat compass
-int mastOrientation;
+int mastOrientation, sensOrientation;
 extern int mastFrequency;
 extern bool compassOnToggle;
 extern JSONVar readings;
@@ -62,7 +63,6 @@ JSONVar board;
 
 extern AsyncWebServer server;
 extern AsyncEventSource events;
-extern int mastAngle[];
 
 float getCompass(int correction);
 void logToAll(String message);
@@ -127,13 +127,14 @@ float getCMPS14(int correction) {
 
 float calculateHeading(float r, float i, float j, float k, int correction);
 
+#ifdef BNO08X
 // TBD make this a library shared between controller and mast compass
 float getBNO085(int correction) {
   float accuracy, heading;
   // not checking timing here since it's controlled by ReactESP
   //unsigned long currentMillis = millis();
   //if (currentMillis - previousReading < BNOREADRATE) {
-  //  logToAll("reading too soon" + String(currentMillis) + "-" + String(previousReading) + "\n");
+  //  logToAll("reading too soon" + String(currentMillis) + "-" + String(previousReading));
   //  return -2.0; // minimum delay in case displayDelay is set too low
   //}
   //previousReading = currentMillis;
@@ -159,7 +160,7 @@ float getBNO085(int correction) {
   switch (sensorValue.sensorId) {
   case SH2_ROTATION_VECTOR:
     accuracy = sensorValue.un.rotationVector.accuracy;
-    heading = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      //logToAll("heading1: " + String(heading) + "  cal: " + calStatus + "\n");
+    heading = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      //logToAll("heading1: " + String(heading) + "  cal: " + calStatus);
     return heading;
     break;
   default:
@@ -168,6 +169,7 @@ float getBNO085(int correction) {
   }
   return -4.0;
 }
+#endif
 
 // Function to calculate tilt-compensated heading from a quaternion
 float calculateHeading(float r, float i, float j, float k, int correction) {
@@ -194,12 +196,11 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
 float getCompass(int correction) {
   if (!compassReady)
     return -1;
-  if (compassType == CMPS14)
+#ifdef CMPS14
     return getCMPS14(correction);
-  else if (compassType == BNO085)
+#else
     return getBNO085(correction);
-  else
-    return -2;
+#endif
 }
 
 /*
@@ -212,3 +213,54 @@ endTransmission() returns:
 4: other error.
 5: timeout
 */
+
+// Why is this here? If there is no boat compass then we can get heading from the main N2K bus
+// (from an external compass)
+// called when we get a Mag Heading message from bus (i.e. from RPI, boat heading)
+// checks mast heading (async) and prints difference (in degrees)
+// RETURNS difference, if you want to xmit rudder angle add 50 (if mast range is -50..50)
+int convertMagHeading(const tN2kMsg &N2kMsg) {
+  unsigned char SID;
+  double heading;
+  double deviation;
+  double variation;
+  tN2kHeadingReference headingRef;
+  tN2kMsg correctN2kMsg; 
+
+  //N2kMsg.Print(&Serial);
+  if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef) ) {
+    #ifdef DEBUG2
+    Serial.print("SID: "); Serial.print(SID);
+    Serial.print(" heading: "); Serial.print(heading);
+    Serial.print(" deviation: "); Serial.print(deviation);
+    Serial.print(" variation: "); Serial.print(variation);
+    Serial.print(" headingRef: "); Serial.print(headingRef);
+    Serial.println();
+    #endif
+    if (headingRef == N2khr_magnetic && heading > 0) {  // need to check heading because it could be null
+      //Serial.print("\tcompass heading: ");
+      mastCompassDeg = heading * (180/M_PI);
+      //readings["heading"] = String(mastCompassDeg);
+      //Serial.print(headingDeg);
+      // compare to heading reading from mast compass (via wifi)
+      //Serial.print(" mast bearing: ");
+      //Serial.print(mastOrientation);
+      //Serial.print(" difference: ");
+      int delta = mastOrientation - mastCompassDeg;
+      if (delta > 180) {
+        delta -= 360;
+      } else if (delta < -180) {
+        delta += 360;
+      }
+      readings["mastDelta"] = String(delta); // TBD shift range to 0..100 for gauge
+      mastAngle[1] = delta;
+      //Serial.println(mastAngle[1]);
+      return delta;
+    } else {
+      Serial.println("no magnetic heading from main compass; doing nothing");
+      return -1;
+    }
+  }
+  return -1;
+}
+

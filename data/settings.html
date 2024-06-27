@@ -65,7 +65,7 @@
     <!-- Simulate a smartphone / tablet -->
     <div class="mobile-container">
       <div class="topnav">
-        <a href="#home" class="active">
+        <a href="/" class="active">
           <h1>Mast Rotation Settings</h1>
         </a>
         <div id="myLinks">
@@ -84,6 +84,7 @@
     <div class="content">
       %BUTTONPLACEHOLDER%
       <form action="/compass" method="post">
+        <p>Mast sensor orientation: <input type="text" name="sensorient" value=%sensorient% size="6"></p>
         <p>(Use /mastcompass for dynamic orientation.)</p>
         <p>Mast compass orientation: <input type="text" name="orientation" value=%orientation% size="6"></p>
         <p>Mast compass frequency: <input type="text" name="frequency" value=%frequency% size="4"></p>

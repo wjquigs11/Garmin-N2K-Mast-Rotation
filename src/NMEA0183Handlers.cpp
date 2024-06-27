@@ -84,7 +84,8 @@ void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg) {
 void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
   if (pBD==0) return;
   
-  if (NMEA0183ParseRMC_nc(NMEA0183Msg,pBD->GPSTime,pBD->Latitude,pBD->Longitude,pBD->COG,pBD->SOG,pBD->DaysSince1970,pBD->Variation)) {
+  double variation;
+  if (NMEA0183ParseRMC_nc(NMEA0183Msg,pBD->GPSTime,pBD->Latitude,pBD->Longitude,pBD->COG,pBD->SOG,pBD->DaysSince1970,variation)) {
   } else if (NMEA0183HandlersDebugStream!=0) { NMEA0183HandlersDebugStream->println("Failed to parse RMC"); }
   if (n2kMain!=0) {
       tN2kMsg N2kMsg;
@@ -101,10 +102,9 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
       // LatLonRapid
       SetN2kPGN129025(N2kMsg, pBD->Latitude, pBD->Longitude);
       n2kMain->SendMsg(N2kMsg); 
-      // Variation
-      SetN2kPGN127258(N2kMsg, 255, N2kmagvar_Calc, pBD->DaysSince1970, pBD->Variation);
-      
-      n2kMain->SendMsg(N2kMsg);
+      // Variation - taking out since it doesn't seem to be parsing correctly
+      //SetN2kPGN127258(N2kMsg, 255, N2kmagvar_Calc, pBD->DaysSince1970, pBD->Variation);
+      //n2kMain->SendMsg(N2kMsg);
     }
   if (NMEA0183HandlersDebugStream!=0) {
       NMEA0183HandlersDebugStream->print("RMC Time="); NMEA0183HandlersDebugStream->println(pBD->GPSTime);
