@@ -10,8 +10,6 @@ function getReadings() {
   xhr.onreadystatechange = function() {
     if (this.readyState == 4 && this.status == 200) {
       var myObj = JSON.parse(this.responseText);
-      //gaugeMagRot.value = -myObj.mastDelta;
-      //gaugeHoneyRot.value = myObj.mastRotate;
       document.getElementById('mastRotate').innerHTML = myObj.mastRotate;
       document.getElementById('windSpeed').innerHTML = myObj.windSpeed;
       document.getElementById('windAngle').innerHTML = myObj.windAngle;      
@@ -42,37 +40,37 @@ function getReadings() {
       console.log("new_readings", e.data);
       var myObj = JSON.parse(e.data);
       console.log(myObj);
-      //updatePage(myObj);
-      var gaugeMag = document.querySelector('#gauge-magrot');
-      if (gaugeMag) {
+      //var gaugeCanvas = document.querySelector('#gauge-magrot');
+      var gaugeCanvas = document.getElementById('gauge-magrot')
+      if (gaugeCanvas) {
         if (myObj.compass) {
-          gaugeMag.removeAttribute("hidden");
-          gaugeMag.style.display = '';
-          gaugeMag.value = -myObj.mastDelta;
+          // change the canvas element holding the gauge
+          gaugeCanvas.removeAttribute("hidden");
+          gaugeCanvas.style.display = '';
+          // change the gauge itself
+          gaugeMagRot.value = myObj.mastDelta;
         } else {
-          gaugeMag.style.display = 'none';
+          gaugeCanvas.style.display = 'none';
         }
       }
-      gaugeComp = document.querySelector('#gauge-honeyrot');
-      if (gaugeComp) {
+      gaugeCanvas = document.getElementById('gauge-honeyrot');
+      if (gaugeCanvas) {
         if (myObj.honeywell) {
-          gaugeComp.removeAttribute("hidden");
-          gaugeComp.style.display = '';
+          gaugeCanvas.removeAttribute("hidden");
+          gaugeCanvas.style.display = '';
           gaugeHoneyRot.value = myObj.mastRotate;
         } else { 
-          gaugeComp.style.display = 'none';
+          gaugeCanvas.style.display = 'none';
         }
       }
       var elementThis;
-      if (elementThis = document.getElementById('mastRotate')) elementThis.innerHTML = myObj.mastRotate;
+      //if (elementThis = document.getElementById('mastRotate')) elementThis.innerHTML = myObj.mastRotate;
       if (elementThis = document.getElementById('windSpeed')) elementThis.innerHTML = myObj.windSpeed;
       if (elementThis = document.getElementById('windAngle')) elementThis.innerHTML = myObj.windAngle;
-      if (elementThis = document.getElementById('mastHeading')) elementThis.innerHTML = myObj.mastHeading.toFixed(2);
-      //if (elementThis = document.getElementById('compassHeading') && myObj.compassHeading !== undefined && myObj.compassHeading !== null) elementThis.innerHTML = myObj.compassHeading.toFixed(2);
-      if (elementThis = document.getElementById('compassHeading')) elementThis.innerHTML = myObj.compassHeading.toFixed(2);
-      if (elementThis = document.getElementById('mastDelta')) elementThis.innerHTML = myObj.mastDelta;
-      //if (elementThis = document.getElementById('boatTrue') && myObj.boatTrue !== undefined && myObj.boatTrue !== null) elementThis.innerHTML = myObj.boatTrue.toFixed(2);
-      if (elementThis = document.getElementById('boatTrue')) elementThis.innerHTML = myObj.boatTrue.toFixed(2);
+      if (elementThis = document.getElementById('mastHeading')) elementThis.innerHTML = myObj.mastHeading;
+      if (elementThis = document.getElementById('boatHeading')) elementThis.innerHTML = myObj.boatHeading;
+      //if (elementThis = document.getElementById('mastDelta')) elementThis.innerHTML = myObj.mastDelta;
+      if (elementThis = document.getElementById('boatTrue')) elementThis.innerHTML = myObj.boatTrue;
       if (elementThis = document.getElementById('rotateout')) elementThis.innerHTML = myObj.rotateout;
     }, false);
   }

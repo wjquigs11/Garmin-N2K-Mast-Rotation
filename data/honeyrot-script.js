@@ -12,7 +12,7 @@ var gaugeHoneyRot = new RadialGauge({
 //    colorValueBoxRectEnd: "#049faa",
 //    colorValueBoxBackground: "#f1fbfc",
   valueInt: 2,
-  valueBox: false,
+  valueBox: true,
   majorTicks: [
       "-50",
       "0",

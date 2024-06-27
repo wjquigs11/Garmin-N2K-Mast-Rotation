@@ -6,7 +6,6 @@ Also reads NMEA0183 data from ICOM VHF and injects it onto N2K bus
 Web server for displaying wind speed/angle/mast rotation
 TBD: add wiring from TX on Serial(1) to Autohelm plug; port autopilot code here and modify web interface
 TBD: translate apparent wind to Seatalk1 and send to tiller pilot
-branch manual-parse-wind-bus to switch wind bus to not use Timo mcp library, since it's not working
 */
 #include <Arduino.h>
 #include <ActisenseReader.h>
@@ -214,7 +213,7 @@ bool compassReady=false;
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
 
-bool displayOnToggle=true, compassOnToggle=false, honeywellOnToggle=false;
+bool displayOnToggle=true, compassOnToggle=false, honeywellOnToggle=false, demoModeToggle=false;
 
 void ToggleLed() {
   static bool led_state = false;
@@ -382,6 +381,7 @@ void logToAll(String s);
 void logToAlln(String s);
 void i2cScan();
 void ParseWindCAN();
+void demoIncr();
 
 void setup() {
   Serial.begin(115200);
@@ -394,14 +394,15 @@ void setup() {
   Wire.begin();
 
 #ifdef DISPLAYON  
-#if !defined(SH_ESP32)
+/*#if !defined(SH_ESP32)
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
   digitalWrite(OLED_RESET, LOW);
   delay(500);
   digitalWrite(OLED_RESET, HIGH);
-#endif
+  delay(500);
+#endif*/
 #ifdef ESPBERRY
-  if(!display.begin(SSD1306_EXTERNALVCC))
+  if(!display.begin(SSD1306_EXTERNALVCC, 0, true))
 #endif
 #ifdef PICANM
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true))
@@ -419,12 +420,6 @@ void setup() {
     Serial.println(F("SSD1306 allocation success"));
 #endif
 
-  display.clearDisplay();
-  display.setTextSize(1);             
-  display.setTextColor(SSD1306_WHITE);
-  display.setRotation(2);
-  display.setCursor(0,0);
-  display.println(F("ESP32 Mast\nRotation\nCorrection"));
 #endif
   // toggle the LED pin at rate of 1 Hz
   pinMode(LED_BUILTIN, OUTPUT);
@@ -544,6 +539,14 @@ void setup() {
   } else
     Serial.printf("Failed to find BNO08x chip @ 0x%x\n", ADABNO);
 #endif
+  Serial.println("OLED started");
+  display.clearDisplay();
+  display.setTextSize(1);             
+  display.setTextColor(SSD1306_WHITE);
+  display.setRotation(2);
+  display.setCursor(10,10);
+  display.println(F("ESP32 Mast\nRotation\nCorrection"));
+  Serial.println("display init");
 
   setupWifi();
   startWebServer();
@@ -614,7 +617,7 @@ void setup() {
   app.onRepeat(WebTimerDelay, []() {
     //Serial.println("transmit sensor readings");
     // Send Events to the client with the Sensor Readings Every x seconds
-    events.send("ping",NULL,millis());
+    //events.send("ping",NULL,millis());
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
   });
 
@@ -634,7 +637,7 @@ void setup() {
   });
 
   // check in for new heading 100 msecs = 10Hz
-  if (compassReady)
+  if (compassReady && !demoModeToggle)
     app.onRepeat(500, []() {
       //Serial.println("check for new heading");
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
@@ -666,9 +669,41 @@ void setup() {
       logToAll(prbuf);
       #endif
     }
+    if (demoModeToggle) {
+      demoIncr();
+    }
   });
 #endif
 
 }
 
 void loop() { app.tick(); }
+
+void demoInit() {
+  WindSensor::windSpeedKnots = 9.8;
+  WindSensor::windAngleDegrees = 47;
+  rotateout = 30;
+  mastCompassDeg = 100;
+  boatCompassDeg = 120;
+  mastAngle[1] = mastAngle[0] = mastCompassDeg - boatCompassDeg;
+  PotValue = 50;
+  BoatData.TrueHeading = 131;
+}
+
+void demoIncr() {
+  WindSensor::windSpeedKnots -= 1;
+  if (WindSensor::windSpeedKnots < 0) WindSensor::windSpeedKnots = 10;
+  WindSensor::windAngleDegrees -=5;
+  if (WindSensor::windAngleDegrees < 0) WindSensor::windAngleDegrees = 100;
+  rotateout -=3;
+  if (rotateout < 0) rotateout = 45;
+  mastCompassDeg -=10 ;
+  if (mastCompassDeg < 0) mastCompassDeg = 200;
+  boatCompassDeg -= 9;
+  if (boatCompassDeg < 0) boatCompassDeg = 220;
+  BoatData.TrueHeading -= 10;
+  if (BoatData.TrueHeading < 0) BoatData.TrueHeading = 231;
+  mastAngle[0] = mastAngle[1] = mastCompassDeg - boatCompassDeg;
+  PotValue -= 5;
+  if (PotValue < 0) PotValue = 100;
+}

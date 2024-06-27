@@ -101,7 +101,6 @@ float readAnalogRotationValue() {
     PotHi = PotValue;
     readings["PotHi"] = String(PotHi); // for calibration
   }
-  readings["PotValue"] = String(PotValue);
 
   #ifdef DEBUG
   sprintf(buf, " pot(l/v/h): %d/%d/%d ", PotLo, PotValue, PotHi);
@@ -122,7 +121,6 @@ float readAnalogRotationValue() {
   //sprintf(prbuf,"map: %d %d %d %d %d = %0.2f\n", oldValue, lowset, highset, -portRange, stbdRange, mastAngle[0]);
   //logToAll(prbuf);
   mastAngle[0] = map(oldValue, lowset, highset, -portRange, stbdRange)+sensOrientation;    
-  readings["mastRotate"] = mastAngle[0];
   #ifdef DEBUG2
   sprintf(buf, "%d %d %d %d", oldValue, lowset, highset, mastRot);
   Serial.println(buf);
@@ -185,9 +183,7 @@ void WindSpeed() {
   //Serial.println("windspeed");
   num_wind_messages++;
   WindSensor::windSpeedKnots = WindSensor::windSpeedMeters * 1.943844; // convert m/s to kts
-  readings["windSpeed"] = String(WindSensor::windSpeedKnots);
   WindSensor::windAngleDegrees = WindSensor::windAngleRadians * (180/M_PI);
-  readings["windAngle"] = String(WindSensor::windAngleDegrees);
   if (wRef != N2kWind_Apparent) { // N2kWind_Apparent
     Serial.printf("got wind PGN not apparent! %d\n", wRef);
     return;
@@ -201,9 +197,6 @@ void WindSpeed() {
     //Serial.printf("honeywell mastrotate = %d\n", (int)mastRotate);
   }
   if (compassOnToggle) {
-    readings["mastHeading"] = String(mastCompassDeg);
-    readings["boatHeading"] = String(boatCompassDeg);
-    readings["mastDelta"] = String(mastDelta);
     // only use compass if Honeywell not enabled
     if (!honeywellOnToggle)
       mastRotate = mastDelta;
@@ -212,7 +205,7 @@ void WindSpeed() {
   Serial.print(" mastRotate: ");
   Serial.print(mastRotate);
   #endif
-  double anglesum = WindSensor::windAngleDegrees + mastRotate;    // sensor AFT of mast so subtract rotation
+  float anglesum = WindSensor::windAngleDegrees + mastRotate;    // sensor AFT of mast so subtract rotation
   // ensure sum is 0-359; rotateout holds the corrected AWA
   if (anglesum<0) {                             
     rotateout = anglesum + 360;
@@ -223,7 +216,6 @@ void WindSpeed() {
   else {
     rotateout = anglesum;               
   }
-  readings["rotateout"] = String(rotateout);
   #ifdef DEBUG
   snprintf(prbuf, PRBUF, "rotate now %d low %d high %d", PotValue, PotLo, PotHi);
   Serial.println(prbuf);
