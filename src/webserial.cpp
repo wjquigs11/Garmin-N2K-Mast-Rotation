@@ -151,11 +151,11 @@ void i2cScan() {
     char buf[16];
     sprintf(buf, "%2X", address); // Formats value as uppercase hex
     if (error == 0) {
-      logToAll("I2C device found at address 0x" + String(buf) + "\n");
+      logToAll("I2C device found at address 0x" + String(buf));
       nDevices++;
     }
     else if (error == 4) {
-      logToAll("error at address 0x" + String(buf) + "\n");
+      logToAll("error at address 0x" + String(buf));
     }
   }
   if (nDevices == 0) {
@@ -203,15 +203,15 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println("gps");
     }
     if (words[i].equals("status")) {
-      WebSerial.println("          AWS (in): " + String(WindSensor::windSpeedKnots) + "\n");
-      WebSerial.println("          AWA (in): " + String(WindSensor::windAngleDegrees) + "\n");
-      WebSerial.println("Sensor L/H/Current: " + String(PotLo)+ String(PotHi)+ String(PotValue) + "\n");
-      WebSerial.println("      Sensor angle: " + String(mastRotate) + "\n");
-      WebSerial.println("       Sorrect AWA: " + String(rotateout) + "\n");
-      WebSerial.println("      Mast Compass: " + String(mastCompassDeg) + "\n");
-      WebSerial.println("      Boat Compass: " + String(boatCompassDeg) + "\n");
-      WebSerial.println("       Calibration: " + String(boatCompassCalStatus) + "\n");
-      WebSerial.println("        Mast angle: " + String(mastDelta) + "\n");
+      WebSerial.println("          AWS (in): " + String(WindSensor::windSpeedKnots));
+      WebSerial.println("          AWA (in): " + String(WindSensor::windAngleDegrees));
+      WebSerial.println("Sensor L/H/Current: " + String(PotLo)+ String(PotHi)+ String(PotValue));
+      WebSerial.println("      Sensor angle: " + String(mastRotate));
+      WebSerial.println("       Sorrect AWA: " + String(rotateout));
+      WebSerial.println("      Mast Compass: " + String(mastCompassDeg));
+      WebSerial.println("      Boat Compass: " + String(boatCompassDeg));
+      WebSerial.println("       Calibration: " + String(boatCompassCalStatus));
+      WebSerial.println("        Mast angle: " + String(mastDelta));
     }
     if (words[i].equals("format")) {
       SPIFFS.format();
