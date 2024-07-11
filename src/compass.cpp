@@ -68,6 +68,10 @@ float getCompass(int correction);
 void logToAll(String message);
 void logToAlln(String message);
 
+// for sending mast compass on bus
+extern tNMEA2000 *n2kMain;
+extern tN2kMsg correctN2kMsg;
+
 // get heading from (local) compass
 // called when we get a Heading PGN on the wind bus (which means mast compass transmitted)
 // so frequency of update is going to depend on how often we get a Heading PGN from the mast
@@ -193,14 +197,22 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   return heading;
 }
 
+#define XMITMAST  // send mast compass as rudder angle on main bus
 float getCompass(int correction) {
+  float compassVal;
   if (!compassReady)
     return -1;
 #ifdef CMPS14
-    return getCMPS14(correction);
+  compassVal = getCMPS14(correction);
 #else
-    return getBNO085(correction);
+  compassVal = getBNO085(correction);
 #endif
+#ifdef XMITMAST
+  SetN2kPGN127245(correctN2kMsg, compassVal*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
+  if (!n2kMain->SendMsg(correctN2kMsg))
+    Serial.println("Failed to send mast heading message");
+#endif
+  return compassVal;
 }
 
 /*
@@ -214,11 +226,10 @@ endTransmission() returns:
 5: timeout
 */
 
-// Why is this here? If there is no boat compass then we can get heading from the main N2K bus
-// (from an external compass)
 // called when we get a Mag Heading message from bus (i.e. from RPI, boat heading)
 // checks mast heading (async) and prints difference (in degrees)
 // RETURNS difference, if you want to xmit rudder angle add 50 (if mast range is -50..50)
+// WILL NOT be called if there's a compass connected to ESP32 (local compass)
 int convertMagHeading(const tN2kMsg &N2kMsg) {
   unsigned char SID;
   double heading;
@@ -254,6 +265,7 @@ int convertMagHeading(const tN2kMsg &N2kMsg) {
       }
       readings["mastDelta"] = String(delta); // TBD shift range to 0..100 for gauge
       mastAngle[1] = delta;
+      // tbd add mastcompdelta
       //Serial.println(mastAngle[1]);
       return delta;
     } else {
