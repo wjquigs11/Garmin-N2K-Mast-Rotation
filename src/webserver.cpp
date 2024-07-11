@@ -171,10 +171,10 @@ void startWebServer() {
   compassOnToggle = (preferences.getString("compassOnTog", "false") == "true") ? true : false;
   logToAll("compass = " + String(compassOnToggle));
   readings["compass"] = (compassOnToggle ? 1 : 0);
-  honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
+  //honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
   logToAll("honeywell = " + String(honeywellOnToggle));
   readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
-  demoModeToggle = (preferences.getString("demoModeTog", "false") == "true") ? true : false;
+  //demoModeToggle = (preferences.getString("demoModeTog", "false") == "true") ? true : false;
   logToAll("demo = " + String(demoModeToggle));
   WebTimerDelay = preferences.getInt("WebTimerDelay", 500);
   mastOrientation = preferences.getInt("mastOrientation", 0);
@@ -209,7 +209,7 @@ void startWebServer() {
     request->send(SPIFFS, "/index.html", "text/html");
   });
 
-    server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
+  server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
     logToAll("heap.html");
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
@@ -242,7 +242,7 @@ void startWebServer() {
   server.on("/host", HTTP_GET, [](AsyncWebServerRequest *request) {
     String buf = "host: " + host + ", webtimerdelay: " + String(WebTimerDelay);
     logToAll(buf);
-    request->send_P(200, "text/plain", buf.c_str());
+    request->send(200, "text/plain", buf.c_str());
     buf = String();
   });
 
@@ -342,7 +342,7 @@ void startWebServer() {
   server.on("/calibrate", HTTP_POST, [](AsyncWebServerRequest *request) {
     int params = request->params();
     for(int i=0;i<params;i++) {
-      AsyncWebParameter* p = request->getParam(i);
+      const AsyncWebParameter* p = request->getParam(i);
       if(p->isPost()) {
         // HTTP POST ssid value
         if (p->name() == "portRange") {
@@ -402,7 +402,7 @@ void startWebServer() {
   server.on("/params", HTTP_POST, [](AsyncWebServerRequest *request) {
     int params = request->params();
     for(int i=0;i<params;i++) {
-      AsyncWebParameter* p = request->getParam(i);
+      const AsyncWebParameter* p = request->getParam(i);
       if(p->isPost()) {
         // HTTP POST ssid value
         logToAll("params POST " + p->name() + " " + p->value());
@@ -475,12 +475,12 @@ void startWebServer() {
     int headers = request->headers();
     int i;
     for (i = 0; i < headers; i++) {
-      AsyncWebHeader* h = request->getHeader(i);
+      const AsyncWebHeader* h = request->getHeader(i);
       Serial.println("_HEADER[" + h->name() + "]: " + h->value());
     }
     int params = request->params();
     for (i = 0; i < params; i++) {
-      AsyncWebParameter* p = request->getParam(i);
+      const AsyncWebParameter* p = request->getParam(i);
       if (p->isFile()) {
         Serial.println("_FILE[" + p->name() + "]: " + p->value() + ", size: " + p->size());
       } else if (p->isPost()) {

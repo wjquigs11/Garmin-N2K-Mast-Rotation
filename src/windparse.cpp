@@ -49,6 +49,7 @@ int PotHi=0;
 extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
 extern bool compassOnToggle, honeywellOnToggle;
 extern float mastCompassDeg, boatCompassDeg, mastDelta;
+extern movingAvg mastCompDelta;
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern int sensOrientation;
 float getCompass(int correction);
@@ -226,7 +227,11 @@ void WindSpeed() {
   // note we are sending the original speed reading in m/s
   // and the AWA converted from rads to degrees, corrected, and converted back to rads
   SetN2kPGN130306(correctN2kMsg, 0xFF, WindSensor::windSpeedMeters, rotateout*(M_PI/180), N2kWind_Apparent); 
-  n2kMain->SendMsg(correctN2kMsg);
+  if (n2kMain->SendMsg(correctN2kMsg)) {
+    //Serial.printf("sent n2k wind %0.2f", rotateout);
+  } else {
+    //Serial.println("Failed to send heading");  
+  }
   #ifdef XMITRUDDER
   // for now (until you dive into SensESP), send rotation angle as rudder
   SetN2kPGN127245(correctN2kMsg, (mastRotate+50)*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
@@ -244,6 +249,8 @@ void WindSpeed() {
 // parse compass reading on wind bus
 // TBD: decide if we're on wind bus or main bus, because heading from wind bus is mast compass 
 // and heading from main bus is external compass
+// for now we're just assuming we're on the wind bus and it's the mast compass
+// also reusing rudder angle (AGAIN) to transmit mast compass heading on N2K
 void ParseCompassN2K(const tN2kMsg &N2kMsg) {
       unsigned char SID;
       double heading;
@@ -254,16 +261,23 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
       if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
         if (compassReady) {
           // TBD get "reference" to confirm it's N2khr_Unavailable
-          mastCompassDeg = heading * 57.296;  // rad to degree
+          mastCompassDeg = heading * 57.296 + mastOrientation;  // rad to degree
+          // correction may be positive or negative
+          if (mastCompassDeg > 360) mastCompassDeg -= 360;
+          if (mastCompassDeg < 0) mastCompassDeg += 360;
           // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
-          boatCompassDeg = getCompass(mastOrientation);
-          mastDelta = mastCompassDeg+boatCompassDeg;
+          boatCompassDeg = getCompass(0);
+          // adjust delta for mast compass orientation relative to boat compass (mastOrientation)
+          //float mastCompassCorr = (float)((int)(mastCompassDeg+mastOrientation) + 360 % 360);
+          mastDelta = boatCompassDeg-mastCompassDeg;
           if (mastDelta > 180) {
             mastDelta -= 360;
           } else if (mastDelta < -180) {
             mastDelta += 360;
           }
-          mastAngle[1] = mastDelta; 
+          mastAngle[1] = mastDelta; // tbd assign to moving avg if better
+          mastCompDelta.reading((int)(mastDelta*100));
+          // NOTE we do NOT transmit boat heading on N2K here; only from reaction in wind-bus.cpp, to avoid flooding bus
           //Serial.printf("heading PGN Mast: %.2f Boat: %.2f\n", mastCompassDeg, boatCompassDeg);
         } else {
           // no boat compass, use external heading info
@@ -286,34 +300,6 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
       }
 }
 #endif
-
-  /* TBD Heading()
-  else if (PGN == 127250) {  // heading PGN; on wind bus must come from mast compass
-    // TBD break this into 2 functions
-    // update mast heading
-    double mastComp;
-    int SID = canMsg.data[0];
-    mastComp = ((canMsg.data[2] << 8) | canMsg.data[1]) / 10000.0; // radians
-    // TBD get "reference" to confirm it's N2khr_Unavailable
-    if (mastComp > -1) {
-      //Serial.printf("mastComp: %.2f, deg %.2f\n", mastComp, mastComp * 57.296);
-      mastCompassDeg = mastComp * 57.296;
-      // we get boatCompassDeg here but we should also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
-      boatCompassDeg = getCompass(mastOrientation);
-      mastDelta = mastCompassDeg-boatCompassDeg;
-      if (mastDelta > 180) {
-        mastDelta -= 360;
-      } else if (mastDelta < -180) {
-        mastDelta += 360;
-      }
-      mastAngle[1] = mastDelta; 
-    }   
-    //Serial.printf("heading PGN Mast: %.2f Boat: %.2f\n", mastCompassDeg, boatCompassDeg);
-  } else {
-    //Serial.printf("unknown PGN: %d LEN: %d\n", PGN, cDataLen);
-  }
-}
-*/
 
 // process boat speed to update STW for true wind calc
 void BoatSpeed(const tN2kMsg &N2kMsg) {

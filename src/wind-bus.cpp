@@ -141,6 +141,7 @@ tBoatData BoatData;
 Stream *forward_stream = &Serial;
 
 tNMEA2000 *n2kMain;
+extern tN2kMsg correctN2kMsg;
 
 // Honeywell sensor
 extern movingAvg honeywellSensor;                // define the moving average object
@@ -190,6 +191,8 @@ extern int sensOrientation; // delta between mast centered and Honeywell sensor 
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
 extern float mastDelta;
+movingAvg mastCompDelta(10);
+extern int boatCompassCalStatus;
 void mastHeading();
 float mastAngle[2]; // array for both sensors
 // 0 = honeywell
@@ -273,6 +276,8 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
 }
 
 #ifdef PICANM
+// on the PICAN-M I was able to instantiate the MCP version of the Timo library, 
+// so I use it to parse Wind and Heading from the mast
 // NMEA 2000 message handler for wind bus: check if message is wind and handle it
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
   //N2kMsg.Print(&Serial);
@@ -539,6 +544,7 @@ void setup() {
   } else
     Serial.printf("Failed to find BNO08x chip @ 0x%x\n", ADABNO);
 #endif
+  mastCompDelta.begin();
   Serial.println("OLED started");
   display.clearDisplay();
   display.setTextSize(1);             
@@ -575,7 +581,7 @@ void setup() {
   Serial.printf("ESP flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
-  app.onRepeat(10, []() {
+    app.onRepeat(10, []() {
     PollCANStatus();
     n2kMain->ParseMessages();
 #if defined(ESPBERRY)
@@ -600,6 +606,7 @@ void setup() {
 #endif
 #endif
   });
+
 /*
   app.onRepeat(100, []() {
     if (time_since_last_can_rx > MAX_RX_WAIT_TIME_MS) {
@@ -612,7 +619,6 @@ void setup() {
     }
   });
 */
-
   // update web page
   app.onRepeat(WebTimerDelay, []() {
     //Serial.println("transmit sensor readings");
@@ -621,10 +627,15 @@ void setup() {
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
   });
 
-  app.onRepeat(100, []() {
+  app.onRepeat(1000, []() {
+    //Serial.println("drd loop");
     drd->loop(); // double reset detector
-    WebSerial.loop();
+    //Serial.println("elegant OTA loop");
     ElegantOTA.loop();
+  });
+
+  app.onRepeat(100, []() {
+    WebSerial.loop();
   });
 
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
@@ -646,7 +657,16 @@ void setup() {
       BoatData.TrueHeading = (double)getCompass(BoatData.Variation);
       //logToAll("trueheading: " + String(BoatData.TrueHeading) + " Variation: " + String(BoatData.Variation));
       // the global boatCompassDeg will always contain the boat compass (magnetic), adjusted for orientation between the boat compass and the mast compass
-      boatCompassDeg = getCompass(mastOrientation);
+      //boatCompassDeg = getCompass(mastOrientation); // doesn't make sense to apply mast compass orientation to boat compass
+      boatCompassDeg = getCompass(0);
+      // transmit heading
+      //tN2kHeadingReference ref = N2khr_magnetic;
+      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*0.0174533, N2kDoubleNA, N2kDoubleNA, (tN2kHeadingReference) N2khr_magnetic);
+      if (n2kMain->SendMsg(correctN2kMsg)) {
+        //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
+      } else {
+        //Serial.println("Failed to send heading");
+      }
       //logToAll("boat heading: " + String(boatCompassDeg));
     });
     else Serial.println("compass not ready no heading reaction");
@@ -662,7 +682,8 @@ void setup() {
     }
     if (compassOnToggle) {
       #ifdef MASTCOMPASS
-      sprintf(prbuf, "Mast: %.1f Boat: %.1f Delta: %0.2f", mastCompassDeg, boatCompassDeg, mastAngle[1]);
+      //Serial.println("mast compass check");
+      sprintf(prbuf, "Mast: %.1f delta: %0.2f avg d: %.1f cal: xx Boat: %.1f cal: %d ", mastCompassDeg, mastAngle[1], mastCompDelta.getAvg()/100.0, boatCompassDeg, boatCompassCalStatus);
       logToAll(prbuf);
       #else
       sprintf(prbuf, "Heading: %.1f", boatCompassDeg);
@@ -673,8 +694,7 @@ void setup() {
       demoIncr();
     }
   });
-#endif
-
+  #endif // DISPLAYON
 }
 
 void loop() { app.tick(); }
