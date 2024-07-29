@@ -439,9 +439,9 @@ void setup() {
     Serial.println("init ADS");
     honeywellSensor.begin();    // Instantiates the moving average object
   }
+  pBD=&BoatData; // need this even if we're not using 0183
   // Set up NMEA0183 ports and handlers
 #if defined(PICANM) && defined(NMEA0183)
-  pBD=&BoatData;
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
   //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);

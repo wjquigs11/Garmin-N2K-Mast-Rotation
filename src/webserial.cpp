@@ -164,16 +164,16 @@ void i2cScan() {
 
 String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass"};
 #define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+String words[10]; // Assuming a maximum of 10 words
 
 void WebSerialonMessage(uint8_t *data, size_t len) {
   Serial.printf("Received %lu bytes from WebSerial: ", len);
   Serial.write(data, len);
   Serial.println();
-  Serial.printf("commandList size is: %d\n", ASIZE(commandList));
+  //Serial.printf("commandList size is: %d\n", ASIZE(commandList));
   WebSerial.println("Received Data...");
   String dataS = String((char*)data);
   // Split the String into an array of Strings using spaces as delimiters
-  String words[10]; // Assuming a maximum of 10 words
   int wordCount = 0;
   int startIndex = 0;
   int endIndex = 0;
@@ -187,17 +187,21 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
   }
   for (int i = 0; i < wordCount; i++) {   
-    //WebSerial.println(words[i]); 
-    /*
+    WebSerial.println(words[i]); 
+    int j;
     if (words[i].equals("?")) {
-      for (int j = 1; j < ASIZE(commandList); j++) {
+      for (j = 1; j < ASIZE(commandList); j++) {
         WebSerial.println(String(j) + ":" + commandList[j]);
       }
     }
-    for (int k = 0; k < ASIZE(commandList); k++)
-      if (words[i].toInt() == k)
-        words[i] = commandList[k];
-    */
+    if (words[i].toInt() > 0)
+      for (j = 1; j < ASIZE(commandList); j++) {
+        //WebSerial.println("j: " + String(j) + " " + commandList[j]);
+        if (words[i].toInt() == j) {
+          Serial.printf("match %d %s %d %s\n", i, words[i].c_str(), j, commandList[j].c_str());
+          words[i] = commandList[j];
+        }
+      }
     if (words[i].equals("status")) {
       WebSerial.println("               AWS (in): " + String(WindSensor::windSpeedKnots));
       WebSerial.println("               AWA (in): " + String(WindSensor::windAngleDegrees));
@@ -260,7 +264,8 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println("Compass: " + String(compassOnToggle));
       WebSerial.println("Honeywell: " + String(honeywellOnToggle));
     }
-    if (words[i].equals("gps")) {
+    if (words[i].equals("gps") && pBD) {
+      Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
       WebSerial.println("Latitude: " + String(pBD->Latitude));
       WebSerial.println("Longitude: " + String(pBD->Longitude));
     }
