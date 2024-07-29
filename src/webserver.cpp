@@ -43,6 +43,8 @@ int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/st
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
 extern int mastOrientation; // mast compass position relative to boat compass position
 extern int sensOrientation; // Honeywell orientation relative to centerline
+extern int boatOrientation; // boat compass position relative to centerline
+extern float mastAngle[];
 int mastFrequency;
 extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
@@ -80,10 +82,11 @@ String getSensorReadings() {
   if (compassOnToggle) {
     readings["mastHeading"] = String(mastCompassDeg,2);
     readings["boatHeading"] = String(boatCompassDeg,2);
+    //Serial.println(boatCompassDeg);
     readings["mastDelta"] = String(mastAngle[1],2);
   }
   // add true boat compass for compass.html
-  readings["calstatus"] = String(boatCompassCalStatus,2);
+  readings["calstatus"] = boatCompassCalStatus;
   readings["boatTrue"] = String(BoatData.TrueHeading,2);
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
   readings["windAngle"] = String(WindSensor::windAngleDegrees,2);
@@ -117,6 +120,7 @@ String settings_processor(const String& var) {
   if (var == "webtimerdelay") return String(WebTimerDelay);
   if (var == "orientation") return String(mastOrientation);
   if (var == "sensorient") return String(sensOrientation);
+  if (var == "boatorient") return String(boatOrientation);
   if (var == "frequency") return String(mastFrequency);
   if (var == "controlMAC") return String(WiFi.macAddress());
   if (var == "variation") return String(BoatData.Variation);
@@ -163,6 +167,24 @@ String cal_processor(const String& var) {
   return String("cal processor: placeholder not found " + var);
 }
 
+#if 0
+void compassPing() {  // ping mast compass needs work for use case where mast compass isn't connected to external AP
+  if(WiFi.status()== WL_CONNECTED) {    
+    httpC.begin(mastCompass.c_str());
+    int httpResponseCode = httpC.GET();
+    if (httpResponseCode>0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      String payload = httpC.getString();
+      Serial.println(payload);
+    } else {
+      Serial.print("HTTP GET Error code: ");
+      Serial.println(httpResponseCode);
+    }
+    httpC.end();
+    }
+#endif
+
 void startWebServer() {
   logToAll("starting web server");
   preferences.begin("ESPwind", false);
@@ -171,7 +193,7 @@ void startWebServer() {
   compassOnToggle = (preferences.getString("compassOnTog", "false") == "true") ? true : false;
   logToAll("compass = " + String(compassOnToggle));
   readings["compass"] = (compassOnToggle ? 1 : 0);
-  //honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
+  honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
   logToAll("honeywell = " + String(honeywellOnToggle));
   readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
   //demoModeToggle = (preferences.getString("demoModeTog", "false") == "true") ? true : false;
@@ -179,6 +201,7 @@ void startWebServer() {
   WebTimerDelay = preferences.getInt("WebTimerDelay", 500);
   mastOrientation = preferences.getInt("mastOrientation", 0);
   sensOrientation = preferences.getInt("sensOrientation", 0);
+  boatOrientation = preferences.getInt("boatOrientation", 0);
   mastFrequency = preferences.getInt("mastFrequency", 100);
   BoatData.Variation = preferences.getFloat("variation", 0);
 
@@ -427,6 +450,10 @@ void startWebServer() {
           preferences.putFloat("variation", BoatData.Variation);
         }
         //sendMastControl();  // notify mast compass via ESPNOW
+        if (p->name() == "boatorient") {
+          boatOrientation = atoi(p->value().c_str());
+          preferences.putInt("boatOrientation", boatOrientation);
+        }
       } // isPost
     } // for params
     request->send(SPIFFS, "/index.html", "text/html");

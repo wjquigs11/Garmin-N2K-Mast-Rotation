@@ -5,9 +5,6 @@
 #include <Adafruit_SSD1306.h>
 #include <N2kMessages.h>
 #include <NMEA2000_esp32.h>
-#include <NMEA0183Msg.h>
-#include <NMEA0183Messages.h>
-#include "NMEA0183Handlers.h"
 #include "BoatData.h"
 #include <ReactESP.h>
 #include <Wire.h>
@@ -37,6 +34,15 @@
 #include <SPI.h>
 #include <mcp_can.h>
 #include <NMEA2000_mcp.h>
+#ifdef NMEA0183
+#include <NMEA0183.h>
+#include <NMEA0183Msg.h>
+#include <NMEA0183Messages.h>
+//#include "NMEA0183Handlers.h"
+extern tNMEA0183 NMEA0183_3;
+tNMEA0183Msg NMEA0183Msg;
+#define NMEA0183serial Serial1
+#endif
 #else
 #include "mcp2515_can.h"
 #endif
@@ -52,6 +58,7 @@ extern float mastCompassDeg, boatCompassDeg, mastDelta;
 extern movingAvg mastCompDelta;
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern int sensOrientation;
+extern int boatOrientation;
 float getCompass(int correction);
 extern tBoatData BoatData;
 void logToAll(String s);
@@ -147,7 +154,9 @@ void ParseWindCAN() {
   unsigned long ID = n2kWind.getCanId();
   PGN = ((ID & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
   uint8_t SRC = ID & 0xFF;
+#ifdef DEBUG
   Serial.printf("CAN PGN %d SRC %d\n", PGN, SRC);
+#endif
   SID = cdata[0];
   switch (PGN) {
     case 130306: { 
@@ -165,13 +174,14 @@ void ParseWindCAN() {
       double Deviation = ((cdata[4] << 8) | cdata[3]) / 10000.0;
       double Variation = ((cdata[6] << 8) | cdata[5]) / 10000.0;
       int ref = cdata[7];
+#ifdef DEBUG
       Serial.printf("CAN parsed mast heading %.2f deviation %0.2f Variation %0.2f ref %d\n", mastCompassDeg, Deviation, Variation, ref);
+#endif
       break;
     }
   }
 }
 #else
-
 void ParseWindN2K(const tN2kMsg &N2kMsg) {
   if (ParseN2kPGN130306(N2kMsg, SID, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, wRef)) {
     //Serial.printf("N2K parsed wind SID %d Speed %0.2f Angle %0.2f ref %d\n", SID, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, wRef);
@@ -179,6 +189,17 @@ void ParseWindN2K(const tN2kMsg &N2kMsg) {
   WindSpeed();
 }
 #endif
+
+byte calculateNMEAChecksum(const char* sentence) {
+  byte checksum = 0;
+  // Start after the '$' and continue until '*' or end of string
+  for (int i = 1; sentence[i] != '\0' && sentence[i] != '*'; i++) {
+    checksum ^= sentence[i];
+  }
+  return checksum;
+}
+
+char buf1[64],buf2[64];
 
 void WindSpeed() {
   //Serial.println("windspeed");
@@ -230,8 +251,46 @@ void WindSpeed() {
   if (n2kMain->SendMsg(correctN2kMsg)) {
     //Serial.printf("sent n2k wind %0.2f", rotateout);
   } else {
-    //Serial.println("Failed to send heading");  
+    //Serial.println("Failed to send wind");  
   }
+#ifdef PICANM
+  // send on NMEA0183 serial (to Tiller Pilot)
+  //Serial.printf("0183 vars: %x %f %d %f %x\n", &NMEA0183Msg, rotateout, NMEA0183Wind_Apparent, WindSensor::windSpeedMeters,NMEA0183_3);
+  float bowAngle;
+  char direction;
+  if (rotateout > 180) {
+    bowAngle = 360 - rotateout;
+    direction = 'L'; // Left
+  } else {
+    bowAngle = rotateout;
+    direction = 'R'; // Right
+  }
+  sprintf(buf1,"$IIVWR,%2d,%c,%2.1f,N,%2.1f,M,%2.1f,K*",(int)rotateout, direction, WindSensor::windSpeedKnots, WindSensor::windSpeedMeters, WindSensor::windSpeedMeters/3.6);
+  int cksum = calculateNMEAChecksum(buf1);
+  sprintf(buf2,"%s%02X", buf1, cksum);
+  //Serial.println(buf2);
+  NMEA0183serial.println(buf2);
+#if 0
+  //if (!NMEA0183SetVWR(NMEA0183Msg, rotateout, direction, WindSensor::windSpeedKnots, WindSensor::windSpeedMeters, WindSensor::windSpeedMeters/3.6)) {
+  if (!NMEA0183SetMWV(NMEA0183Msg, rotateout, NMEA0183Wind_Apparent, WindSensor::windSpeedMeters)) {
+    Serial.println("failed to set 0183 wind message");
+  } else {
+      Serial.print("sending 0183 wind ");
+      Serial.print(NMEA0183Msg.GetPrefix());
+      Serial.print(NMEA0183Msg.Sender());
+      Serial.print(NMEA0183Msg.MessageCode());
+      for (int i=0; i<NMEA0183Msg.FieldCount(); i++) {
+        Serial.print(",");
+        Serial.print(NMEA0183Msg.Field(i));
+      }
+      sprintf(buf,"*%02X\r\n",NMEA0183Msg.GetCheckSum());
+      Serial.println(buf);
+      if (!NMEA0183_3.SendMessage(NMEA0183Msg)) {
+        Serial.println("send 0183 wind failed");
+      }
+  }
+#endif
+#endif
   #ifdef XMITRUDDER
   // for now (until you dive into SensESP), send rotation angle as rudder
   SetN2kPGN127245(correctN2kMsg, (mastRotate+50)*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
@@ -250,7 +309,7 @@ void WindSpeed() {
 // TBD: decide if we're on wind bus or main bus, because heading from wind bus is mast compass 
 // and heading from main bus is external compass
 // for now we're just assuming we're on the wind bus and it's the mast compass
-// also reusing rudder angle (AGAIN) to transmit mast compass heading on N2K
+// also reusing rudder angle (AGAIN) to transmit mast compass heading on N2K (NO)
 void ParseCompassN2K(const tN2kMsg &N2kMsg) {
       unsigned char SID;
       double heading;
@@ -266,7 +325,8 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
           if (mastCompassDeg > 360) mastCompassDeg -= 360;
           if (mastCompassDeg < 0) mastCompassDeg += 360;
           // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
-          boatCompassDeg = getCompass(0);
+          boatCompassDeg = getCompass(boatOrientation);
+          //Serial.printf("parsecompass boatcomp %0.2f\n", boatCompassDeg);
           // adjust delta for mast compass orientation relative to boat compass (mastOrientation)
           //float mastCompassCorr = (float)((int)(mastCompassDeg+mastOrientation) + 360 % 360);
           mastDelta = boatCompassDeg-mastCompassDeg;
@@ -275,10 +335,15 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
           } else if (mastDelta < -180) {
             mastDelta += 360;
           }
-          mastAngle[1] = mastDelta; // tbd assign to moving avg if better
-          mastCompDelta.reading((int)(mastDelta*100));
+          mastAngle[1] = mastDelta;
+          mastCompDelta.reading((int)(mastDelta*100)); // moving average
           // NOTE we do NOT transmit boat heading on N2K here; only from reaction in wind-bus.cpp, to avoid flooding bus
           //Serial.printf("heading PGN Mast: %.2f Boat: %.2f\n", mastCompassDeg, boatCompassDeg);
+#ifdef XMITRUDDER // sen rudder angle (as rudder #1)
+          SetN2kPGN127245(correctN2kMsg, (mastDelta+50)*(M_PI/180), 1, N2kRDO_NoDirectionOrder, 0);
+          n2kMain->SendMsg(correctN2kMsg);
+#endif
+
         } else {
           // no boat compass, use external heading info
           //if (compassOnToggle) {

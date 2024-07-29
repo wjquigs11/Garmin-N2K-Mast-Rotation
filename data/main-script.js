@@ -64,7 +64,7 @@ function getReadings() {
         }
       }
       var elementThis;
-      //if (elementThis = document.getElementById('mastRotate')) elementThis.innerHTML = myObj.mastRotate;
+      if (elementThis = document.getElementById('mastRotate')) elementThis.innerHTML = myObj.mastRotate;
       if (elementThis = document.getElementById('windSpeed')) elementThis.innerHTML = myObj.windSpeed;
       if (elementThis = document.getElementById('windAngle')) elementThis.innerHTML = myObj.windAngle;
       if (elementThis = document.getElementById('mastHeading')) elementThis.innerHTML = myObj.mastHeading;
