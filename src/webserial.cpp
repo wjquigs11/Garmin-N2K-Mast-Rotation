@@ -76,19 +76,15 @@ extern int mastOrientation;   // delta between mast compass and boat compass
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
 extern int boatCompassCalStatus;
+#ifdef CMPS14
+extern byte calibrationStatus[];
+#endif
 extern float mastDelta;
 
 void mastHeading();
 extern float mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
-
-// robotshop CMPS14 (boat compass)
-//extern int CMPS14_ADDRESS;
-//extern bool compassReady;
-
-// Time after which we should reboot if we haven't received any CAN messages
-#define MAX_RX_WAIT_TIME_MS 30000
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
 
@@ -166,12 +162,14 @@ void i2cScan() {
   }
 }
 
-//String wsCommands[] = {"?", "format", "restart"};
+String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass"};
+#define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 
 void WebSerialonMessage(uint8_t *data, size_t len) {
   Serial.printf("Received %lu bytes from WebSerial: ", len);
   Serial.write(data, len);
   Serial.println();
+  Serial.printf("commandList size is: %d\n", ASIZE(commandList));
   WebSerial.println("Received Data...");
   String dataS = String((char*)data);
   // Split the String into an array of Strings using spaces as delimiters
@@ -189,35 +187,48 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
   }
   for (int i = 0; i < wordCount; i++) {   
-    WebSerial.println(words[i]); 
+    //WebSerial.println(words[i]); 
+    /*
     if (words[i].equals("?")) {
-      WebSerial.println("format (spiffs)");
-      WebSerial.println("restart");
-      WebSerial.println("ls (spiffs)");
-      WebSerial.println("scan (i2c)");
-      WebSerial.println("status");
-      WebSerial.println("readings (JSON)");
-      WebSerial.println("mast");
-      WebSerial.println("lsap (list access point connections)");
-      WebSerial.println("toggle (check)");
-      WebSerial.println("gps");
+      for (int j = 1; j < ASIZE(commandList); j++) {
+        WebSerial.println(String(j) + ":" + commandList[j]);
+      }
     }
+    for (int k = 0; k < ASIZE(commandList); k++)
+      if (words[i].toInt() == k)
+        words[i] = commandList[k];
+    */
     if (words[i].equals("status")) {
-      WebSerial.println("          AWS (in): " + String(WindSensor::windSpeedKnots));
-      WebSerial.println("          AWA (in): " + String(WindSensor::windAngleDegrees));
-      WebSerial.println("Sensor L/H/Current: " + String(PotLo)+ String(PotHi)+ String(PotValue));
-      WebSerial.println("      Sensor angle: " + String(mastRotate));
-      WebSerial.println("       Sorrect AWA: " + String(rotateout));
-      WebSerial.println("      Mast Compass: " + String(mastCompassDeg));
-      WebSerial.println("      Boat Compass: " + String(boatCompassDeg));
-      WebSerial.println("       Calibration: " + String(boatCompassCalStatus));
-      WebSerial.println("        Mast angle: " + String(mastDelta));
+      WebSerial.println("               AWS (in): " + String(WindSensor::windSpeedKnots));
+      WebSerial.println("               AWA (in): " + String(WindSensor::windAngleDegrees));
+      WebSerial.println("     Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
+      WebSerial.println("           Sensor angle: " + String(mastRotate));
+      WebSerial.println("            Correct AWA: " + String(rotateout));
+      WebSerial.println("           Mast Compass: " + String(mastCompassDeg));
+      WebSerial.println("             Mast angle: " + String(mastDelta));
+    }
+    if (words[i].equals("compass")) {
+      WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
+      WebSerial.println("       Calibration(0-3): " + String(boatCompassCalStatus));
+#ifdef CMPS14
+      WebSerial.printf("            [Calibration]: ");
+      String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
+      WebSerial.println("mag: " + String(calibrationStatus[0]) + String(calibrationStatus[1]) + " " + CV);
+      CV = String((calibrationStatus[2] << 8) | calibrationStatus[3]);
+      WebSerial.println("acc: " + String(calibrationStatus[2]) + String(calibrationStatus[3]) + " " + CV);
+      // gyro cal is "currently broken"
+      CV = String((calibrationStatus[6] << 8) | calibrationStatus[7]);
+      WebSerial.println("sys: " + String(calibrationStatus[6]) + String(calibrationStatus[7]) + " " + CV);
+      WebSerial.println();
+      CV = String();
+#endif
     }
     if (words[i].equals("format")) {
       SPIFFS.format();
       WebSerial.println("SPIFFS formatted");
     }
     if (words[i].equals("restart")) {
+      WebSerial.println("Restarting...");
       ESP.restart();
     }
     if (words[i].equals("ls")) {
@@ -252,6 +263,20 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     if (words[i].equals("gps")) {
       WebSerial.println("Latitude: " + String(pBD->Latitude));
       WebSerial.println("Longitude: " + String(pBD->Longitude));
+    }
+    if (words[i].equals("webserver")) {
+      WebSerial.print("local IP: ");
+      WebSerial.println(WiFi.localIP());
+      WebSerial.print("AP IP address: ");
+      WebSerial.println(WiFi.softAPIP());
+        int clientCount = WiFi.softAPgetStationNum();
+        if (clientCount > 0) {
+          WebSerial.print("Clients connected: ");
+          WebSerial.println(clientCount);
+        } else {
+          WebSerial.println("No clients connected");
+        }
+
     }
   }
   for (int i=0; i<wordCount; i++) words[i] = String();

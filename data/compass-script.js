@@ -25,7 +25,7 @@ function getReadings() {
       if (this.readyState == 4 && this.status == 200) {
         var myObj = JSON.parse(this.responseText);
         console.log(myObj);
-        var bearing = myObj.bearing.toFixed(1);
+        var bearing = myObj.boatHeading;
         // we know the JSON object has a 'bearing' property because we set it in esp32 getSensorReadings()
         compassCircle.style.transform = `translate(-50%, -50%) rotate(${-bearing}deg)`;
       }
@@ -56,7 +56,7 @@ if (!!window.EventSource) {
     console.log("new_readings", e.data);
     var myObj = JSON.parse(e.data);
     console.log(myObj);
-    var bearing = myObj.boatTrue.toFixed(1);
+    var bearing = myObj.boatHeading;
     compassCircle.style.transform = `translate(-50%, -50%) rotate(${-bearing}deg)`;
     document.getElementById('bearing').innerHTML = bearing;
     var calstatus = myObj.calstatus;
