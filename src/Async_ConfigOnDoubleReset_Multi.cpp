@@ -42,7 +42,9 @@ DoubleResetDetector* drd;
 const int PIN_LED = 2; // D4 on NodeMCU and WeMos. GPIO2/ADC12 of ESP32. Controls the onboard LED.
 
 // SSID and PW for Config Portal
-String ssid = "ESP_" + String(ESP_getChipId(), HEX);
+extern String host;
+String ssid = host;
+//String ssid = "ESP_" + String(ESP_getChipId(), HEX);
 String password = "password";
 //extern const char* password;    // = "your_password";
 
@@ -58,7 +60,7 @@ bool initialConfig;    // = false;
 #if ( USE_DHCP_IP )
   // Use DHCP
   #if (_ESPASYNC_WIFIMGR_LOGLEVEL_ > 3)
-    #warning Using DHCP IP
+  //  #warning Using DHCP IP
   #endif
 
   IPAddress stationIP   = IPAddress(0, 0, 0, 0);
@@ -152,7 +154,10 @@ uint8_t connectMultiWiFi()
 
   uint8_t status;
 
-  WiFi.mode(WIFI_AP_STA);
+  // in "production", switch to AP_STA mode so mast compass can connect if no hotspot
+  // for now this just makes things more complex since it frequently connects to ESPWIND AP instead of hotspot
+  //WiFi.mode(WIFI_AP_STA); // remain in AP mode to serve pages even if not connected to external AP
+  WiFi.mode(WIFI_STA);
 
   Serial.print("ESP Board MAC Address:  ");
   Serial.println(WiFi.macAddress());
@@ -217,7 +222,16 @@ uint8_t connectMultiWiFi()
 #if ESP8266
     ESP.reset();
 #else
-    ESP.restart();
+//  ESP.restart();
+// we cannot connect to wifi
+//  WiFi.mode(WIFI_STA);
+  LOGERROR3(F("no wifi connect, AP_STA mode Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP() );
+   Serial.print("Setting AP (Access Point)…");
+  // Remove the password parameter, if you want the AP (Access Point) to be open
+  WiFi.softAP(host,"password");
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(IP);
 #endif
   }
 
