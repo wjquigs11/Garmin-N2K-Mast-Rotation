@@ -52,7 +52,7 @@ struct tGSV SatInfo[4];
 tNMEA0183Handler NMEA0183Handlers[]={
   {"RMC",&HandleRMC}, // Position, Velocity, and Time
   //{"GSA",&HandleGSA}, // GPS DOP and active satellites // not doing this one yet because no parser
-  {"GSV",&HandleGSV}, // Number of SVs in view, PRN, elevation, azimuth, and SNR
+  //{"GSV",&HandleGSV}, // Number of SVs in view, PRN, elevation, azimuth, and SNR
   {0,0}
 };
 

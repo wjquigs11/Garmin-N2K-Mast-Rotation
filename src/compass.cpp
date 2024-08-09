@@ -191,14 +191,14 @@ float getBNO085(int correction) {
    *   2 - Accuracy medium
    *   3 - Accuracy high
    */
-  boatCompassCalStatus = sensorValue.status;
   //Serial.printf("calStatus: 0x%x\n", boatCompassCalStatus);
   switch (sensorValue.sensorId) {
   case SH2_ROTATION_VECTOR:
     boatAccuracy = sensorValue.un.rotationVector.accuracy;
+    boatCompassCalStatus = sensorValue.status;
     heading = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      
     //Serial.printf("0 heading %0.2f\n", heading);
-    logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCompassCalStatus);
+    //logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCompassCalStatus);
     return heading;
     break;
   case SH2_GYROSCOPE_CALIBRATED:
@@ -222,6 +222,7 @@ float getBNO085(int correction) {
     Serial.println(sensorValue.un.magneticField.z);
     */
     //Serial.printf("2 heading %0.2f\n", heading);
+    boatCompassCalStatus = sensorValue.status;
     return heading;
     break;
   default:
@@ -249,7 +250,7 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   float theta = -asin(r31);
   float phi = atan2(r32, r33);
   // Calculate yaw (psi)
-  float psi = atan2(r21, r11);
+  float psi = atan2(-r21, r11);
   float heading = (psi * 180 / M_PI); + correction;
   //Serial.printf("theta %0.2f phi %0.2f psi %0.2f h %0.2f ", theta, phi, psi, heading);
   heading += correction;
@@ -260,6 +261,25 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   //Serial.printf("h %0.2f\n", heading);
   return heading;
 }
+
+#if 0
+// Calculate pitch (theta) and roll (phi)
+  float theta = -asin(r31);
+  float phi = atan2(r32, r33);
+
+  // Calculate yaw (psi)
+  // Change the sign of r21 to reverse the direction
+  float psi = atan2(-r21, r11);
+
+  // Convert to degrees and apply correction
+  float heading = (psi * 180 / M_PI) + correction;
+
+  // Normalize heading to 0-360 range
+  heading = fmod(heading, 360);
+  if (heading < 0) heading += 360;
+
+  return heading;
+#endif
 
 #define XMITMAST  // send mast compass as rudder angle on main bus
 float getCompass(int correction) {
@@ -342,3 +362,26 @@ int convertMagHeading(const tN2kMsg &N2kMsg) {
   return -1;
 }
 
+#if 0
+void parse_mast_comp() {
+JSONVar myObject = JSON.parse(jsonString);
+
+  // Check if parsing was successful
+  if (JSON.typeof(myObject) == "undefined") {
+    Serial.println("Parsing input failed!");
+    return;
+  }
+
+  // Access the values
+  if (myObject.hasOwnProperty("bearing")) {
+    double bearing = myObject["bearing"];
+    Serial.print("Bearing: ");
+    Serial.println(bearing);
+  }
+
+  if (myObject.hasOwnProperty("calstatus")) {
+    int calstatus = (int)myObject["calstatus"];
+    Serial.print("Calstatus: ");
+    Serial.println(calstatus);
+  }
+#endif

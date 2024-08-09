@@ -154,8 +154,10 @@ uint8_t connectMultiWiFi()
 
   uint8_t status;
 
-  WiFi.mode(WIFI_AP_STA); // remain in AP mode to serve pages even if not connected to external AP
-  //WiFi.mode(WIFI_STA);
+  // in "production", switch to AP_STA mode so mast compass can connect if no hotspot
+  // for now this just makes things more complex since it frequently connects to ESPWIND AP instead of hotspot
+  //WiFi.mode(WIFI_AP_STA); // remain in AP mode to serve pages even if not connected to external AP
+  WiFi.mode(WIFI_STA);
 
   Serial.print("ESP Board MAC Address:  ");
   Serial.println(WiFi.macAddress());
