@@ -1,15 +1,38 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Mast Rotation Sensor</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="icon" type="image/png" href="favicon.png">
-        <link rel="stylesheet" type="text/css" href="style.css">
-        <script src="gauge.min.js"></script>
-    </head>
-    <body>
+
+<head>
+    <title>Mast Rotation Sensor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="icon" type="image/png" href="favicon.ico">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="gauge.min.js"></script>
+</head>
+
+<body>
+    <!-- Simulate a smartphone / tablet -->
+    <div class="mobile-container">
         <div class="topnav">
-            <h1>Mast Rotation Sensor</h1>
+            <a href="/" class="active">
+                <h1>Mast Rotation Sensor</h1>
+            </a>
+            <div id="myLinks">
+                <a href="/settings">Settings</a>
+                <a href="/wifimanager">Wifi Settings</a>
+                <a href="/calibrate">Calibrate</a>
+                <a href="/mastcompass">Mast Compass</a>
+                <a href="/compass">Compass</a>
+                <a href="/update">Update</a>
+                <a href="/host">Host info</a>
+            </div>
+            <a href="javascript:void(0);" class="icon" onclick="menuFun()">
+                <i class="fa fa-bars"></i>
+                <!--svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512">
+                    <path
+                        d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z" />
+                </svg-->
+            </a>
         </div>
         <div class="content">
             <div class="card-grid">
@@ -21,7 +44,6 @@
                     <p class="card-title"><i style="color:#059e8a;"></i>Uncorrected AWA</p>
                     <p class="reading"><span id="windAngle"></span></p>
                 </div>
-                <br>
                 <div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Sensor Angle</p>
                     <p class="reading"><span id="mastRotate"></span></p>
@@ -36,23 +58,27 @@
                 </div>
                 <div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading</p>
-                    <p class="reading"><span id="compassHeading"></span></p>
+                    <p class="reading"><span id="boatHeading"></span></p>
                 </div>
                 <div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading (True)</p>
                     <p class="reading"><span id="boatTrue"></span></p>
                 </div>
-                <div class="card">
+                <!--div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Mast Delta</p>
                     <p class="reading"><span id="mastDelta"></span></p>
-                </div>
+                </div-->
                 <br>
                 <div>
-                    <canvas id="gauge-magrot"></canvas>
-                    <canvas id="gauge-honeyrot"></canvas>
+                    <canvas id="gauge-magrot" hidden></canvas>
+                    <canvas id="gauge-honeyrot" hidden></canvas>
                 </div>
             </div>
         </div>
-        <script src="main-script.js"></script>
-    </body>
+    </div>
+    <script src="main-script.js"></script>
+    <script src="magrot-script.js"></script>
+    <script src="honeyrot-script.js"></script>
+</body>
+
 </html>

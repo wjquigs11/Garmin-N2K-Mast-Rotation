@@ -1,19 +1,36 @@
-
 #include <Arduino.h>
+#include <ActisenseReader.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <N2kMessages.h>
+#include <NMEA2000_esp32.h>
+#include <NMEA0183Msg.h>
+#include <NMEA0183Messages.h>
+#include "NMEA0183Handlers.h"
+#include "BoatData.h"
+#include <ReactESP.h>
+#include <Wire.h>
+#include <esp_int_wdt.h>
+#include <esp_task_wdt.h>
+#include <movingAvg.h>
+#include "elapsedMillis.h"
+#include <Arduino.h>
+#include <N2kMessages.h>
+#include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
+//#include "mcp2515.h"
+//#include "can.h"
+#include "Async_ConfigOnDoubleReset_Multi.h"
+#include <ESPAsyncWebServer.h>
+#include <ElegantOTA.h>
+#include <WebSerial.h>
+#include <Adafruit_BNO08x.h>
+#include <HTTPClient.h>
 #include <Preferences.h>
-#include <Adafruit_ADS1X15.h>
-#include <N2kMessages.h>
 #include "windparse.h"
-#include <esp_now.h>
-#include "BoatData.h"
-
-String host = "ESPwind";
 
 Preferences preferences;     
 
@@ -25,13 +42,14 @@ extern int PotValue;
 int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/stbdRange
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
 extern int mastOrientation; // mast compass position relative to boat compass position
+extern int sensOrientation; // Honeywell orientation relative to centerline
+extern int boatOrientation; // boat compass position relative to centerline
+extern float mastAngle[];
 int mastFrequency;
-extern int mastRotate, rotateout;
-extern int mastAngle[];
-void sendMastControl();
+extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
-extern esp_now_peer_info_t peerInfo;
 extern float mastCompassDeg, boatCompassDeg;
+extern int boatCompassCalStatus;
 extern tBoatData BoatData;
 
 // Create AsyncWebServer object on port 80
@@ -46,29 +64,35 @@ JSONVar readings;
 unsigned long lastTime = 0;
 int WebTimerDelay = 500;
 
-extern char buf[];
-extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
+extern bool displayOnToggle, compassOnToggle, honeywellOnToggle, demoModeToggle;
+//extern Adafruit_SSD1306 display;
 const char* PARAM_INPUT_1 = "output";
 const char* PARAM_INPUT_2 = "state";
 
+void logToAll(String s);
+void demoInit();
+
 // Get Sensor Readings and return JSON object
 String getSensorReadings() {
-  // speed/angle/rotateout are assigned in windparse.cpp
-  // magnetic heading/mast heading are assigned in magheading.cpp
-  if (honeywellOnToggle)
-    readAnalogRotationValue();  // update readings[]
+  if (honeywellOnToggle) {
+    readings["rotateout"] = String(rotateout);
+    readings["mastRotate"] = String(mastAngle[0],2);
+    readings["PotValue"] = String(PotValue,0);
+  }
   if (compassOnToggle) {
-    readings["mastHeading"] = mastCompassDeg;
-    readings["compassHeading"] = boatCompassDeg;
-    int delta = mastCompassDeg-boatCompassDeg;
-    if (delta > 180) delta -= 360;
-      else if (delta < -180) delta += 360;    
-    readings["mastDelta"] = delta;
+    readings["mastHeading"] = String(mastCompassDeg,2);
+    readings["boatHeading"] = String(boatCompassDeg,2);
+    //Serial.println(boatCompassDeg);
+    readings["mastDelta"] = String(mastAngle[1],2);
   }
   // add true boat compass for compass.html
-  readings["boatTrue"] = BoatData.TrueHeading;
+  readings["calstatus"] = boatCompassCalStatus;
+  readings["boatTrue"] = String(BoatData.TrueHeading,2);
+  readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
+  readings["windAngle"] = String(WindSensor::windAngleDegrees,2);
+
   String jsonString = JSON.stringify(readings);
-  //Serial.println(readings);
+  //logToAll(jsonString);
   return jsonString;
 }
 
@@ -79,7 +103,7 @@ String getSensorReadings() {
   The CSS in the HTML file changes the appearance of the slider based on whether the checkbox shows as "checked" or not
 */
 String settings_processor(const String& var) {
-  Serial.printf("settings processor var: %s\n", var.c_str());
+  logToAll("settings processor var: " + var);
   if (var == "BUTTONPLACEHOLDER") {
     String buttons = "";
     buttons += "<h4>Display</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"display\" ";
@@ -93,82 +117,102 @@ String settings_processor(const String& var) {
     buttons += "><span class=\"slider\"></span></label>";
     return buttons;
   }
+  if (var == "webtimerdelay") return String(WebTimerDelay);
   if (var == "orientation") return String(mastOrientation);
+  if (var == "sensorient") return String(sensOrientation);
+  if (var == "boatorient") return String(boatOrientation);
   if (var == "frequency") return String(mastFrequency);
   if (var == "controlMAC") return String(WiFi.macAddress());
   if (var == "variation") return String(BoatData.Variation);
-  if (var == "compMAC") {
-    String peerMAC;
-    for (int i=0; i<ESP_NOW_ETH_ALEN; i++) {
-      //peerMAC.concat("0x");
-      //peerMAC.concat(String(peerInfo.peer_addr[i], HEX).toUpperCase());
-      //peerMAC.concat(", ");
-      String hexStr = String(peerInfo.peer_addr[i], HEX);
-      hexStr.toUpperCase();
-      peerMAC += "0x" + hexStr;
-      if (i<ESP_NOW_ETH_ALEN-1) peerMAC += ", ";
-    }
-    Serial.printf("compMAC %s\n", peerMAC);
-    return peerMAC;
-  }
   return String("settings processor: placeholder not found " + var);
 }
 
+String demo_processor(const String& var) {
+  logToAll("demo processor var: " + var);
+  if (var == "BUTTONPLACEHOLDER") {
+    String buttons = "";
+    buttons += "<h4>Demo Mode</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"demo\" ";
+    if (demoModeToggle) buttons += "checked";
+    buttons += "><span class=\"slider\"></span></label>";
+    return buttons;
+  }
+  return String("demo processor: placeholder not found " + var);
+}
+
 void toggleCheckbox(const char* id) {
-  Serial.printf("toggleCheckbox id: %s\n", id);
+  logToAll("toggleCheckbox id: " + String(id));
   if (strcmp(id, "display") == 0) {
     displayOnToggle = !displayOnToggle;
-    preferences.putBool("displayOnToggle", displayOnToggle);
+    logToAll("setting display to " + String(displayOnToggle));
   }
   if (strcmp(id, "honeywell") == 0) {
+    logToAll("setting honeywell to " + String(honeywellOnToggle));
     honeywellOnToggle = !honeywellOnToggle;
-    preferences.putBool("honeywellOnToggle", honeywellOnToggle);
   }
   if (strcmp(id, "compass") == 0) {
+    logToAll("setting compass to " + String(compassOnToggle));
     compassOnToggle = !compassOnToggle;
-    preferences.putBool("compassOnToggle", compassOnToggle);
   }
 }
 
 // Replaces HTML %placeholder% with stored values
 String cal_processor(const String& var) {
-  //Serial.printf("cal processor var: %s\n", var.c_str());
+  //Serial.printf("cal processor var: %s", var.c_str());
   if (var == "portRange") {
     return String(preferences.getInt("portRange"));
   }
   if (var == "stbdRange") {
     return String(preferences.getInt("stbdRange"));
   }
-  /* works BUT does not update value continuously, maybe change to javascript/readings?
-  only updates on first page render
-  if (var == "PotValue") {
-    if (adsInit) {
-      return String(ads.readADC_SingleEnded(0));
-    } else return String("55");
-  }*/
   return String("cal processor: placeholder not found " + var);
 }
 
+#if 0
+void compassPing() {  // ping mast compass needs work for use case where mast compass isn't connected to external AP
+  if(WiFi.status()== WL_CONNECTED) {    
+    httpC.begin(mastCompass.c_str());
+    int httpResponseCode = httpC.GET();
+    if (httpResponseCode>0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      String payload = httpC.getString();
+      Serial.println(payload);
+    } else {
+      Serial.print("HTTP GET Error code: ");
+      Serial.println(httpResponseCode);
+    }
+    httpC.end();
+    }
+#endif
+
 void startWebServer() {
-
-  Serial.println("starting web server");
-
+  logToAll("starting web server");
   preferences.begin("ESPwind", false);
-  displayOnToggle = preferences.getBool("displayOnToggle", true);
-  compassOnToggle = preferences.getBool("compassOnToggle", false);
-  honeywellOnToggle = preferences.getBool("honeywellOnToggle", false);
+  displayOnToggle = (preferences.getString("displayOnTog", "true") == "true") ? true : false;
+  logToAll("display = " + String(displayOnToggle));
+  compassOnToggle = (preferences.getString("compassOnTog", "false") == "true") ? true : false;
+  logToAll("compass = " + String(compassOnToggle));
+  readings["compass"] = (compassOnToggle ? 1 : 0);
+  honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
+  logToAll("honeywell = " + String(honeywellOnToggle));
+  readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
+  //demoModeToggle = (preferences.getString("demoModeTog", "false") == "true") ? true : false;
+  logToAll("demo = " + String(demoModeToggle));
+  WebTimerDelay = preferences.getInt("WebTimerDelay", 500);
   mastOrientation = preferences.getInt("mastOrientation", 0);
-  mastFrequency = preferences.getInt("mastFrequency", 0);
+  sensOrientation = preferences.getInt("sensOrientation", 0);
+  boatOrientation = preferences.getInt("boatOrientation", 0);
+  mastFrequency = preferences.getInt("mastFrequency", 100);
   BoatData.Variation = preferences.getFloat("variation", 0);
 
   if (!MDNS.begin(host.c_str()) ) {
-    Serial.println(F("Error starting MDNS responder!"));
+    logToAll("Error starting MDNS responder.");
   } else
-      Serial.printf("MDNS started %s\n", host.c_str());
+      logToAll("MDNS started " + host);
 
   // Add service to MDNS-SD
   if (!MDNS.addService("http", "tcp", HTTP_PORT)) {
-    Serial.printf("MDNS add service failed\n");
+    logToAll("MDNS add service failed");
   }
   
   // SERVER INIT
@@ -179,16 +223,23 @@ void startWebServer() {
   server.addHandler(&events);
 
   // start serving from SPIFFS
-  //server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
   server.serveStatic("/", SPIFFS, "/");
 
+  // here's another bit of ugliness, until I figure out how to dynamically show/hide gauges in JS
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
+    logToAll("index.html");
+    request->send(SPIFFS, "/index.html", "text/html");
+  });
+
   server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
-    Serial.println("got /heap HTTP request");
+    logToAll("heap.html");
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
   
-  server.on("/demo", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(SPIFFS, "/demo.html", "text/html");
+  server.on("/demo", HTTP_GET, [](AsyncWebServerRequest *request) {
+    logToAll("demo.html");
+    request->send(SPIFFS, "/demo.html", "text/html", false, demo_processor);
   });
 
   // Request the latest sensor readings
@@ -201,57 +252,98 @@ void startWebServer() {
      So any page that needs windSpeed can create an element with that label and get the value 
   */
   server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request) {
-    String json = getSensorReadings();
+    //logToAll("readings");
+    String json;
+    //json.reserve(512);
+    json = getSensorReadings();
+    //logToAll("sending readings " + String(json.length()));
     request->send(200, "application/json", json);
+    //logToAll("readings sent");
     json = String();
   });
 
   server.on("/host", HTTP_GET, [](AsyncWebServerRequest *request) {
-    Serial.print("hostname: ");
-    Serial.println(host.c_str());
-    //sprintf(buf, "host: %s, variation: %d, orientation: %d, timerdelay: %d", host.c_str(), variation, orientation, timerDelay);
-    sprintf(buf, "host %s", host.c_str());
-    request->send_P(200, "text/plain", buf);
+    String buf = "host: " + host + ", webtimerdelay: " + String(WebTimerDelay);
+    logToAll(buf);
+    request->send(200, "text/plain", buf.c_str());
+    buf = String();
   });
 
   server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
-    //Serial.println("settings");
+    logToAll("settings.html");
     request->send(SPIFFS, "/settings.html", "text/html", false, settings_processor);
-    //request->send(SPIFFS, "/settings.html", "text/html");
   });
 
-  // Send a GET request to <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
-  server.on("/update", HTTP_GET, [] (AsyncWebServerRequest *request) {
-    //Serial.println("update");
+  server.on("/compass", HTTP_GET, [](AsyncWebServerRequest *request) {
+    logToAll("compass.html");
+    request->send(SPIFFS, "/compass.html", "text/html");
+  });
+
+  server.on("/mastcompass", HTTP_GET, [](AsyncWebServerRequest *request) {
+    logToAll("mastcompass.html");
+    request->send(SPIFFS, "/mastcompass.html", "text/html");
+  });
+
+  // Send a GET request to <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
+  server.on("/params", HTTP_GET, [] (AsyncWebServerRequest *request) {
+    //logToAll("params.html");
     String inputMessage1;
     String inputMessage2;
-    // GET input1 value on <ESP_IP>/update?output=<inputMessage1>&state=<inputMessage2>
+    // GET input1 value on <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
     if (request->hasParam(PARAM_INPUT_1) && request->hasParam(PARAM_INPUT_2)) {
       inputMessage1 = request->getParam(PARAM_INPUT_1)->value();
       inputMessage2 = request->getParam(PARAM_INPUT_2)->value();
       //digitalWrite(inputMessage1.toInt(), inputMessage2.toInt());
-      //Serial.printf("/update got %s %s\n", inputMessage1, inputMessage2);
+      //("/params got %s %s", inputMessage1, inputMessage2);
+      logToAll("/params: " + inputMessage1 + " " + inputMessage2);
       if (inputMessage1 == "display") {
-        if (inputMessage2 == "off")
+        if (inputMessage2 == "off") {
+          logToAll("display off");
           displayOnToggle = false;
-        else
+#ifdef DISPLAYON
+          display.clearDisplay();
+#endif
+        } else {
+          logToAll("display on");
           displayOnToggle = true;
-        preferences.putBool("displayOnToggle", displayOnToggle);
+        }
+        preferences.putString("displayOnTog", displayOnToggle ? "true" : "false");
       }
       if (inputMessage1 == "compass") {
-        if (inputMessage2 == "off")
+        if (inputMessage2 == "off") {
+          logToAll("compass off");
           compassOnToggle = false;
-        else
+          readings["compass"] = 0;
+        } else {
+          logToAll("compass on");
           compassOnToggle = true;
-        preferences.putBool("compassOnToggle", compassOnToggle);
-        sendMastControl();
+          readings["compass"] = 1;
+        }
+        preferences.putString("compassOnTog", compassOnToggle ? "true" : "false");
+        //sendMastControl();
       }
       if (inputMessage1 == "honeywell") {
-        if (inputMessage2 == "off")
+        if (inputMessage2 == "off") {
+          logToAll("honeywell off");
           honeywellOnToggle = false;
-        else
+          readings["honeywell"] = 0;
+        } else {
+          logToAll("honeywell on");
           honeywellOnToggle = true;
-        preferences.putBool("honeywellOnToggle", honeywellOnToggle);
+          readings["honeywell"] = 1;
+        }
+        preferences.putString("honeywellOnTog", honeywellOnToggle ? "true" : "false");
+       }
+      if (inputMessage1 == "demo") {
+        if (inputMessage2 == "off") {
+          logToAll("demo off");
+          demoModeToggle = false;
+        } else {
+          logToAll("demo on");
+          demoModeToggle = true;
+          demoInit();
+        }
+        preferences.putString("demoModeTog", demoModeToggle ? "true" : "false");
       }
     }
     else {
@@ -259,9 +351,12 @@ void startWebServer() {
       inputMessage2 = "No message sent";
     }
     request->send(200, "text/plain", "OK");
+    inputMessage1 = String();
+    inputMessage2 = String();
   });
 
   server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request) {
+    logToAll("calibrate.html");
     request->send(SPIFFS, "/calibrate.html", "text/html", false, cal_processor);
   });
 
@@ -270,7 +365,7 @@ void startWebServer() {
   server.on("/calibrate", HTTP_POST, [](AsyncWebServerRequest *request) {
     int params = request->params();
     for(int i=0;i<params;i++) {
-      AsyncWebParameter* p = request->getParam(i);
+      const AsyncWebParameter* p = request->getParam(i);
       if(p->isPost()) {
         // HTTP POST ssid value
         if (p->name() == "portRange") {
@@ -291,11 +386,11 @@ void startWebServer() {
     //Serial.println("calibrate post");
     /*
     int params = request->params();
-    Serial.printf("/calibrate POST got %d params\n", params);
+    Serial.printf("/calibrate POST got %d params", params);
     for(int i=0;i<params;i++) {
       AsyncWebParameter* p = request->getParam(i);
       if(p->isPost()) {
-        Serial.printf("param: %s %s\n", p->name(), p->value());
+        Serial.printf("param: %s %s", p->name(), p->value());
       }
     }*/
     // RN post isn't including PotValue actual value so I'll just read it and hope they don't move the mast
@@ -326,13 +421,22 @@ void startWebServer() {
     request->send(SPIFFS, "/index.html", "text/html");
   });
 
-  // POST on compass == manual config for orientation and frequency
-  server.on("/compass", HTTP_POST, [](AsyncWebServerRequest *request) {
+  // POST on params
+  server.on("/params", HTTP_POST, [](AsyncWebServerRequest *request) {
     int params = request->params();
     for(int i=0;i<params;i++) {
-      AsyncWebParameter* p = request->getParam(i);
+      const AsyncWebParameter* p = request->getParam(i);
       if(p->isPost()) {
         // HTTP POST ssid value
+        logToAll("params POST " + p->name() + " " + p->value());
+        if (p->name() == "webtimerdelay") {
+          WebTimerDelay = atoi(p->value().c_str());
+          preferences.putInt("WebTimerDelay", WebTimerDelay);
+        }
+        if (p->name() == "sensorient") {
+          sensOrientation = atoi(p->value().c_str());
+          preferences.putInt("sensOrientation", sensOrientation);
+        }
         if (p->name() == "orientation") {
           mastOrientation = atoi(p->value().c_str());
           preferences.putInt("mastOrientation", mastOrientation);
@@ -345,7 +449,11 @@ void startWebServer() {
           BoatData.Variation = atof(p->value().c_str());
           preferences.putFloat("variation", BoatData.Variation);
         }
-        sendMastControl();  // notify mast compass via ESPNOW
+        //sendMastControl();  // notify mast compass via ESPNOW
+        if (p->name() == "boatorient") {
+          boatOrientation = atoi(p->value().c_str());
+          preferences.putInt("boatOrientation", boatOrientation);
+        }
       } // isPost
     } // for params
     request->send(SPIFFS, "/index.html", "text/html");
@@ -353,6 +461,7 @@ void startWebServer() {
 
   // POST on mastcompass means mast is centered and we can calculate orientation
   server.on("/mastcompass", HTTP_POST, [](AsyncWebServerRequest *request) {
+    logToAll("mastcompass.html");
     int delta = mastCompassDeg-boatCompassDeg;
     if (delta > 180) {
       delta -= 360;
@@ -360,9 +469,10 @@ void startWebServer() {
       delta += 360;
     }
     mastOrientation = delta;
-    Serial.printf("mastcompass: delta=%d\n", delta);
+    logToAll("mast compass orientation: " + String(delta));
     preferences.putInt("mastOrientation", mastOrientation);
     // TBD: build a page with a gauge that reflects mast orientation and redirect there
+    // until then, send back to mastcompass.html so user can verify that compasses agree when mast is centered
     request->send(SPIFFS, "/mastcompass.html", "text/html");
   });
 
@@ -392,12 +502,12 @@ void startWebServer() {
     int headers = request->headers();
     int i;
     for (i = 0; i < headers; i++) {
-      AsyncWebHeader* h = request->getHeader(i);
+      const AsyncWebHeader* h = request->getHeader(i);
       Serial.println("_HEADER[" + h->name() + "]: " + h->value());
     }
     int params = request->params();
     for (i = 0; i < params; i++) {
-      AsyncWebParameter* p = request->getParam(i);
+      const AsyncWebParameter* p = request->getParam(i);
       if (p->isFile()) {
         Serial.println("_FILE[" + p->name() + "]: " + p->value() + ", size: " + p->size());
       } else if (p->isPost()) {
@@ -410,25 +520,5 @@ void startWebServer() {
   }); // onNotFound
 
   server.begin();
-  Serial.print(F("HTTP server started @ "));
-  Serial.println(WiFi.localIP());
+  logToAll("HTTP server started @ " + WiFi.localIP().toString());
 }
-
-/*
-void initWebSocket() {
-  server.addHandler(&events);
-}
-void loop() {
-  if ((millis() - lastTime) > WebTimerDelay) {
-    if (APmodeSwitch) {
-      String sensorReadings = getSensorReadings();
-      Serial.println(sensorReadings);
-      notifyClients(sensorReadings);
-    } else {
-      // we're still in AP mode
-      Serial.print(".");
-    }
-    lastTime = millis();
-  }
-  ws.cleanupClients();
-}*/

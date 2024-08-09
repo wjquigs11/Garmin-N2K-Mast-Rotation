@@ -2,106 +2,22 @@
 // Get current sensor readings when the page loads  
 window.addEventListener('load', getReadings);
 
-var gaugeMagRot = new RadialGauge({
-  renderTo: 'gauge-magrot',
-  width: 300,
-  height: 300,
-//    units: "degrees",
-  minValue: -50,
-  maxValue: 50,
-  startAngle: 310,
-  ticksAngle: 100,
-//    colorValueBoxRect: "#049faa",
-//    colorValueBoxRectEnd: "#049faa",
-//    colorValueBoxBackground: "#f1fbfc",
-  valueInt: 2,
-  valueBox: false,
-  majorTicks: [
-      "-50",
-      "0",
-      "50"
-  ],
-  minorTicks: 4,
-  strokeTicks: true,
-  highlights: [
-      {
-          "from": -50,
-          "to": 50,
-          "color": "#D3D3D3"
-      }
-  ],
-  colorPlate: "#fff",
-  borderShadowWidth: 0,
-  borders: false,
-  needleType: "arrow",
-  colorNeedle: "#0A1128",
-  colorNeedleEnd: "#D3D3D3",
-  needleWidth: 3,
-  needleCircleSize: 5,
-  colorNeedleCircleOuter: "#D3D3D3",
-  needleCircleOuter: true,
-  needleCircleInner: false,
-  animationDuration: 10,
-  animationRule: "linear",
-  title: "Magnetic"
-}).draw();
-
-var gaugeHoneyRot = new RadialGauge({
-  renderTo: 'gauge-honeyrot',
-  width: 300,
-  height: 300,
-//    units: "degrees",
-  minValue: -50,
-  maxValue: 50,
-  startAngle: 310,
-  ticksAngle: 100,
-//    colorValueBoxRect: "#049faa",
-//    colorValueBoxRectEnd: "#049faa",
-//    colorValueBoxBackground: "#f1fbfc",
-  valueInt: 2,
-  valueBox: false,
-  majorTicks: [
-      "-50",
-      "0",
-      "50"
-  ],
-  minorTicks: 4,
-  strokeTicks: true,
-  highlights: [
-      {
-          "from": -50,
-          "to": 50,
-          "color": "#D3D3D3"
-      }
-  ],
-  colorPlate: "#fff",
-  borderShadowWidth: 0,
-  borders: false,
-  needleType: "arrow",
-  colorNeedle: "#0A1128",
-  colorNeedleEnd: "#D3D3D3",
-  needleWidth: 3,
-  needleCircleSize: 5,
-  colorNeedleCircleOuter: "#D3D3D3",
-  needleCircleOuter: true,
-  needleCircleInner: false,
-  animationDuration: 10,
-  animationRule: "linear",
-  title: "Sensor"
-}).draw();
-
 // Function to get current readings on the webpage when it loads for the first time
+// do we really need this, since our update rate is at least 10Hz?
 function getReadings() {
-    var xhr = new XMLHttpRequest();
-    xhr.onreadystatechange = function() {
-      if (this.readyState == 4 && this.status == 200) {
-        var myObj = JSON.parse(this.responseText);
-        updatePage(myObj);
-      }
-    }; 
-    xhr.open("GET", "/readings", true);
-    xhr.send();
-  }
+  console.log("getReadings");
+  var xhr = new XMLHttpRequest();
+  xhr.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      var myObj = JSON.parse(this.responseText);
+      document.getElementById('mastRotate').innerHTML = myObj.mastRotate;
+      document.getElementById('windSpeed').innerHTML = myObj.windSpeed;
+      document.getElementById('windAngle').innerHTML = myObj.windAngle;      
+    }
+  }; 
+  xhr.open("GET", "/readings", true);
+  xhr.send();
+}
   
   if (!!window.EventSource) {
     var source = new EventSource('/events');
@@ -124,7 +40,46 @@ function getReadings() {
       console.log("new_readings", e.data);
       var myObj = JSON.parse(e.data);
       console.log(myObj);
-      updatePage(myObj);
-      gaugeMagRot.value = -myObj.mastDelta;
+      //var gaugeCanvas = document.querySelector('#gauge-magrot');
+      var gaugeCanvas = document.getElementById('gauge-magrot')
+      if (gaugeCanvas) {
+        if (myObj.compass) {
+          // change the canvas element holding the gauge
+          gaugeCanvas.removeAttribute("hidden");
+          gaugeCanvas.style.display = '';
+          // change the gauge itself
+          gaugeMagRot.value = myObj.mastDelta;
+        } else {
+          gaugeCanvas.style.display = 'none';
+        }
+      }
+      gaugeCanvas = document.getElementById('gauge-honeyrot');
+      if (gaugeCanvas) {
+        if (myObj.honeywell) {
+          gaugeCanvas.removeAttribute("hidden");
+          gaugeCanvas.style.display = '';
+          gaugeHoneyRot.value = myObj.mastRotate;
+        } else { 
+          gaugeCanvas.style.display = 'none';
+        }
+      }
+      var elementThis;
+      if (elementThis = document.getElementById('mastRotate')) elementThis.innerHTML = myObj.mastRotate;
+      if (elementThis = document.getElementById('windSpeed')) elementThis.innerHTML = myObj.windSpeed;
+      if (elementThis = document.getElementById('windAngle')) elementThis.innerHTML = myObj.windAngle;
+      if (elementThis = document.getElementById('mastHeading')) elementThis.innerHTML = myObj.mastHeading;
+      if (elementThis = document.getElementById('boatHeading')) elementThis.innerHTML = myObj.boatHeading;
+      //if (elementThis = document.getElementById('mastDelta')) elementThis.innerHTML = myObj.mastDelta;
+      if (elementThis = document.getElementById('boatTrue')) elementThis.innerHTML = myObj.boatTrue;
+      if (elementThis = document.getElementById('rotateout')) elementThis.innerHTML = myObj.rotateout;
     }, false);
+  }
+
+  function menuFun() {
+    var x = document.getElementById("myLinks");
+    if (x.style.display === "block") {
+      x.style.display = "none";
+    } else {
+      x.style.display = "block";
+    }
   }
