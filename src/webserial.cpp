@@ -81,6 +81,10 @@ extern byte calibrationStatus[];
 #endif
 extern float mastDelta;
 
+extern int num_n2k_messages;
+extern int num_wind_messages;
+
+
 void mastHeading();
 extern float mastAngle[2]; // array for both sensors
 // 0 = honeywell
@@ -203,13 +207,15 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         }
       }
     if (words[i].equals("status")) {
-      WebSerial.println("               AWS (in): " + String(WindSensor::windSpeedKnots));
-      WebSerial.println("               AWA (in): " + String(WindSensor::windAngleDegrees));
-      WebSerial.println("     Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
-      WebSerial.println("           Sensor angle: " + String(mastRotate));
-      WebSerial.println("            Correct AWA: " + String(rotateout));
-      WebSerial.println("           Mast Compass: " + String(mastCompassDeg));
-      WebSerial.println("             Mast angle: " + String(mastDelta));
+      WebSerial.println("           AWS (in): " + String(WindSensor::windSpeedKnots));
+      WebSerial.println("           AWA (in): " + String(WindSensor::windAngleDegrees));
+      WebSerial.println(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
+      WebSerial.println("       Sensor angle: " + String(mastRotate));
+      WebSerial.println("        Correct AWA: " + String(rotateout));
+      WebSerial.println("       Mast Compass: " + String(mastCompassDeg));
+      WebSerial.println("         Mast angle: " + String(mastDelta));
+      WebSerial.println("           n2k main: " + String(num_n2k_messages));
+      WebSerial.println("           n2k wind: " + String(num_wind_messages));
     }
     if (words[i].equals("compass")) {
       WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
@@ -238,13 +244,13 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     if (words[i].equals("ls")) {
       File root = SPIFFS.open("/");
       File file = root.openNextFile();
-      while(file){
+      while (file) {
         WebSerial.println(file.name());
         file.close(); 
         file = root.openNextFile();
       }
       root.close();
-      WebSerial.println("done");
+      //WebSerial.println("done");
     }
     if (words[i].equals("scan")) {
       i2cScan();

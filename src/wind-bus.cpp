@@ -204,7 +204,9 @@ float mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 HTTPClient httpC;
-String mastCompass = "http://ESPcompass.local/readings";
+String mastCompass = "http://mastcomp.local/readings";
+JSONVar mastCompRead;
+String jsonString;
 
 #ifdef CMPS14
 const int CMPS14_ADDRESS = 0x60;
@@ -290,8 +292,10 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
   //N2kMsg.Print(&Serial);
   //Serial.printf("t: %d R: %d\n", millis(), N2kMsg.PGN);
-  n2kWindOpen = true;
-  n2kWind->SetForwardStream(forward_stream);
+  if (!n2kWindOpen) {
+    n2kWindOpen = true;
+    n2kWind->SetForwardStream(forward_stream);
+  }
   num_wind_messages++;
   time_since_last_wind_rx = 0;
   ToggleLed();
@@ -579,8 +583,35 @@ void setup() {
     if (httpResponseCode>0) {
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
-      String payload = httpC.getString();
-      Serial.println(payload);
+      jsonString = httpC.getString();
+  #if 0
+  // Parse the JSON string manually
+  char* key = jsonString.c_str();
+  char* value;
+
+  // Find the first key
+  key = strtok(key, ":");
+  while (key != NULL) {
+    // Find the corresponding value
+    value = strtok(NULL, ",}");
+
+    // Check which key we have and parse the value accordingly
+    if (strstr(key, "bearing") != NULL) {
+      bearing = atof(value);
+    } else if (strstr(key, "calstatus") != NULL) {
+      calstatus = atoi(value);
+    }
+
+    // Find the next key
+    key = strtok(NULL, ":");
+  }
+
+  // Print the extracted values
+  Serial.print("Bearing: ");
+  Serial.println(bearing);
+  Serial.print("Calstatus: ");
+  Serial.println(calstatus);
+#endif
     } else {
       Serial.print("HTTP GET Error code: ");
       Serial.println(httpResponseCode);
@@ -592,7 +623,7 @@ void setup() {
   Serial.printf("ESP flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
-    app.onRepeat(10, []() {
+    app.onRepeat(1, []() {
     PollCANStatus();
     n2kMain->ParseMessages();
 #if defined(ESPBERRY)
@@ -653,6 +684,43 @@ void setup() {
     //Serial.println("elegant OTA loop");
     ElegantOTA.loop();
   });
+
+#if 0
+  // temporary since our mast compass isn't reporting on n2k but is on wifi     
+  app.onRepeat(1000, []() {
+    if(WiFi.status()== WL_CONNECTED) {    
+      httpC.begin(mastCompass.c_str());
+      int httpResponseCode = httpC.GET();
+      if (httpResponseCode>0) {
+        Serial.print("HTTP Response code: ");
+        Serial.println(httpResponseCode);
+        String payload = httpC.getString();
+        //mastCompRead = JSON.parse(payload);
+      }
+        if (JSON.typeof(myObject) == "undefined") {
+          Serial.println("Parsing input failed!");
+        }
+        else 
+          Serial.println(myObject);
+        if (myObject.hasOwnProperty("bearing")) {
+          float bearing = (float)myObject["bearing"];
+          //mastCompassDeg = bearing;
+          Serial.print("Bearing: ");
+          Serial.println(bearing);
+        }
+        if (myObject.hasOwnProperty("calstatus")) {
+          int calstatus = (int)myObject["calstatus"];
+          Serial.print("mast Calstatus: ");
+          Serial.println(calstatus);
+        }    
+      } else {
+        Serial.print("HTTP GET Error code: ");
+        Serial.println(httpResponseCode);
+      }
+      httpC.end();
+    }
+  });
+#endif
 
   app.onRepeat(10, []() {
     WebSerial.loop();
