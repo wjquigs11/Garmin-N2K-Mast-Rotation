@@ -25,7 +25,7 @@
 //#include "can.h"
 #include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
-#include <ElegantOTA.h>
+//#include <ElegantOTA.h>
 #include <WebSerial.h>
 #include <Adafruit_BNO08x.h>
 #include <HTTPClient.h>
@@ -74,22 +74,28 @@ void demoInit();
 
 // Get Sensor Readings and return JSON object
 String getSensorReadings() {
+  readings["rotateout"] = "";
+  readings["mastHeading"] = "";
+  readings["mastDelta"] = "";
   if (honeywellOnToggle) {
-    readings["rotateout"] = String(rotateout);
-    readings["mastRotate"] = String(mastAngle[0],2);
+    readings["mastRotate"] = String(mastAngle[0],0);
     readings["PotValue"] = String(PotValue,0);
   }
   if (compassOnToggle) {
-    readings["mastHeading"] = String(mastCompassDeg,2);
-    readings["boatHeading"] = String(boatCompassDeg,2);
+    if (mastCompassDeg > 0) { // set to -1 if mast compass times out
+      readings["mastHeading"] = String(mastCompassDeg,0);
+      readings["mastDelta"] = String(mastAngle[1],0);
+    }
+    readings["boatHeading"] = String(boatCompassDeg,0);
     //Serial.println(boatCompassDeg);
-    readings["mastDelta"] = String(mastAngle[1],2);
+    if (!honeywellOnToggle) // honeywell takes precedence if both are present
+      readings["rotateout"] = String(rotateout,0);
   }
   // add true boat compass for compass.html
   readings["calstatus"] = boatCompassCalStatus;
-  readings["boatTrue"] = String(BoatData.TrueHeading,2);
+  readings["boatTrue"] = String(BoatData.TrueHeading,0);
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
-  readings["windAngle"] = String(WindSensor::windAngleDegrees,2);
+  readings["windAngle"] = String(WindSensor::windAngleDegrees,0);
 
   String jsonString = JSON.stringify(readings);
   //logToAll(jsonString);

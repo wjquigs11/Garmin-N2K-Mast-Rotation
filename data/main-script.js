@@ -40,6 +40,13 @@ function getReadings() {
       console.log("new_readings", e.data);
       var myObj = JSON.parse(e.data);
       console.log(myObj);
+      console.log(document.getElementById("honeywell"));
+      console.log(document.querySelector("#honeywell"));
+      console.log([...document.querySelectorAll('[id]')].map(el => el.id));
+      if (myObj.mastRotate) // poor choice but mastRotate represents Honeywell sensor
+        document.getElementById("honeywell").style.display = 'block';
+      else
+        document.getElementById("honeywell").style.display = 'none';
       //var gaugeCanvas = document.querySelector('#gauge-magrot');
       var gaugeCanvas = document.getElementById('gauge-magrot')
       if (gaugeCanvas) {

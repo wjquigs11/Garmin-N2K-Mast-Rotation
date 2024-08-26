@@ -30,8 +30,8 @@ TBD remove enum for compass type and just compile with different types; change #
 //#include "can.h"
 #include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
-#include <ElegantOTA.h>
-#include <WebSerial.h>
+//#include <ElegantOTA.h>
+//#include <WebSerial.h>
 #include <Adafruit_BNO08x.h>
 
 #include "windparse.h"
