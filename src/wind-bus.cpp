@@ -35,7 +35,7 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <SPI.h>
 #include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
-#include <ElegantOTA.h>
+//#include <ElegantOTA.h>
 #include <WebSerial.h>
 #include <Adafruit_BNO08x.h>
 #include <HTTPClient.h>
@@ -84,7 +84,8 @@ const int CAN0_INT = 25;    // RPi Pin 12 -- IO25
 #define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
 #define CAN_RX_PIN GPIO_NUM_35
 #define N2k_SPI_CS_PIN 5    
-#define N2k_CAN_INT_PIN 22  
+//#define N2k_CAN_INT_PIN 22  
+#define N2k_CAN_INT_PIN 25  
 tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
 // display
@@ -158,10 +159,14 @@ extern int adsInit;
 // timing/display
 int num_n2k_messages = 0;
 int num_wind_messages = 0;
+int num_mastcomp_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
 elapsedMillis time_since_last_wind_rx = 0;
 unsigned long total_time_since_last_wind = 0.0;
 unsigned long avg_time_since_last_wind = 0.0;
+elapsedMillis time_since_last_mastcomp_rx = 0;
+unsigned long total_time_since_last_mastcomp = 0.0;
+unsigned long avg_time_since_last_mastcomp = 0.0;
 
 // defs for wifi
 void initWebSocket();
@@ -197,6 +202,7 @@ extern int boatOrientation; // delta between boat compass and magnetic north
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
 extern float mastDelta;
+extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
 extern int boatCompassCalStatus;
 void mastHeading();
@@ -285,9 +291,44 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
   }
 }
 
+//#define WINDDIAG
+
+void windCounter() {
+  num_wind_messages++;
+  total_time_since_last_wind += time_since_last_wind_rx;
+  avg_time_since_last_wind = total_time_since_last_wind / num_wind_messages;
+#ifdef WINDDIAG
+  if (num_wind_messages % 100 == 0) {
+    Serial.printf("last wind time: %2.2ld avg wind time: %2.2ld ms", time_since_last_wind_rx, avg_time_since_last_wind);
+    if (time_since_last_wind_rx > 0.0)
+      Serial.printf(" %2.2ld Hz", 1000.0/avg_time_since_last_wind);
+    Serial.println();
+  }
+#endif
+  time_since_last_wind_rx = 0;
+}
+
+#define MASTCOMPDIAG
+
+void mastcompCounter() {
+  num_mastcomp_messages++;
+  total_time_since_last_mastcomp += time_since_last_mastcomp_rx;
+  avg_time_since_last_mastcomp = total_time_since_last_mastcomp / num_mastcomp_messages;
+#ifdef MASTCOMPDIAG
+  if (num_mastcomp_messages % 100 == 0) {
+    Serial.printf("last mastcomp time: %2.2ld (secs) avg mastcomp time: %2.2ld ms", time_since_last_mastcomp_rx, avg_time_since_last_mastcomp);
+    if (time_since_last_mastcomp_rx > 0.0)
+      Serial.printf(" %2.2ld Hz", 1000.0/avg_time_since_last_mastcomp);
+    Serial.println();
+  }
+#endif
+  time_since_last_mastcomp_rx = 0;
+}
+
 #ifdef PICANM
 // on the PICAN-M I was able to instantiate the MCP version of the Timo library, 
 // so I use it to parse Wind and Heading from the mast
+
 // NMEA 2000 message handler for wind bus: check if message is wind and handle it
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
   //N2kMsg.Print(&Serial);
@@ -296,34 +337,84 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     n2kWindOpen = true;
     n2kWind->SetForwardStream(forward_stream);
   }
-  num_wind_messages++;
-  time_since_last_wind_rx = 0;
   ToggleLed();
+  if (time_since_last_mastcomp_rx > 5000) // 5 second timeout on mast compass
+    mastCompassDeg = -1;
   switch (N2kMsg.PGN) {
     case 130306L:
-//#define WINDEBUG
-#ifdef WINDEBUG
-      total_time_since_last_wind += time_since_last_wind_rx;
-      avg_time_since_last_wind = total_time_since_last_wind / num_wind_messages;
-      if (num_wind_messages % 100 == 0) {
-        Serial.printf("last wind time: %2.2ld avg wind time: %2.2ld ms", time_since_last_wind_rx, avg_time_since_last_wind);
-        if (time_since_last_wind_rx > 0.0)
-          Serial.printf(" %2.2ld Hz", 1000.0/avg_time_since_last_wind);
-        Serial.println();
-      }
-      time_since_last_wind_rx = 0;
-#endif
+      windCounter();
       ParseWindN2K(N2kMsg);
       break;
     case 128259L:
       BoatSpeed(N2kMsg);
       break; 
     case 127250L:
-      ParseCompassN2K(N2kMsg);
+      mastcompCounter();
+      //Serial.printf("WIND Heading: %d\n", N2kMsg.PGN);
+      if (compassOnToggle) ParseCompassN2K(N2kMsg);
       break;
   } 
 }
 #endif
+#ifdef ESPBERRY
+extern mcp2515_can n2kWind;
+byte cdata[MAX_DATA_SIZE] = {0};
+//#define DEBUG
+// parse a packet manually from CAN bus data (not using Timo library)
+// set globals for wind speed/angle or heading for processing by WindSpeed() or Heading()
+void ParseWindCAN() {
+  //Serial.print("parsewindcan ");
+  uint8_t len;
+  int PGN;
+  unsigned char SID;  
+  if (n2kWind.checkReceive() != CAN_MSGAVAIL) {
+    //Serial.println("no more on wind bus");
+    return;
+  }
+  n2kWind.readMsgBuf(&len, cdata);
+  unsigned long ID = n2kWind.getCanId();
+  PGN = ((ID & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
+  uint8_t SRC = ID & 0xFF;
+  SID = cdata[0];
+#ifdef DEBUG
+  Serial.printf("CAN PGN %d SRC %d SID %d len %d ", PGN, SRC, SID, len);
+#endif
+  if (time_since_last_mastcomp_rx > 5000) // 5 second timeout on mast compass
+    mastCompassDeg = -1;
+  switch (PGN) {
+    case 130306: { 
+      windCounter();
+      WindSensor::windSpeedMeters = ((cdata[2] << 8) | cdata[1]) / 100.0;
+      WindSensor::windAngleRadians = ((cdata[4] << 8) | cdata[3]) / 10000.0;
+      wRef = (tN2kWindReference)cdata[5];
+#ifdef DEBUG
+      Serial.printf("CAN parsed wind SID %d Speed %0.2f Angle %0.4f (%0.4f) ref %d (%x)\n", SID, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, WindSensor::windAngleRadians*(180/M_PI), wRef, cdata[5]);
+      //for (int i=0; i<len; i++) {
+      //  Serial.printf("%02X ", cdata[i]);
+      //}
+#endif
+      WindSpeed();
+      break;
+    } 
+// if I don't get a compass reading for some time, should I set mastCompassDeg to 0?
+// or should I set it to zero after transmitting wind?
+    case 127250: { 
+      mastcompCounter();
+      mastCompassDeg = (((cdata[2] << 8) | cdata[1]) / 10000.0) * (180/M_PI);
+      double Deviation = ((cdata[4] << 8) | cdata[3]) / 10000.0;
+      double Variation = ((cdata[6] << 8) | cdata[5]) / 10000.0;
+      int ref = cdata[7];
+#ifdef DEBUG
+      Serial.printf("CAN parsed mast heading %.2f deviation %0.2f Variation %0.2f ref %d\n", mastCompassDeg, Deviation, Variation, ref);
+#endif
+      break;
+    }
+  }
+}
+#else
+
+#endif
+
 
 String can_state;
 
@@ -500,7 +591,7 @@ void setup() {
   n2kWind->SetN2kCANReceiveFrameBufSize(100);
   n2kWind->SetMode(tNMEA2000::N2km_ListenAndSend);
   //n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
-  n2kWind->EnableForward(false); 
+  //n2kWind->EnableForward(false); 
   //n2kWind->SetForwardOwnMessages(true);
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   if (n2kWind->Open()) {
@@ -572,7 +663,7 @@ void setup() {
   setupWifi();
   startWebServer();
   serverStarted=true;
-  ElegantOTA.begin(&server);
+  //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
 
@@ -682,7 +773,7 @@ void setup() {
     //Serial.println("drd loop");
     drd->loop(); // double reset detector
     //Serial.println("elegant OTA loop");
-    ElegantOTA.loop();
+    //ElegantOTA.loop();
   });
 
 #if 0
@@ -774,7 +865,7 @@ void setup() {
       if (n2kMain->SendMsg(correctN2kMsg)) {
         //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
       } else {
-        //Serial.println("Failed to send heading");
+        Serial.println("Failed to send heading from compass reaction");
       }
       //logToAll("boat heading: " + String(boatCompassDeg));
     });

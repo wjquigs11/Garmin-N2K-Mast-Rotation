@@ -26,7 +26,7 @@
 //#include "can.h"
 #include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
-#include <ElegantOTA.h>
+//#include <ElegantOTA.h>
 #include <WebSerial.h>
 #include <Adafruit_BNO08x.h>
 #include "windparse.h"
@@ -102,8 +102,8 @@ void BoatSpeed(const tN2kMsg &N2kMsg);
 void logToAll(String s) {
   Serial.println(s);
   //consLog.println(s);
-  if (serverStarted)
-    WebSerial.println(s);
+  //if (serverStarted)
+  //  WebSerial.println(s);
   s = String();
 }
 
@@ -166,7 +166,7 @@ void i2cScan() {
   }
 }
 
-String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass"};
+String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass", "windrx"};
 #define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 String words[10]; // Assuming a maximum of 10 words
 
@@ -289,6 +289,11 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         }
 
     }
+    if (words[i].equals("windrx")) {
+      WebSerial.println("last wind time: " + String(time_since_last_wind_rx) + " avg wind time: " + String(avg_time_since_last_wind) + " ms");
+      if (time_since_last_wind_rx > 0.0)
+        WebSerial.println(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
+      }
   }
   for (int i=0; i<wordCount; i++) words[i] = String();
   dataS = String();

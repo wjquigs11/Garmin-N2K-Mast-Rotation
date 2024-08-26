@@ -4,19 +4,19 @@ var gaugeMagRot = new RadialGauge({
   width: 300,
   height: 300,
 //    units: "degrees",
-  minValue: -50,
-  maxValue: 50,
-  startAngle: 310,
-  ticksAngle: 100,
+  minValue: -90,
+  maxValue: 90,
+  startAngle: 90,
+  ticksAngle: 180,
 //    colorValueBoxRect: "#049faa",
 //    colorValueBoxRectEnd: "#049faa",
 //    colorValueBoxBackground: "#f1fbfc",
   valueInt: 2,
   valueBox: true,
   majorTicks: [
-      "-50",
+      "-90",
       "0",
-      "50"
+      "90"
   ],
   minorTicks: 4,
   strokeTicks: true,
@@ -40,5 +40,5 @@ var gaugeMagRot = new RadialGauge({
   needleCircleInner: false,
   animationDuration: 10,
   animationRule: "linear",
-  title: "Magnetic"
+  title: "Mast Compass"
 }).draw();

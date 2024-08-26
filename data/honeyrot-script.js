@@ -40,5 +40,5 @@ var gaugeHoneyRot = new RadialGauge({
   needleCircleInner: false,
   animationDuration: 10,
   animationRule: "linear",
-  title: "Sensor"
+  title: "Honeywell Sensor"
 }).draw();
