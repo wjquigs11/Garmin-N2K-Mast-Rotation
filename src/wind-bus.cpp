@@ -41,19 +41,18 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <HTTPClient.h>
 
 #include "windparse.h"
-#if defined(PICANM)
+#ifdef PICANM
 #include <N2kMsg.h>
 #include <NMEA2000.h>
 #include <mcp_can.h>
 #include <NMEA2000_mcp.h>
-#else
-#include "mcp2515_can.h"
 #endif
 
 #define SCREEN_WIDTH 128  // OLED display width, in pixels
 #define SCREEN_HEIGHT 64  // OLED display height, in pixels
 
-#ifdef ESPBERRY
+#ifdef RS485CAN
+#include "mcp2515_can.h"
 #define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
 #define CAN_RX_PIN GPIO_NUM_35 // RPI header pin 15
 //#define N2k_SPI_CS_PIN 5    
@@ -77,15 +76,14 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET,
 #define SPI_CS_PIN 5
 mcp2515_can n2kWind(SPI_CS_PIN); // CAN0 interface CS
 const int CAN0_INT = 25;    // RPi Pin 12 -- IO25
-#endif // ESPBERRY
+#endif // RS485CAN
 
 
 #ifdef PICANM  // v1 of the controller uses PICAN-M HAT
 #define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
 #define CAN_RX_PIN GPIO_NUM_35
 #define N2k_SPI_CS_PIN 5    
-//#define N2k_CAN_INT_PIN 22  
-#define N2k_CAN_INT_PIN 25  
+//#define N2k_CAN_INT_PIN 25  
 tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
 // display
@@ -238,7 +236,7 @@ void ToggleLed() {
   led_state = !led_state;
 }
 
-#ifdef ESPBERRY
+#ifdef RS485CAN
 void ParseWindCAN();
 #else
 void ParseWindN2K(const tN2kMsg &N2kMsg);
@@ -338,8 +336,9 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     n2kWind->SetForwardStream(forward_stream);
   }
   ToggleLed();
-  if (time_since_last_mastcomp_rx > 5000) // 5 second timeout on mast compass
-    mastCompassDeg = -1;
+  // problematic since mast compass can come back online
+  //if (time_since_last_mastcomp_rx > 5000) // 5 second timeout on mast compass
+  //  mastCompassDeg = -1;
   switch (N2kMsg.PGN) {
     case 130306L:
       windCounter();
@@ -350,13 +349,13 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
       break; 
     case 127250L:
       mastcompCounter();
-      //Serial.printf("WIND Heading: %d\n", N2kMsg.PGN);
+      Serial.printf("WIND Heading: %d\n", N2kMsg.PGN);
       if (compassOnToggle) ParseCompassN2K(N2kMsg);
       break;
   } 
 }
 #endif
-#ifdef ESPBERRY
+#ifdef RS485CAN
 extern mcp2515_can n2kWind;
 byte cdata[MAX_DATA_SIZE] = {0};
 //#define DEBUG
@@ -400,7 +399,7 @@ void ParseWindCAN() {
 // or should I set it to zero after transmitting wind?
     case 127250: { 
       mastcompCounter();
-      mastCompassDeg = (((cdata[2] << 8) | cdata[1]) / 10000.0) * (180/M_PI);
+      mastCompassDeg = (((cdata[2] << 8) | cdata[1]) / 10000.0) * RADTODEG;
       double Deviation = ((cdata[4] << 8) | cdata[3]) / 10000.0;
       double Variation = ((cdata[6] << 8) | cdata[5]) / 10000.0;
       int ref = cdata[7];
@@ -505,7 +504,7 @@ void setup() {
   Wire.begin();
 
 #ifdef DISPLAYON  
-#ifdef ESPBERRY
+#ifdef RS485CAN
   if(!display.begin(SSD1306_EXTERNALVCC, 0, true))
 #endif
 #ifdef PICANM
@@ -717,7 +716,7 @@ void setup() {
     app.onRepeat(1, []() {
     PollCANStatus();
     n2kMain->ParseMessages();
-#if defined(ESPBERRY)
+#if defined(RS485CAN)
     ParseWindCAN();
 #endif
 #if defined(PICANM)

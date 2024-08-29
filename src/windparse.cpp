@@ -143,7 +143,7 @@ float readCompassDelta() {
     //Serial.printf("parsecompass boatcomp %0.2f mastcomp %0.2f\n", boatCompassDeg, mastCompassDeg);
     // adjust delta for mast compass orientation relative to boat compass (mastOrientation)
     //float mastCompassCorr = (float)((int)(mastCompassDeg+mastOrientation) + 360 % 360);
-    mastDelta = boatCompassDeg-mastCompassDeg;
+    mastDelta = (boatCompassDeg+boatOrientation)-(mastCompassDeg+mastOrientation);
     if (mastDelta > 180) {
       mastDelta -= 360;
     } else if (mastDelta < -180) {
@@ -155,7 +155,7 @@ float readCompassDelta() {
     return mastDelta;
   }
   Serial.println("compass not ready");
-  return 0;
+  return -1;
 }
 
 tN2kMsg correctN2kMsg;
@@ -175,7 +175,7 @@ void WindSpeed() {
   //Serial.println("windspeed");
   num_wind_messages++;
   WindSensor::windSpeedKnots = WindSensor::windSpeedMeters * 1.943844; // convert m/s to kts
-  WindSensor::windAngleDegrees = WindSensor::windAngleRadians * (180/M_PI);
+  WindSensor::windAngleDegrees = WindSensor::windAngleRadians * RADTODEG;
   //Serial.printf("sensor angle %0.2f\n", WindSensor::windAngleDegrees);
   if (wRef != N2kWind_Apparent) { // N2kWind_Apparent
     Serial.printf("got wind PGN not apparent! %d\n", wRef);
@@ -219,7 +219,7 @@ void WindSpeed() {
   // send corrected wind on main bus
   // note we are sending the original speed reading in m/s
   // and the AWA converted from rads to degrees, corrected, and converted back to rads
-  SetN2kPGN130306(correctN2kMsg, 0xFF, WindSensor::windSpeedMeters, rotateout*(M_PI/180), N2kWind_Apparent); 
+  SetN2kPGN130306(correctN2kMsg, 0xFF, WindSensor::windSpeedMeters, rotateout*DEGTORAD, N2kWind_Apparent); 
   if (n2kMain->SendMsg(correctN2kMsg)) {
     //Serial.printf("sent n2k wind %0.2f", rotateout);
   } else {
@@ -245,7 +245,7 @@ void WindSpeed() {
 #endif
 #ifdef XMITRUDDER
   // for now (until you dive into SensESP), send rotation angle as rudder
-  SetN2kPGN127245(correctN2kMsg, (mastRotate+50)*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
+  SetN2kPGN127245(correctN2kMsg, (mastRotate+50)*DEGTORAD, 0, N2kRDO_NoDirectionOrder, 0);
   n2kMain->SendMsg(correctN2kMsg);
 #endif
 #ifdef XMITTRUE
@@ -279,11 +279,13 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
   //logToAll("parsecompassn2k");
   if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
     // TBD get "reference" to confirm it's N2khr_Unavailable
+    mastCompassDeg = heading * RADTODEG;
     readCompassDelta();
     // NOTE we do NOT transmit boat heading on N2K here; only from reaction in wind-bus.cpp, to avoid flooding bus
+    logToAll("mast compass on n2k: " + String(mastCompassDeg));
     //Serial.printf("heading PGN Mast: %.2f Boat: %.2f\n", mastCompassDeg, boatCompassDeg);
-#ifdef XMITRUDDER // sen rudder angle (as rudder #1)
-    SetN2kPGN127245(correctN2kMsg, (mastDelta+50)*(M_PI/180), 1, N2kRDO_NoDirectionOrder, 0);
+#ifdef XMITRUDDER // send rudder angle (as rudder #1)
+    SetN2kPGN127245(correctN2kMsg, (mastDelta+50)*DEGTORAD, 1, N2kRDO_NoDirectionOrder, 0);
     n2kMain->SendMsg(correctN2kMsg);
 #endif
   } else {
