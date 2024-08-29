@@ -9,7 +9,7 @@
 
 void IRAM_ATTR NewDataReadyISR();
 
-//#define ESPBERRY
+//#define RS485CAN
 //#define PICANM // v1 version on Tatiana
 //#define SH_ESP32  // these defs will probably change with SINGLECAN
 //#define SINGLECAN  // for testing (or non-Garmin) we can use one bus 
@@ -87,3 +87,6 @@ extern char prbuf[PRBUF];
 #define lowset 56
 #define highset 311
 extern float mastAngle[];
+
+#define DEGTORAD 0.01745329252
+#define RADTODEG 57.2957795131

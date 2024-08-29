@@ -92,7 +92,7 @@ extern float mastAngle[2]; // array for both sensors
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
 
-#ifdef ESPBERRY
+#ifdef RS485CAN
 void WindSpeed();
 #else
 void WindSpeed(const tN2kMsg &N2kMsg);
