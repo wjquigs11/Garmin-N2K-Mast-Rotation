@@ -13,7 +13,7 @@ extends = espressif32_base
 platform = espressif32
 board = esp32dev
 board_build.partitions = medspiffs.csv
-framework = arduino
+framework = arduino, espidf
 lib_ldf_mode = deep
 monitor_speed = 115200
 monitor_filters = esp32_exception_decoder
@@ -23,10 +23,16 @@ build_flags =
   -DCONFIG_ESP32_PANIC_PRINT_STACK_TRACE
   -DCONFIG_ESP32_PANIC_GDBSTUB_ENABLED
   -Wl,--wrap=esp_panic_handler
-  -DCORE_DEBUG_LEVEL=2
-;  -DCONFIG_ESP32_ENABLE_COREDUMP_TO_FLASH=y
-;  -DCONFIG_ESP32_CORE_DUMP_MAX_TASKS_NUM=64
-;  -DCONFIG_ESP32_CORE_DUMP_STACK_SIZE=1024
+  -DCORE_DEBUG_LEVEL=5
+  -DCONFIG_ESP32_ENABLE_COREDUMP_TO_FLASH=y
+  -DCONFIG_ESP32_CORE_DUMP_MAX_TASKS_NUM=64
+  -DCONFIG_ESP32_CORE_DUMP_STACK_SIZE=1024
+  -DCONFIG_FREERTOS_HZ=1000
+  -DARDUINO_USB_MODE=1
+  -DARDUINO_USB_CDC_ON_BOOT=1
+	-D LED_BUILTIN=2
+	-D RS485CAN
+	-D CMPS14
 lib_deps = 
 	mairas/ReactESP@^2.0.0
 	ttlappalainen/NMEA2000-library@4.21.5
@@ -37,21 +43,12 @@ lib_deps =
 	pfeerick/elapsedMillis@1.0.6
 	https://github.com/wjquigs11/movingAvg
 	arduino-libraries/Arduino_JSON@0.1.0
+	https://github.com/khoih-prog/ESPAsync_WiFiManager
+	https://github.com/khoih-prog/ESP_DoubleResetDetector
+	https://github.com/khoih-prog/ESPAsyncDNSServer
 	adafruit/Adafruit BNO08x@1.2.5
 	https://github.com/mathieucarbou/AsyncTCP#v3.1.4
 	https://github.com/mathieucarbou/ESPAsyncWebServer#v3.0.6
 	ayushsharma82/WebSerial@^2.0.6
-
-[env:rs485can]
-; rs485can uses Waveshare CAN HAT but doesn't work with Timo drivers
-; also uses a different display protocol
-; and CMPS14 instead of BNO
-build_flags = 
-	-D LED_BUILTIN=2
-	-D RS485CAN
-	-D CMPS14
-	${env.build_flags}
-lib_deps = 
 	https://github.com/Seeed-Studio/Seeed_Arduino_CAN
-	${env.lib_deps}
-	
+
