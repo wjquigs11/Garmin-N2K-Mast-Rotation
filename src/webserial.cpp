@@ -75,7 +75,7 @@ extern const char* serverName;
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
-extern int boatCompassCalStatus;
+extern int boatCalStatus;
 #ifdef CMPS14
 extern byte calibrationStatus[];
 #endif
@@ -102,8 +102,8 @@ void BoatSpeed(const tN2kMsg &N2kMsg);
 void logToAll(String s) {
   Serial.println(s);
   //consLog.println(s);
-  //if (serverStarted)
-  //  WebSerial.println(s);
+  if (serverStarted)
+    WebSerial.println(s);
   s = String();
 }
 
@@ -129,7 +129,7 @@ void lsAPconn() {
       if(i<5) printS += ".";
     }
     logToAll(printS);
-    Serial.print("IP: ");  
+    //Serial.print("IP: ");  
     byte octet[4];
     octet[3] = station.ip.addr & 0xFF;
     octet[2] = (station.ip.addr >> 8) & 0xFF;
@@ -171,10 +171,10 @@ String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readi
 String words[10]; // Assuming a maximum of 10 words
 
 void WebSerialonMessage(uint8_t *data, size_t len) {
-  Serial.printf("Received %lu bytes from WebSerial: ", len);
+  //Serial.printf("Received %lu bytes from WebSerial: ", len);
   Serial.write(data, len);
-  Serial.println();
-  //Serial.printf("commandList size is: %d\n", ASIZE(commandList));
+  //Serial.println();
+  ////Serial.printf("commandList size is: %d\n", ASIZE(commandList));
   WebSerial.println("Received Data...");
   String dataS = String((char*)data);
   // Split the String into an array of Strings using spaces as delimiters
@@ -202,11 +202,12 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       for (j = 1; j < ASIZE(commandList); j++) {
         //WebSerial.println("j: " + String(j) + " " + commandList[j]);
         if (words[i].toInt() == j) {
-          Serial.printf("match %d %s %d %s\n", i, words[i].c_str(), j, commandList[j].c_str());
+          //Serial.printf("match %d %s %d %s\n", i, words[i].c_str(), j, commandList[j].c_str());
           words[i] = commandList[j];
         }
       }
     if (words[i].equals("status")) {
+      WebSerial.println("             uptime: " + String(millis() / 1000));
       WebSerial.println("           AWS (in): " + String(WindSensor::windSpeedKnots));
       WebSerial.println("           AWA (in): " + String(WindSensor::windAngleDegrees));
       WebSerial.println(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
@@ -219,7 +220,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
     if (words[i].equals("compass")) {
       WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
-      WebSerial.println("       Calibration(0-3): " + String(boatCompassCalStatus));
+      WebSerial.println("       Calibration(0-3): " + String(boatCalStatus));
 #ifdef CMPS14
       WebSerial.printf("            [Calibration]: ");
       String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
@@ -271,7 +272,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println("Honeywell: " + String(honeywellOnToggle));
     }
     if (words[i].equals("gps") && pBD) {
-      Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
+      //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
       WebSerial.println("Latitude: " + String(pBD->Latitude));
       WebSerial.println("Longitude: " + String(pBD->Longitude));
     }

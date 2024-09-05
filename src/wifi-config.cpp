@@ -275,7 +275,7 @@ void setupWifi() {
       Serial.println(F("Not connected to WiFi but continuing anyway."));
     else
     {
-      Serial.println(F("WiFi connected...yeey :)"));
+      Serial.println(F("WiFi connected."));
     }
 
     // Stored  for later usage, from v1.1.0, but clear first

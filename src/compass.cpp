@@ -33,22 +33,25 @@ TBD remove enum for compass type and just compile with different types; change #
 //#include <ElegantOTA.h>
 //#include <WebSerial.h>
 #include <Adafruit_BNO08x.h>
+#include "esp_system.h"
+#include "esp32-hal-log.h"
 
 #include "windparse.h"
 
 unsigned char high_byte, low_byte, angle8;
 char pitch, roll;
-unsigned int angle16, comp8, comp16;
+unsigned int angle16, comp8;
+float comp16;
 #define VARIATION -15.2
 static int variation;
 float mastCompassDeg; 
 float boatCompassDeg, boatAccuracy;
-int boatCompassCalStatus;
+int boatCalStatus;
 float mastDelta;
 // how is the compass oriented on the board relative to boat compass
 // when mast is centered, mast compass+orientation == boat compass
 int mastOrientation, sensOrientation, boatOrientation;
-extern int mastFrequency;
+extern int compassFrequency;
 extern bool compassOnToggle;
 extern JSONVar readings;
 
@@ -79,7 +82,7 @@ bool readCalibrationStatus();
 // also called as a Reaction in case we're not connected to mast compass
 // TBD: make this object oriented and overload getCompass for either CMPS14 or BNO085
 float getCMPS14(int correction) {
-  //Serial.println("getCompass");
+  ////Serial.println("getCompass");
   Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
   Wire.write(ANGLE_8);                     // Sends the register we wish to start reading from
   Wire.endTransmission();
@@ -90,50 +93,42 @@ float getCMPS14(int correction) {
   while((Wire.available() < 5)); // (this can hang?)
   angle8 = Wire.read();               // Read back the 5 bytes
   comp8 = map(angle8, 0, 255, 0, 359);
-  comp8 = (comp8 + correction + 360) % 360;
+  //comp8 = (comp8 + correction + 360) % 360;
   high_byte = Wire.read();
   low_byte = Wire.read();
   pitch = Wire.read();
   roll = Wire.read();
-  // TBD set up PGN for attitude and transmit
-  angle16 = high_byte;                 // Calculate 16 bit angle
-  angle16 <<= 8;
-  angle16 += low_byte;
-  // doesn't this drop to an int?
-  comp16 = ((angle16/10) + correction + 360) % 360;
-//#define DEBUG
+  angle16 = (high_byte <<8) + low_byte;                 // Calculate 16 bit angle
+  comp16 = ((angle16/10 + correction + 360) % 360) + (angle16%10)/10.0;
 #ifdef DEBUG
-  Serial.print("roll: ");               // Display roll data
-  Serial.print(roll, DEC);
-  
-  Serial.print("    pitch: ");          // Display pitch data
-  Serial.print(pitch, DEC);
-  
-  Serial.print("    angle full: ");     // Display 16 bit angle with decimal place
-  Serial.print(angle16 / 10, DEC);
+  Serial.print("angle8: "); Serial.print(angle8, DEC);
+  Serial.print(" comp8: "); Serial.print(comp8, DEC);
+  Serial.print(" angle 16: ");     // Display 16 bit angle with decimal place
+  Serial.print(angle16/10, DEC);
   Serial.print(".");
-  Serial.print(angle16 % 10, DEC);
-
-  Serial.print("    comp16: ");
-  Serial.print(comp16, DEC);
+  Serial.print(angle16%10, DEC);
+  Serial.print(" a16: "); Serial.printf("%0.2f", (float)(angle16/10) + (float)(angle16%10)/10);
+  Serial.print(" comp16: "); Serial.println(comp16);  
+  //Serial.print("roll: ");               // Display roll data
+  //Serial.print(roll, DEC);
   
-  Serial.print("     comp8: ");        // Display 8bit angle
-  Serial.println(comp8, DEC);
+  //Serial.print("    pitch: ");          // Display pitch data
+  //Serial.print(pitch, DEC);
 #endif
   Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
   Wire.write(CAL_STATE);                     // Sends the register we wish to start reading from
   Wire.endTransmission();
   Wire.requestFrom(CMPS14_ADDRESS, 5); 
   while((Wire.available() < 1)); // (this can hang)
-  boatCompassCalStatus = Wire.read() & 0x3;
+  boatCalStatus = Wire.read() & 0x3;
   readCalibrationStatus();
-  //Serial.printf("calStatus: 0x%x\n", boatCompassCalStatus);
-  //logToAll("heading: " + String(comp16) + " cal stat: " + String(boatCompassCalStatus));
-  return (float)comp16;
+  ////Serial.printf("calStatus: 0x%x\n", boatCalStatus);
+  //logToAll("heading: " + String(comp16) + " cal stat: " + String(boatCalStatus));
+  return comp16;
 }
 
 bool readCalibrationStatus() {
-  //Serial.print("read cal status");
+  ////Serial.print("read cal status");
   Wire.beginTransmission(CMPS14_ADDRESS);
   Wire.write(CAL_STATE);
   int nackCatcher = Wire.endTransmission();
@@ -176,9 +171,9 @@ float getBNO085(int correction) {
       Serial.println("Could not enable rotation vector");
 #if 0
     if (!bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
-      Serial.println("Could not enable gyroscope");
+      //Serial.println("Could not enable gyroscope");
     if (!bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED))
-      Serial.println("Could not enable magnetic field calibrated");
+      //Serial.println("Could not enable magnetic field calibrated");
 #endif
   }
   if (!bno08x.getSensorEvent(&sensorValue)) {
@@ -191,43 +186,43 @@ float getBNO085(int correction) {
    *   2 - Accuracy medium
    *   3 - Accuracy high
    */
-  //Serial.printf("calStatus: 0x%x\n", boatCompassCalStatus);
+  ////Serial.printf("calStatus: 0x%x\n", boatCalStatus);
   switch (sensorValue.sensorId) {
   case SH2_ROTATION_VECTOR:
     boatAccuracy = sensorValue.un.rotationVector.accuracy;
-    boatCompassCalStatus = sensorValue.status;
+    boatCalStatus = sensorValue.status;
     heading = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      
-    //Serial.printf("0 heading %0.2f\n", heading);
-    //logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCompassCalStatus);
+    ////Serial.printf("0 heading %0.2f\n", heading);
+    //logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus);
     return heading;
     break;
   case SH2_GYROSCOPE_CALIBRATED:
   /*
-    Serial.print("Gyro - x: ");
-    Serial.print(sensorValue.un.gyroscope.x);
-    Serial.print(" y: ");
-    Serial.print(sensorValue.un.gyroscope.y);
-    Serial.print(" z: ");
-    Serial.println(sensorValue.un.gyroscope.z);
+    //Serial.print("Gyro - x: ");
+    //Serial.print(sensorValue.un.gyroscope.x);
+    //Serial.print(" y: ");
+    //Serial.print(sensorValue.un.gyroscope.y);
+    //Serial.print(" z: ");
+    //Serial.println(sensorValue.un.gyroscope.z);
     */
-    //Serial.printf("1 heading %0.2f\n", heading);
+    ////Serial.printf("1 heading %0.2f\n", heading);
     return heading;
     break;
   case SH2_MAGNETIC_FIELD_CALIBRATED:
-    /*Serial.print("Magnetic Field - x: ");
-    Serial.print(sensorValue.un.magneticField.x);
-    Serial.print(" y: ");
-    Serial.print(sensorValue.un.magneticField.y);
-    Serial.print(" z: ");
-    Serial.println(sensorValue.un.magneticField.z);
+    /*//Serial.print("Magnetic Field - x: ");
+    //Serial.print(sensorValue.un.magneticField.x);
+    //Serial.print(" y: ");
+    //Serial.print(sensorValue.un.magneticField.y);
+    //Serial.print(" z: ");
+    //Serial.println(sensorValue.un.magneticField.z);
     */
-    //Serial.printf("2 heading %0.2f\n", heading);
-    boatCompassCalStatus = sensorValue.status;
+    ////Serial.printf("2 heading %0.2f\n", heading);
+    boatCalStatus = sensorValue.status;
     return heading;
     break;
   default:
     printf("ID: %d\n", sensorValue.sensorId);
-    //Serial.printf("3 heading %0.2f\n", heading);
+    ////Serial.printf("3 heading %0.2f\n", heading);
     return heading;
     break;
   }
@@ -245,19 +240,18 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   float r31 = 2 * (i * k - r * j);
   float r32 = 2 * (j * k + r * i);
   float r33 = 1 - 2 * (i * i + j * j);
-  //Serial.printf("r11 %0.2f r21 %0.2f r31 %0.2f r32 %0.2f r33 %0.2f ", r11, r21, r31, r32, r33);
+  ////Serial.printf("r11 %0.2f r21 %0.2f r31 %0.2f r32 %0.2f r33 %0.2f ", r11, r21, r31, r32, r33);
   // Calculate pitch (theta) and roll (phi)
   float theta = -asin(r31);
   float phi = atan2(r32, r33);
   // Calculate yaw (psi)
   float psi = atan2(-r21, r11);
-  float heading = (psi * 180 / M_PI); + correction;
-  //Serial.printf("theta %0.2f phi %0.2f psi %0.2f h %0.2f ", theta, phi, psi, heading);
-  heading += correction;
-  //Serial.printf("h %0.2f ", heading);
+  float heading = (psi * 180 / M_PI) + (float)correction;
+  ////Serial.printf("theta %0.2f phi %0.2f psi %0.2f h %0.2f ", theta, phi, psi, heading);
+  ////Serial.printf("h %0.2f ", heading);
   // correction may be positive or negative
-  if (heading > 360) heading -= 360;
-  if (heading < 0) heading += 360;
+  if (heading > 259) heading -= 360.0;
+  if (heading < 0) heading += 360.0;
   //Serial.printf("h %0.2f\n", heading);
   return heading;
 }
@@ -281,9 +275,9 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   return heading;
 #endif
 
-#define XMITMAST  // send mast compass as rudder angle on main bus
+//#define XMITMAST  // send mast compass on main bus
 float getCompass(int correction) {
-  //Serial.printf("corr %d ", correction);
+  //Serial.printf("getcompass corr %d ", correction);
   float compassVal;
   if (!compassReady)
     return -1;
@@ -291,12 +285,14 @@ float getCompass(int correction) {
   compassVal = getCMPS14(correction);
 #else
   compassVal = getBNO085(correction);
-  //Serial.printf("bno085 %0.2f\n", compassVal);
+  ////Serial.printf("bno085 %0.2f\n", compassVal);
 #endif
 #ifdef XMITMAST
-  SetN2kPGN127245(correctN2kMsg, compassVal*(M_PI/180), 0, N2kRDO_NoDirectionOrder, 0);
+  //SetN2kPGN127250(correctN2kMsg, 0xFF, (double)compassVal*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
+  SetN2kPGN127245(correctN2kMsg, compassVal*DEGTORAD, 0, N2kRDO_NoDirectionOrder, N2kDoubleNA);
   bool result = n2kMain->SendMsg(correctN2kMsg);
-  //if (!result) Serial.println("Failed to send mast heading message");
+  if (!result) Serial.println("Failed to send mast heading message as rudder");
+  else logToAll("send mast heading rudder " + String(compassVal));
 #endif
   return compassVal;
 }
@@ -327,22 +323,22 @@ int convertMagHeading(const tN2kMsg &N2kMsg) {
   //N2kMsg.Print(&Serial);
   if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef) ) {
     #ifdef DEBUG2
-    Serial.print("SID: "); Serial.print(SID);
-    Serial.print(" heading: "); Serial.print(heading);
-    Serial.print(" deviation: "); Serial.print(deviation);
-    Serial.print(" variation: "); Serial.print(variation);
-    Serial.print(" headingRef: "); Serial.print(headingRef);
-    Serial.println();
+    //Serial.print("SID: "); //Serial.print(SID);
+    //Serial.print(" heading: "); //Serial.print(heading);
+    //Serial.print(" deviation: "); //Serial.print(deviation);
+    //Serial.print(" variation: "); //Serial.print(variation);
+    //Serial.print(" headingRef: "); //Serial.print(headingRef);
+    //Serial.println();
     #endif
     if (headingRef == N2khr_magnetic && heading > 0) {  // need to check heading because it could be null
-      //Serial.print("\tcompass heading: ");
+      ////Serial.print("\tcompass heading: ");
       mastCompassDeg = heading * (180/M_PI);
       //readings["heading"] = String(mastCompassDeg);
-      //Serial.print(headingDeg);
+      ////Serial.print(headingDeg);
       // compare to heading reading from mast compass (via wifi)
-      //Serial.print(" mast bearing: ");
-      //Serial.print(mastOrientation);
-      //Serial.print(" difference: ");
+      ////Serial.print(" mast bearing: ");
+      ////Serial.print(mastOrientation);
+      ////Serial.print(" difference: ");
       int delta = mastOrientation - mastCompassDeg;
       if (delta > 180) {
         delta -= 360;
@@ -352,10 +348,10 @@ int convertMagHeading(const tN2kMsg &N2kMsg) {
       readings["mastDelta"] = String(delta); // TBD shift range to 0..100 for gauge
       mastAngle[1] = delta;
       // tbd add mastcompdelta
-      //Serial.println(mastAngle[1]);
+      ////Serial.println(mastAngle[1]);
       return delta;
     } else {
-      Serial.println("no magnetic heading from main compass; doing nothing");
+      //Serial.println("no magnetic heading from main compass; doing nothing");
       return -1;
     }
   }
@@ -368,20 +364,20 @@ JSONVar myObject = JSON.parse(jsonString);
 
   // Check if parsing was successful
   if (JSON.typeof(myObject) == "undefined") {
-    Serial.println("Parsing input failed!");
+    //Serial.println("Parsing input failed!");
     return;
   }
 
   // Access the values
   if (myObject.hasOwnProperty("bearing")) {
     double bearing = myObject["bearing"];
-    Serial.print("Bearing: ");
-    Serial.println(bearing);
+    //Serial.print("Bearing: ");
+    //Serial.println(bearing);
   }
 
   if (myObject.hasOwnProperty("calstatus")) {
     int calstatus = (int)myObject["calstatus"];
-    Serial.print("Calstatus: ");
-    Serial.println(calstatus);
+    //Serial.print("Calstatus: ");
+    //Serial.println(calstatus);
   }
 #endif
