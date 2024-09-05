@@ -30,6 +30,8 @@
 #include <Adafruit_BNO08x.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
+#include "esp_system.h"
+#include "esp32-hal-log.h"
 #include "windparse.h"
 
 Preferences preferences;     
@@ -45,11 +47,11 @@ extern int mastOrientation; // mast compass position relative to boat compass po
 extern int sensOrientation; // Honeywell orientation relative to centerline
 extern int boatOrientation; // boat compass position relative to centerline
 extern float mastAngle[];
-int mastFrequency;
+int compassFrequency;
 extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
 extern float mastCompassDeg, boatCompassDeg;
-extern int boatCompassCalStatus;
+extern int boatCalStatus;
 extern tBoatData BoatData;
 
 // Create AsyncWebServer object on port 80
@@ -74,7 +76,7 @@ void demoInit();
 
 // Get Sensor Readings and return JSON object
 String getSensorReadings() {
-  readings["rotateout"] = "";
+  readings["rotateout"] = String(rotateout,0);
   readings["mastHeading"] = "";
   readings["mastDelta"] = "";
   if (honeywellOnToggle) {
@@ -87,16 +89,13 @@ String getSensorReadings() {
       readings["mastDelta"] = String(mastAngle[1],0);
     }
     readings["boatHeading"] = String(boatCompassDeg,0);
-    //Serial.println(boatCompassDeg);
+    readings["boatCalStatus"] = boatCalStatus;
+    readings["boatTrue"] = String(BoatData.TrueHeading,0);
     if (!honeywellOnToggle) // honeywell takes precedence if both are present
       readings["rotateout"] = String(rotateout,0);
   }
-  // add true boat compass for compass.html
-  readings["calstatus"] = boatCompassCalStatus;
-  readings["boatTrue"] = String(BoatData.TrueHeading,0);
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
   readings["windAngle"] = String(WindSensor::windAngleDegrees,0);
-
   String jsonString = JSON.stringify(readings);
   //logToAll(jsonString);
   return jsonString;
@@ -108,6 +107,31 @@ String getSensorReadings() {
   with html generated and placed in the string(s) below
   The CSS in the HTML file changes the appearance of the slider based on whether the checkbox shows as "checked" or not
 */
+String settingsString(100);
+String settings_processor(const String& var) {
+  logToAll("settings processor var: " + var);
+  if (var == "BUTTONPLACEHOLDER") {
+    settingsString = "<h4>Display</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"display\" ";
+    if (displayOnToggle) settingsString += "checked";
+    settingsString += "><span class=\"slider\"></span></label>";
+    settingsString += "<h4>Honeywell</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"honeywell\" ";
+    if (honeywellOnToggle) settingsString += "checked"; 
+    settingsString += "><span class=\"slider\"></span></label>";
+    settingsString += "<h4>Mast Compass</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"compass\" ";
+    if (compassOnToggle) settingsString += "checked"; 
+    settingsString += "><span class=\"slider\"></span></label>";
+    return settingsString;
+  }
+  if (var == "webtimerdelay") return (settingsString = String(WebTimerDelay));
+  if (var == "orientation") return (settingsString = String(mastOrientation));
+  if (var == "sensorient") return (settingsString = String(sensOrientation));
+  if (var == "boatorient") return (settingsString = String(boatOrientation));
+  if (var == "frequency") return (settingsString = String(compassFrequency));
+  if (var == "controlMAC") return (settingsString = String(WiFi.macAddress()));
+  if (var == "variation") return (settingsString = String(BoatData.Variation));
+  return (settingsString = String("settings processor: placeholder not found " + var));
+}
+/*
 String settings_processor(const String& var) {
   logToAll("settings processor var: " + var);
   if (var == "BUTTONPLACEHOLDER") {
@@ -127,12 +151,12 @@ String settings_processor(const String& var) {
   if (var == "orientation") return String(mastOrientation);
   if (var == "sensorient") return String(sensOrientation);
   if (var == "boatorient") return String(boatOrientation);
-  if (var == "frequency") return String(mastFrequency);
+  if (var == "frequency") return String(compassFrequency);
   if (var == "controlMAC") return String(WiFi.macAddress());
   if (var == "variation") return String(BoatData.Variation);
   return String("settings processor: placeholder not found " + var);
 }
-
+*/
 String demo_processor(const String& var) {
   logToAll("demo processor var: " + var);
   if (var == "BUTTONPLACEHOLDER") {
@@ -208,7 +232,8 @@ void startWebServer() {
   mastOrientation = preferences.getInt("mastOrientation", 0);
   sensOrientation = preferences.getInt("sensOrientation", 0);
   boatOrientation = preferences.getInt("boatOrientation", 0);
-  mastFrequency = preferences.getInt("mastFrequency", 100);
+  compassFrequency = preferences.getInt("compassFrequency", 50);
+  logToAll("compassFrequency = " + String(compassFrequency));
   BoatData.Variation = preferences.getFloat("variation", 0);
 
   if (!MDNS.begin(host.c_str()) ) {
@@ -448,8 +473,8 @@ void startWebServer() {
           preferences.putInt("mastOrientation", mastOrientation);
         }
         if (p->name() == "frequency") {
-          mastFrequency = atoi(p->value().c_str());
-          preferences.putInt("mastFrequency", mastFrequency);
+          compassFrequency = atoi(p->value().c_str());
+          preferences.putInt("compassFrequency", compassFrequency);
         }
         if (p->name() == "variation") {
           BoatData.Variation = atof(p->value().c_str());

@@ -71,7 +71,7 @@ tN2kGNSSmethod GNSMethofNMEA0183ToN2k(int Method) {
 
 void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg) {
   int iHandler;
-  //Serial.println(NMEA0183Msg.MessageCode());
+  ////Serial.println(NMEA0183Msg.MessageCode());
   // Find handler
   for (iHandler=0; NMEA0183Handlers[iHandler].Code!=0 && !NMEA0183Msg.IsMessageCode(NMEA0183Handlers[iHandler].Code); iHandler++);
   if (NMEA0183Handlers[iHandler].Code!=0) {

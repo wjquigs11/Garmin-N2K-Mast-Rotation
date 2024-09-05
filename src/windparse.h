@@ -10,7 +10,7 @@
 void IRAM_ATTR NewDataReadyISR();
 
 //#define RS485CAN
-//#define PICANM // v1 version on Tatiana
+//#define PICAN // v1 version on Tatiana
 //#define SH_ESP32  // these defs will probably change with SINGLECAN
 //#define SINGLECAN  // for testing (or non-Garmin) we can use one bus 
 //#define CMPS14
@@ -21,7 +21,7 @@ void IRAM_ATTR NewDataReadyISR();
 #ifdef SH_ESP32
 #define POT_PIN 36 // SH_ESP32
 #endif
-#if defined(PICANM)
+#if defined(PICAN)
 #define POT_PIN 33 // ESPberry ADC1_CH5
 // voltage sensor 5:1 so 12v measures at 2.4 volts so use ADC_ATTEN_DB_12
 #endif

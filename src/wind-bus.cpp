@@ -39,9 +39,11 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <WebSerial.h>
 #include <Adafruit_BNO08x.h>
 #include <HTTPClient.h>
+#include "esp_system.h"
+#include "esp32-hal-log.h"
 
 #include "windparse.h"
-#ifdef PICANM
+#ifdef PICAN
 #include <N2kMsg.h>
 #include <NMEA2000.h>
 #include <mcp_can.h>
@@ -51,10 +53,11 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #define SCREEN_WIDTH 128  // OLED display width, in pixels
 #define SCREEN_HEIGHT 64  // OLED display height, in pixels
 
-#ifdef RS485CAN
-#include "mcp2515_can.h"
 #define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
 #define CAN_RX_PIN GPIO_NUM_35 // RPI header pin 15
+
+#ifdef RS485CAN
+#include "mcp2515_can.h"
 //#define N2k_SPI_CS_PIN 5    
 //#define N2k_CAN_INT_PIN 26
 // for CMPS14
@@ -79,9 +82,7 @@ const int CAN0_INT = 25;    // RPi Pin 12 -- IO25
 #endif // RS485CAN
 
 
-#ifdef PICANM  // v1 of the controller uses PICAN-M HAT
-#define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
-#define CAN_RX_PIN GPIO_NUM_35
+#ifdef PICAN  // v1 of the controller uses PICAN-M HAT
 #define N2k_SPI_CS_PIN 5    
 //#define N2k_CAN_INT_PIN 25  
 tNMEA2000 *n2kWind;
@@ -126,7 +127,7 @@ ReactESP app;
 
 TwoWire *i2c;
 
-#if defined(PICANM) && defined(NMEA0183)
+#if defined(PICAN) && defined(NMEA0183)
 #define NMEA0183serial Serial1
 #define NMEA0183RX 16 // ESPberry RX0 = IO16? 
 #define NMEA0183TX 15 
@@ -202,8 +203,9 @@ extern float mastCompassDeg;
 extern float mastDelta;
 extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
-extern int boatCompassCalStatus;
+extern int boatCalStatus;
 void mastHeading();
+extern int compassFrequency;
 float mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
@@ -219,6 +221,7 @@ const int CMPS14_ADDRESS = 0x60;
 #ifdef BNO08X
 // compass
 const int ADABNO = 0x4A;
+const int SFBNO = 0x4B;
 const int BNO08X_RESET = -1;
 Adafruit_BNO08x bno08x(BNO08X_RESET);
 sh2_SensorValue_t sensorValue;
@@ -229,6 +232,13 @@ bool compassReady=false;
 #define MAX_RX_WAIT_TIME_MS 30000
 
 bool displayOnToggle=true, compassOnToggle=false, honeywellOnToggle=false, demoModeToggle=false;
+
+void WebSerialonMessage(uint8_t *data, size_t len);
+void logToAll(String s);
+void logToAlln(String s);
+void i2cScan();
+void ParseWindCAN();
+void demoIncr();
 
 void ToggleLed() {
   static bool led_state = false;
@@ -248,7 +258,7 @@ const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 
 // NMEA 2000 message handler for main bus
 void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {   
-//  Serial.print("main: "); N2kMsg.Print(&Serial);
+  //Serial.print("main: "); N2kMsg.Print(&Serial);
   n2kMainOpen = true;
   n2kMain->SetForwardStream(forward_stream);
   num_n2k_messages++;
@@ -256,13 +266,13 @@ void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
   ToggleLed();
   switch (N2kMsg.PGN) {
     case 127250L: // magnetic heading, use to set variation but do not override internal compass
-//      Serial.printf("MAIN Heading: %d", N2kMsg.PGN);
+      //Serial.printf("MAIN bus got Heading %d source %d\n", N2kMsg.PGN, N2kMsg.Source);
 //      ParseCompassN2K(N2kMsg); // punting for now but this needs to be different
       break;
     case 130306L:
 //      Serial.printf("MAIN Wind: %d", N2kMsg.PGN);
 #ifdef SINGLECAN
-#ifdef PICANM
+#ifdef PICAN
       ParseWindN2K(N2kMsg);
 #endif
 #else
@@ -306,7 +316,7 @@ void windCounter() {
   time_since_last_wind_rx = 0;
 }
 
-#define MASTCOMPDIAG
+//#define MASTCOMPDIAG
 
 void mastcompCounter() {
   num_mastcomp_messages++;
@@ -323,17 +333,17 @@ void mastcompCounter() {
   time_since_last_mastcomp_rx = 0;
 }
 
-#ifdef PICANM
+#ifdef PICAN
 // on the PICAN-M I was able to instantiate the MCP version of the Timo library, 
 // so I use it to parse Wind and Heading from the mast
 
 // NMEA 2000 message handler for wind bus: check if message is wind and handle it
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
-  //N2kMsg.Print(&Serial);
-  //Serial.printf("t: %d R: %d\n", millis(), N2kMsg.PGN);
+  N2kMsg.Print(&Serial);
+  //Serial.printf("wind t: %d R: %d\n", millis(), N2kMsg.PGN);
   if (!n2kWindOpen) {
     n2kWindOpen = true;
-    n2kWind->SetForwardStream(forward_stream);
+    //n2kWind->SetForwardStream(forward_stream);  // why does uncommenting print garbage on serial monitor?
   }
   ToggleLed();
   // problematic since mast compass can come back online
@@ -349,7 +359,7 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
       break; 
     case 127250L:
       mastcompCounter();
-      Serial.printf("WIND Heading: %d\n", N2kMsg.PGN);
+      //Serial.printf("WIND Heading: %d\n", N2kMsg.PGN);
       if (compassOnToggle) ParseCompassN2K(N2kMsg);
       break;
   } 
@@ -464,7 +474,10 @@ void OLEDdataWindDebug() {
   display.clearDisplay();
   display.setCursor(0, 5);
   display.printf("CAN: %s ", can_state.c_str());
-  display.printf("Up: %lu\n", millis() / 1000);
+  unsigned long uptime = millis() / 1000;
+  display.printf("Up: %lu\n", uptime);
+  if (uptime % 60 == 0)  
+    logToAll("uptime: " + String(uptime) + " heap: " + String(ESP.getFreeHeap()));
   display.printf("N2K: %d ", num_n2k_messages);
   display.printf("Wind: %d\n", num_wind_messages);
   display.printf("S/A/R:%2.1f/%2.0f/%2.0f\n", windSpeedKnots, windAngleDegrees,rotateout);
@@ -475,7 +488,7 @@ void OLEDdataWindDebug() {
   }
   if (compassOnToggle) {
     #ifdef MASTCOMPASS
-    display.printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCompassCalStatus);
+    display.printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCalStatus);
     display.printf("Delta: %2.1f\n", mastAngle[1]);
     #else
     display.printf("Heading: %.1f\n", boatCompassDeg);
@@ -485,13 +498,6 @@ void OLEDdataWindDebug() {
   display.display();
 }
 #endif
-
-void WebSerialonMessage(uint8_t *data, size_t len);
-void logToAll(String s);
-void logToAlln(String s);
-void i2cScan();
-void ParseWindCAN();
-void demoIncr();
 
 void setup() {
   Serial.begin(115200);
@@ -507,16 +513,16 @@ void setup() {
 #ifdef RS485CAN
   if(!display.begin(SSD1306_EXTERNALVCC, 0, true))
 #endif
-#ifdef PICANM
+#ifdef PICAN
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true))
-#endif
     Serial.println(F("SSD1306 allocation failed"));
   else
     Serial.println(F("SSD1306 allocation success"));
+#endif
 #ifdef SH_ESP32
   i2c = new TwoWire(0);
   i2c->begin(SDA_PIN, SCL_PIN);
-  displayPtr = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
+  //display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
     Serial.println(F("SSD1306 allocation failed"));
   else
@@ -535,7 +541,7 @@ void setup() {
   }
   pBD=&BoatData; // need this even if we're not using 0183
   // Set up NMEA0183 ports and handlers
-#if defined(PICANM) && defined(NMEA0183)
+#if defined(PICAN) && defined(NMEA0183)
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
   //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
@@ -570,7 +576,7 @@ void setup() {
       2046
   );
   n2kMain->SetMode(tNMEA2000::N2km_ListenAndSend);
-  //n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
+  n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
   n2kMain->EnableForward(false);
   //n2kMain->SetForwardOwnMessages(true);
   n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
@@ -581,7 +587,7 @@ void setup() {
     Serial.println("failed to open n2kMain");
   }
 
-#if defined(PICANM) 
+#if defined(PICAN) 
   // instantiate the NMEA2000 object for the wind bus
   // does not need to register since it's only listening
   n2kWind = new tNMEA2000_mcp(N2k_SPI_CS_PIN,MCP_16MHz);
@@ -598,7 +604,7 @@ void setup() {
   } else {
     Serial.println("failed to open n2kWind");
   }
-#else
+#elif defined(RS485CAN)
   // Initialize the CAN port
     //n2kWind.reset();
     //int cRetCode;
@@ -632,7 +638,11 @@ void setup() {
 #ifdef BNO08X
   // compassReady means we have a local boat compass in the controller
   // compassOnTog used for turning it on and off
+#ifdef SH_ESP32
+  compassReady = bno08x.begin_I2C(SFBNO);
+#else
   compassReady = bno08x.begin_I2C(ADABNO);
+#endif
   if (compassReady) {
     Serial.println("BNO08x Found");
     for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
@@ -719,10 +729,10 @@ void setup() {
 #if defined(RS485CAN)
     ParseWindCAN();
 #endif
-#if defined(PICANM)
+#if defined(PICAN)
     n2kWind->ParseMessages();
 #endif
-#if defined(PICANM) && defined(NMEA0183)
+#if defined(PICAN) && defined(NMEA0183)
     NMEA0183_3.ParseMessages(); // GPS from ICOM
 #ifdef DEBUG_0183
     tNMEA0183Msg NMEA0183Msg;
@@ -744,7 +754,7 @@ void setup() {
       // No CAN messages received in a while; turn off forwarding so we don't get constant fail messages
       //logToAll("disable forwarding");
       if (n2kMain) n2kMain->EnableForward(false);
-#ifdef PICANM
+#ifdef PICAN
       if (n2kWind) n2kWind->EnableForward(false);
 #endif
     }
@@ -812,7 +822,7 @@ void setup() {
   });
 #endif
 
-  app.onRepeat(10, []() {
+  app.onRepeat(1, []() {
     WebSerial.loop();
   });
 
@@ -848,27 +858,31 @@ void setup() {
 
   // check in for new heading 100 msecs = 10Hz
   if (compassReady && !demoModeToggle)
-    app.onRepeat(100, []() {
-      //Serial.println("check for new heading");
+    //app.onRepeat(compassFrequency, []() {
+    app.onRepeat(50, []() {
+      // TBD: delete reaction and recreate if frequency changes
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
-      // this will be used in settings.html and compass.html
-      //logToAll("trueheading: " + String(BoatData.TrueHeading) + " Variation: " + String(BoatData.Variation));
       // the global boatCompassDeg will always contain the boat compass (magnetic)
       boatCompassDeg = getCompass(boatOrientation);
-      BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
-      //Serial.printf("react boatcomp %0.2f\n", boatCompassDeg);
+      //logToAll(String(mastCompassDeg+mastOrientation) + ", " + String(boatCompassDeg) + ", " + String(mastCompassDeg+mastOrientation-boatCompassDeg));
+      Serial.print(">mast: ");
+      Serial.println(mastCompassDeg+mastOrientation);
+      Serial.print(">boat: ");
+      Serial.println(boatCompassDeg);
+      Serial.print(">delta: ");
+      Serial.println(mastCompassDeg+mastOrientation-boatCompassDeg);         BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
       // transmit heading
-      //tN2kHeadingReference ref = N2khr_magnetic;
-      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*0.0174533, N2kDoubleNA, N2kDoubleNA, (tN2kHeadingReference) N2khr_magnetic);
-      if (n2kMain->SendMsg(correctN2kMsg)) {
-        //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
-      } else {
-        Serial.println("Failed to send heading from compass reaction");
+      if (n2kMainOpen) {
+        SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
+        if (n2kMain->SendMsg(correctN2kMsg)) {
+          //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
+        } else {
+          Serial.println("Failed to send heading from compass reaction");
+        }
       }
-      //logToAll("boat heading: " + String(boatCompassDeg));
     });
-    else logToAll("compass not ready no heading reaction");
+  else logToAll("compass not ready no heading reaction");
 
 #ifdef DISPLAYON
   // update results
@@ -881,9 +895,6 @@ void setup() {
     }
     if (compassOnToggle) {
       #ifdef MASTCOMPASS
-      //Serial.println("mast compass check");
-      //sprintf(prbuf, "Mast: %.1f delta: %0.2f avg d: %.1f cal: xx Boat: %.1f cal: %d ", mastCompassDeg, mastAngle[1], mastCompDelta.getAvg()/100.0, boatCompassDeg, boatCompassCalStatus);
-      //logToAll(prbuf);
       #else
       sprintf(prbuf, "Heading: %.1f", boatCompassDeg);
       logToAll(prbuf);
