@@ -19,7 +19,6 @@ TBD remove enum for compass type and just compile with different types; change #
 #include <esp_task_wdt.h>
 #include <movingAvg.h>
 #include "elapsedMillis.h"
-#include <Arduino.h>
 #include <N2kMessages.h>
 #include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
