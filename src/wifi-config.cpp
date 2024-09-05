@@ -1,402 +1,262 @@
-/*
-How this is working: on double reset, goes into wifi config mode
-I leave the wifi mode as AP_STA so the compass can connect even if there's not a local hotspot
-*/
-/****************************************************************************************************************************
-  Async_ConfigOnDoubleReset_Multi.ino
-  For ESP8266 / ESP32 boards
 
-  ESPAsync_WiFiManager is a library for the ESP8266/Arduino platform, using (ESP)AsyncWebServer to enable easy
-  configuration and reconfiguration of WiFi credentials using a Captive Portal.
+#include <Arduino.h>
+#include <Arduino_JSON.h>
+#include <Wire.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiMulti.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
+#include <SPIFFS.h>
+#include <Adafruit_BNO08x.h>
+#include <math.h>
+#include <esp_wifi.h>
+#include <ESPAsyncWebServer.h>
+#include <WebSerial.h>
+#include <ReactESP.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include "elapsedMillis.h"
 
-  Modified from
-  1. Tzapu               (https://github.com/tzapu/WiFiManager)
-  2. Ken Taylor          (https://github.com/kentaylor)
-  3. Alan Steremberg     (https://github.com/alanswx/ESPAsyncWiFiManager)
-  4. Khoi Hoang          (https://github.com/khoih-prog/ESP_WiFiManager)
+#define HTTP_PORT 80
+extern AsyncWebServer server;
+const long interval = 10000;  // interval to wait for Wi-Fi connection (milliseconds)
+extern AsyncEventSource events;
+extern void startWebServer();
+extern String host;
+extern JSONVar readings;
+extern void check_status();
 
-  Built by Khoi Hoang https://github.com/khoih-prog/ESPAsync_WiFiManager
-  Licensed under MIT license
- *****************************************************************************************************************************/
-/****************************************************************************************************************************
-   This example will open a configuration portal when the reset button is pressed twice.
-   This method works well on Wemos boards which have a single reset button on board. It avoids using a pin for launching the configuration portal.
+// timing
+unsigned long previousMillis, previousDisplay, previousReading;
+unsigned int readingId = 0;
+unsigned long currentMillis = millis();
 
-   How It Works
-   1) ESP8266
-   Save data in RTC memory
-   2) ESP32
-   Save data in EEPROM from address 256, size 512 bytes (both configurable)
+// Search for parameter in HTTP POST request
+const char* P_INPUT_1 = "ssid";
+const char* P_INPUT_2 = "pass";
+const char* P_INPUT_3 = "ip";
+const char* P_INPUT_4 = "gateway";
 
-   So when the device starts up it checks this region of ram for a flag to see if it has been recently reset.
-   If so it launches a configuration portal, if not it sets the reset flag. After running for a while this flag is cleared so that
-   it will only launch the configuration portal in response to closely spaced resets.
+#define MAX_NETS 2
+int num_nets;
+String ssid[MAX_NETS] = {"null8chars", "null8chars"};
+String pass[MAX_NETS];
+String ip[MAX_NETS];
+String gateway[MAX_NETS];
 
-   Settings
-   There are two values to be set in the sketch.
+// File paths to save input values permanently
+const char* ssidPath = "/ssid.txt";
+const char* passPath = "/pass.txt";
+const char* ipPath = "/ip.txt";
+const char* gatewayPath = "/gateway.txt";
 
-   DRD_TIMEOUT - Number of seconds to wait for the second reset. Set to 10 in the example.
-   DRD_ADDRESS - The address in ESP8266 RTC RAM to store the flag. This memory must not be used for other purposes in the same sketch. Set to 0 in the example.
+IPAddress localIP;
+//IPAddress localIP(192, 168, 1, 200); // hardcoded
 
-   This example, originally relied on the Double Reset Detector library from https://github.com/datacute/DoubleResetDetector
-   To support ESP32, use ESP_DoubleResetDetector library from //https://github.com/khoih-prog/ESP_DoubleResetDetector
- *****************************************************************************************************************************/
+// Set your Gateway IP address
+IPAddress localGateway;
+//IPAddress localGateway(192, 168, 1, 1); //hardcoded
+IPAddress subnet(255, 255, 0, 0);
 
-#if !( defined(ESP8266) ||  defined(ESP32) )
-  #error This code is intended to run on the ESP8266 or ESP32 platform! Please check your Tools->Board setting.
-#endif
+void logToAll(String S);
 
-// These definitions must be placed before #include <ESPAsync_WiFiManager.h>
-#include "Async_ConfigOnDoubleReset_Multi.h"
+String readFile(fs::FS &fs, const char * path){
+  Serial.printf("Reading file: %s\r\n", path);
 
-#include <ESPAsync_WiFiManager.h>               //https://github.com/khoih-prog/ESPAsync_WiFiManager
+  File file = fs.open(path);
+  if(!file || file.isDirectory()){
+    Serial.println("- failed to open file for reading");
+    return String();
+  }
+  
+  String fileContent;
+  while(file.available()){
+    fileContent = file.readStringUntil('\n');
+    break;     
+  }
+  return fileContent;
+}
 
-// Redundant, for v1.10.0 only
-//#include <ESPAsync_WiFiManager-Impl.h>          //https://github.com/khoih-prog/ESPAsync_WiFiManager
+void writeFile(fs::FS &fs, const char * path, const char * message){
+  Serial.printf("Writing file: %s\r\n", path);
 
-int32_t getWiFiChannel(const char *ssid) {
-  int32_t channel = 0;
-  if (int32_t n = WiFi.scanNetworks()) {
-      for (uint8_t i=0; i<n; i++) {
-          if (!strcmp(ssid, WiFi.SSID(i).c_str())) {
-            Serial.printf("found ssid %s channel %d\n", WiFi.SSID(i).c_str(), WiFi.channel(i));
-            channel = WiFi.channel(i);
+  File file = fs.open(path, FILE_WRITE);
+  if(!file){
+    Serial.println("- failed to open file for writing");
+    return;
+  }
+  if(file.print(message)){
+    Serial.println("- file written");
+  } else {
+    Serial.println("- write failed");
+  }
+}
+
+bool readWiFi() {
+  File file = SPIFFS.open(ssidPath);
+  if(!file || file.isDirectory()) {
+    logToAll("failed to open ssid for reading");
+    return false;
+  }
+  int i=0;
+  while(file.available()) {
+    ssid[i] = file.readStringUntil('\n');
+    logToAll("found SSID " + ssid[i]);
+    i++;
+  }
+  num_nets=i;
+  i=0;
+  file = SPIFFS.open(passPath);
+  if(!file || file.isDirectory()) {
+    logToAll("failed to open pass for reading");
+    return false;
+  }
+  i=0;
+  while(file.available()) {
+    pass[i] = file.readStringUntil('\n');
+    logToAll("found passwd " + pass[i]);
+    i++;
+  }
+  if (i != num_nets) {
+    logToAll("Number of SSIDs and passwords do not match");
+    return false;
+  }
+  i=0;
+  file = SPIFFS.open(ipPath);
+  if(!file || file.isDirectory()) {
+    logToAll("failed to open IP for reading (ok)");
+  }
+  i=0;
+  while(file.available()) {
+    ip[i++] = file.readStringUntil('\n');
+  }
+  i=0;
+  file = SPIFFS.open(gatewayPath);
+  if(!file || file.isDirectory()) {
+    logToAll("failed to open gateway for reading (ok)");
+  }
+  i=0;
+  while(file.available()) {
+    gateway[i++] = file.readStringUntil('\n');
+  }
+  logToAll("found " + String(num_nets) + " networks");
+  for (i=0; i<num_nets; i++) {
+    logToAll("wifi[" + String(i) + "]: " + ssid[i] + " " + pass[i] + " " + ip[i] + " " + gateway[i]);
+  }
+  //logToAll("return readwifi");
+  return true;
+}
+
+bool initWiFi() {
+
+  int num_tries = 0;
+  const int MAX_TRIES = 5;
+
+  if (!readWiFi()) {
+    Serial.println("Failed to read WiFi credentials");
+    return false;
+  }
+  WiFi.mode(WIFI_STA);
+  for (int i=0; i<num_nets; i++) {
+    Serial.printf("Found SSID %d: %s\n", i, ssid[i].c_str());
+    if(ssid[i]=="") {
+      Serial.println("Undefined SSID.");
+      return false;
+    }
+    localIP.fromString(ip[i].c_str());
+    localGateway.fromString(gateway[i].c_str());
+    if (!WiFi.config(localIP, localGateway, subnet)) {
+      Serial.println("STA Failed to configure");
+      return false;
+    }
+    Serial.printf("Connecting to WiFi %s with pass %s\n", ssid[i].c_str(), pass[i].c_str());
+    WiFi.begin(ssid[i].c_str(), pass[i].c_str());
+
+    unsigned long currentMillis = millis();
+    previousMillis = currentMillis;
+
+    while(WiFi.status() != WL_CONNECTED && num_tries++ < MAX_TRIES) {
+      delay(1000);
+      Serial.print(".");
+      currentMillis = millis();
+      if (currentMillis - previousMillis >= interval) {
+        Serial.println("Failed to connect.");
+        //return false;
+      }
+    }
+    num_tries = 0;
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.print(" connected: ");
+      Serial.println(WiFi.localIP());
+      return true;
+    }
+  }
+  return false;
+}
+
+void startAP() {
+    // Connect to Wi-Fi network with SSID and password
+    logToAll("Setting AP (Access Point)");
+    // NULL sets an open Access Point
+    WiFi.softAP("ESP-WIFI-MANAGER", NULL);
+
+    IPAddress IP = WiFi.softAPIP();
+    logToAll("AP IP address: " + IP.toString());
+
+    // Web Server Root URL
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(SPIFFS, "/wifimanager.html", "text/html");
+    });
+  
+    server.serveStatic("/", SPIFFS, "/");
+    
+    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
+      int params = request->params();
+      for(int i=0;i<params;i++){
+        const AsyncWebParameter* p = request->getParam(i);
+        if(p->isPost()) {
+          Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
+#if 0
+          // HTTP POST ssid value
+          if (p->name() == P_INPUT_1) {
+            ssid = p->value().c_str();
+            Serial.print("SSID set to: ");
+            Serial.println(ssid);
+            // Write file to save value
+            writeFile(SPIFFS, ssidPath, ssid.c_str());
           }
+          // HTTP POST pass value
+          if (p->name() == P_INPUT_2) {
+            pass = p->value().c_str();
+            Serial.print("Password set to: ");
+            Serial.println(pass);
+            // Write file to save value
+            writeFile(SPIFFS, passPath, pass.c_str());
+          }
+          // HTTP POST ip value
+          if (p->name() == P_INPUT_3) {
+            ip = p->value().c_str();
+            Serial.print("IP Address set to: ");
+            Serial.println(ip);
+            // Write file to save value
+            writeFile(SPIFFS, ipPath, ip.c_str());
+          }
+          // HTTP POST gateway value
+          if (p->name() == P_INPUT_4) {
+            gateway = p->value().c_str();
+            Serial.print("Gateway set to: ");
+            Serial.println(gateway);
+            // Write file to save value
+            writeFile(SPIFFS, gatewayPath, gateway.c_str());
+          }
+          //Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
+#endif
+        }
       }
-      return channel;
-  }
-  return 0;
+      request->send(200, "text/plain", "Done. ESP will restart, connect to your router");
+      delay(3000);
+      ESP.restart();
+    });
+    server.begin();
 }
-
-void setupWifi() {
-  int32_t channel = getWiFiChannel(ssid.c_str());
-
-  Serial.print(F("\nStarting Async_ConfigOnDoubleReset_Multi using "));
-  Serial.print(FS_Name);
-  Serial.print(F(" on "));
-  Serial.println(ARDUINO_BOARD);
-  Serial.println(ESP_ASYNC_WIFIMANAGER_VERSION);
-  Serial.println(ESP_DOUBLE_RESET_DETECTOR_VERSION);
-
-#if defined(ESP_ASYNC_WIFIMANAGER_VERSION_INT)
-
-  if (ESP_ASYNC_WIFIMANAGER_VERSION_INT < ESP_ASYNC_WIFIMANAGER_VERSION_MIN)
-  {
-    Serial.print("Warning. Must use this example on Version later than : ");
-    Serial.println(ESP_ASYNC_WIFIMANAGER_VERSION_MIN_TARGET);
-  }
-
-#endif
-
-  Serial.setDebugOutput(false);
-
-  if (FORMAT_FILESYSTEM)
-    FileFS.format();
-
-  // Format FileFS if not yet
-#ifdef ESP32
-
-  if (!FileFS.begin(true))
-#else
-  if (!FileFS.begin())
-#endif
-  {
-#ifdef ESP8266
-    FileFS.format();
-#endif
-
-    Serial.println(F("SPIFFS/LittleFS failed! Already tried formatting."));
-
-    if (!FileFS.begin())
-    {
-      // prevents debug info from the library to hide err message.
-      delay(100);
-
-#if USE_LITTLEFS
-      Serial.println(F("LittleFS failed!. Please use SPIFFS or EEPROM. Stay forever"));
-#else
-      Serial.println(F("SPIFFS failed!. Please use LittleFS or EEPROM. Stay forever"));
-#endif
-
-      while (true)
-      {
-        delay(1);
-      }
-    }
-  }
-
-  drd = new DoubleResetDetector(DRD_TIMEOUT, DRD_ADDRESS);
-
-  unsigned long startedAt = millis();
-
-  // New in v1.4.0
-  initAPIPConfigStruct(WM_AP_IPconfig);
-  initSTAIPConfigStruct(WM_STA_IPconfig);
-  //////
-
-  //Local intialization. Once its business is done, there is no need to keep it around
-  // Use this to default DHCP hostname to ESP8266-XXXXXX or ESP32-XXXXXX
-  //ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer);
-  // Use this to personalize DHCP hostname (RFC952 conformed)
-  AsyncWebServer webServer(HTTP_PORT);
-
-#if ( USING_ESP32_S2 || USING_ESP32_C3 )
-  ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, NULL, "AsyncConfigOnDoubleReset");
-#else
-  AsyncDNSServer dnsServer;
-
-  ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "ESPWIND");
-#endif
-
-#if USE_CUSTOM_AP_IP
-  //set custom ip for portal
-  // New in v1.4.0
-  ESPAsync_wifiManager.setAPStaticIPConfig(WM_AP_IPconfig);
-  //////
-#endif
-
-  ESPAsync_wifiManager.setMinimumSignalQuality(-1);
-
-  // From v1.0.10 only
-  // Set config portal channel, default = 1. Use 0 => random channel from 1-11
-  ESPAsync_wifiManager.setConfigPortalChannel(0);
-  //////
-
-#if !USE_DHCP_IP
-  // Set (static IP, Gateway, Subnetmask, DNS1 and DNS2) or (IP, Gateway, Subnetmask). New in v1.0.5
-  // New in v1.4.0
-  ESPAsync_wifiManager.setSTAStaticIPConfig(WM_STA_IPconfig);
-  //////
-#endif
-
-  // New from v1.1.1
-#if USING_CORS_FEATURE
-  ESPAsync_wifiManager.setCORSHeader("Your Access-Control-Allow-Origin");
-#endif
-
-  // We can't use WiFi.SSID() in ESP32 as it's only valid after connected.
-  // SSID and Password stored in ESP32 wifi_ap_record_t and wifi_config_t are also cleared in reboot
-  // Have to create a new function to store in EEPROM/SPIFFS for this purpose
-  Router_SSID = ESPAsync_wifiManager.WiFi_SSID();
-  Router_Pass = ESPAsync_wifiManager.WiFi_Pass();
-
-  //Remove this line if you do not want to see WiFi password printed
-  Serial.println("ESP Self-Stored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
-
-  // SSID to uppercase
-  ssid.toUpperCase();
-  //password   = "My" + ssid;
-
-  bool configDataLoaded = false;
-
-  // From v1.1.0, Don't permit NULL password
-  if ( (Router_SSID != "") && (Router_Pass != "") )
-  {
-    LOGERROR3(F("* Add SSID = "), Router_SSID, F(", PW = "), Router_Pass);
-    wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
-
-    ESPAsync_wifiManager.setConfigPortalTimeout(120); //If no access point name has been previously entered disable timeout.
-    Serial.println(F("Got ESP Self-Stored Credentials. Timeout 120s for Config Portal"));
-  }
-
-  if (loadConfigData())
-  {
-    configDataLoaded = true;
-
-    ESPAsync_wifiManager.setConfigPortalTimeout(120); //If no access point name has been previously entered disable timeout.
-    Serial.println(F("Got stored Credentials. Timeout 120s for Config Portal"));
-
-#if USE_ESP_WIFIMANAGER_NTP
-
-    if ( strlen(WM_config.TZ_Name) > 0 )
-    {
-      LOGERROR3(F("Current TZ_Name ="), WM_config.TZ_Name, F(", TZ = "), WM_config.TZ);
-
-#if ESP8266
-      configTime(WM_config.TZ, "pool.ntp.org");
-#else
-      //configTzTime(WM_config.TZ, "pool.ntp.org" );
-      configTzTime(WM_config.TZ, "time.nist.gov", "0.pool.ntp.org", "1.pool.ntp.org");
-#endif
-    }
-    else
-    {
-      Serial.println(F("Current Timezone is not set. Enter Config Portal to set."));
-    }
-
-#endif
-  }
-  else
-  {
-    // Enter CP only if no stored SSID on flash and file
-    Serial.println(F("Open Config Portal without Timeout: No stored Credentials."));
-    initialConfig = true;
-  }
-
-  if (drd->detectDoubleReset())
-  {
-    // DRD, disable timeout.
-    ESPAsync_wifiManager.setConfigPortalTimeout(0);
-
-    Serial.println(F("Open Config Portal without Timeout: Double Reset Detected"));
-    initialConfig = true;
-  }
-
-  if (initialConfig)
-  {
-    Serial.print(F("Starting configuration portal @ "));
-
-#if USE_CUSTOM_AP_IP
-    Serial.print(APStaticIP);
-#else
-    Serial.print(F("192.168.4.1"));
-#endif
-
-    Serial.print(F(", SSID = "));
-    Serial.print(ssid);
-    Serial.print(F(", PWD = "));
-    Serial.println(password);
-
-    digitalWrite(PIN_LED, LED_ON); // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
-
-    //sets timeout in seconds until configuration portal gets turned off.
-    //If not specified device will remain in configuration mode until
-    //switched off via webserver or device is restarted.
-    //ESPAsync_wifiManager.setConfigPortalTimeout(600);
-
-#if DISPLAY_STORED_CREDENTIALS_IN_CP
-    // New. Update Credentials, got from loadConfigData(), to display on CP
-    ESPAsync_wifiManager.setCredentials(WM_config.WiFi_Creds[0].wifi_ssid, WM_config.WiFi_Creds[0].wifi_pw,
-                                        WM_config.WiFi_Creds[1].wifi_ssid, WM_config.WiFi_Creds[1].wifi_pw);
-#endif
-
-    // Starts an access point
-    if (!ESPAsync_wifiManager.startConfigPortal((const char *) ssid.c_str(), password.c_str()))
-      Serial.println(F("Not connected to WiFi but continuing anyway."));
-    else
-    {
-      Serial.println(F("WiFi connected."));
-    }
-
-    // Stored  for later usage, from v1.1.0, but clear first
-    memset(&WM_config, 0, sizeof(WM_config));
-
-    for (uint8_t i = 0; i < NUM_WIFI_CREDENTIALS; i++)
-    {
-      String tempSSID = ESPAsync_wifiManager.getSSID(i);
-      String tempPW   = ESPAsync_wifiManager.getPW(i);
-
-      if (strlen(tempSSID.c_str()) < sizeof(WM_config.WiFi_Creds[i].wifi_ssid) - 1)
-        strcpy(WM_config.WiFi_Creds[i].wifi_ssid, tempSSID.c_str());
-      else
-        strncpy(WM_config.WiFi_Creds[i].wifi_ssid, tempSSID.c_str(), sizeof(WM_config.WiFi_Creds[i].wifi_ssid) - 1);
-
-      if (strlen(tempPW.c_str()) < sizeof(WM_config.WiFi_Creds[i].wifi_pw) - 1)
-        strcpy(WM_config.WiFi_Creds[i].wifi_pw, tempPW.c_str());
-      else
-        strncpy(WM_config.WiFi_Creds[i].wifi_pw, tempPW.c_str(), sizeof(WM_config.WiFi_Creds[i].wifi_pw) - 1);
-
-      // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
-      if ( (String(WM_config.WiFi_Creds[i].wifi_ssid) != "")
-           && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE) )
-      {
-        LOGERROR3(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw );
-        wifiMulti.addAP(WM_config.WiFi_Creds[i].wifi_ssid, WM_config.WiFi_Creds[i].wifi_pw);
-      }
-    }
-
-#if USE_ESP_WIFIMANAGER_NTP
-    String tempTZ   = ESPAsync_wifiManager.getTimezoneName();
-
-    if (strlen(tempTZ.c_str()) < sizeof(WM_config.TZ_Name) - 1)
-      strcpy(WM_config.TZ_Name, tempTZ.c_str());
-    else
-      strncpy(WM_config.TZ_Name, tempTZ.c_str(), sizeof(WM_config.TZ_Name) - 1);
-
-    const char * TZ_Result = ESPAsync_wifiManager.getTZ(WM_config.TZ_Name);
-
-    if (strlen(TZ_Result) < sizeof(WM_config.TZ) - 1)
-      strcpy(WM_config.TZ, TZ_Result);
-    else
-      strncpy(WM_config.TZ, TZ_Result, sizeof(WM_config.TZ_Name) - 1);
-
-    if ( strlen(WM_config.TZ_Name) > 0 )
-    {
-      LOGERROR3(F("Saving current TZ_Name ="), WM_config.TZ_Name, F(", TZ = "), WM_config.TZ);
-
-#if ESP8266
-      configTime(WM_config.TZ, "pool.ntp.org");
-#else
-      //configTzTime(WM_config.TZ, "pool.ntp.org" );
-      configTzTime(WM_config.TZ, "time.nist.gov", "0.pool.ntp.org", "1.pool.ntp.org");
-#endif
-    }
-    else
-    {
-      LOGERROR(F("Current Timezone Name is not set. Enter Config Portal to set."));
-    }
-
-#endif
-
-    // New in v1.4.0
-    ESPAsync_wifiManager.getSTAStaticIPConfig(WM_STA_IPconfig);
-    //////
-
-    saveConfigData();
-  }
-
-  digitalWrite(PIN_LED, LED_OFF); // Turn led off as we are not in configuration mode.
-
-  startedAt = millis();
-
-  if (!initialConfig)
-  {
-    // Load stored data, the addAP ready for MultiWiFi reconnection
-    if (!configDataLoaded)
-      loadConfigData();
-
-    for (uint8_t i = 0; i < NUM_WIFI_CREDENTIALS; i++)
-    {
-      // Don't permit NULL SSID and password len < MIN_AP_PASSWORD_SIZE (8)
-      if ( (String(WM_config.WiFi_Creds[i].wifi_ssid) != "")
-           && (strlen(WM_config.WiFi_Creds[i].wifi_pw) >= MIN_AP_PASSWORD_SIZE) )
-      {
-        LOGERROR3(F("* Add SSID = "), WM_config.WiFi_Creds[i].wifi_ssid, F(", PW = "), WM_config.WiFi_Creds[i].wifi_pw );
-        wifiMulti.addAP(WM_config.WiFi_Creds[i].wifi_ssid, WM_config.WiFi_Creds[i].wifi_pw);
-      }
-    }
-
-    if ( WiFi.status() != WL_CONNECTED )
-    {
-      Serial.println(F("ConnectMultiWiFi in setup"));
-
-      connectMultiWiFi();
-    }
-  }
-
-  Serial.print(F("After waiting "));
-  Serial.print((float) (millis() - startedAt) / 1000);
-  Serial.print(F(" secs more in setup(), connection result is "));
-
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    Serial.print(F("connected. Local IP: "));
-    Serial.println(WiFi.localIP());
-  }
-  else
-    Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
-}
-
-/* moved to reaction
-void loopWifi()
-{
-  // Call the double reset detector loop method every so often,
-  // so that it can recognise when the timeout expires.
-  // You can also call drd.stop() when you wish to no longer
-  // consider the next reset as a double reset.
-  drd->loop();
-
-  // put your main code here, to run repeatedly
-  check_status();
-}
-*/

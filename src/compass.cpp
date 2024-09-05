@@ -3,7 +3,7 @@ Currently receiving Heading PGN from mast compass on N2K network with Wind senso
 Using HTTP PUT to change mast compass settings
 TBD remove enum for compass type and just compile with different types; change #ifdef back to CMPS14
 */
-#include <Arduino.h>
+//#include <Arduino.h>
 #include <ActisenseReader.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -27,7 +27,6 @@ TBD remove enum for compass type and just compile with different types; change #
 #include <ESPmDNS.h>
 //#include "mcp2515.h"
 //#include "can.h"
-#include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 //#include <WebSerial.h>
@@ -98,7 +97,7 @@ float getCMPS14(int correction) {
   pitch = Wire.read();
   roll = Wire.read();
   angle16 = (high_byte <<8) + low_byte;                 // Calculate 16 bit angle
-  comp16 = ((angle16/10 + correction + 360) % 360) + (angle16%10)/10.0;
+  comp16 = (((angle16/10 + correction)%360 + 360) % 360) + (angle16%10)/10.0;
 #ifdef DEBUG
   Serial.print("angle8: "); Serial.print(angle8, DEC);
   Serial.print(" comp8: "); Serial.print(comp8, DEC);
@@ -249,7 +248,7 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   ////Serial.printf("theta %0.2f phi %0.2f psi %0.2f h %0.2f ", theta, phi, psi, heading);
   ////Serial.printf("h %0.2f ", heading);
   // correction may be positive or negative
-  if (heading > 259) heading -= 360.0;
+  if (heading > 359) heading -= 360.0;
   if (heading < 0) heading += 360.0;
   //Serial.printf("h %0.2f\n", heading);
   return heading;

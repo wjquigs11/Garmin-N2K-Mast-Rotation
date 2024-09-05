@@ -19,12 +19,12 @@
 #include <N2kMessages.h>
 #include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
+#include "esp_wifi.h"
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 //#include "mcp2515.h"
 //#include "can.h"
-#include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
@@ -53,17 +53,12 @@ extern AsyncWebServer server;
 extern bool serverStarted;
 extern char *hostname;
 extern int WebTimerDelay;
-//extern AsyncWebSocket ws;
 extern AsyncEventSource events;
 extern JSONVar readings;
 extern void setupWifi();
 //extern String host;
 extern void loopWifi();
 void startWebServer();
-String getSensorReadings();
-void setupESPNOW();
-extern DoubleResetDetector* drd;
-void check_status();
 
 // mast compass
 int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
@@ -86,7 +81,7 @@ extern int num_wind_messages;
 
 
 void mastHeading();
-extern float mastAngle[2]; // array for both sensors
+extern int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 

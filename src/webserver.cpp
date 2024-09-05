@@ -1,4 +1,4 @@
-#include <Arduino.h>
+//#include <Arduino.h>
 #include <ActisenseReader.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -23,7 +23,6 @@
 #include <ESPmDNS.h>
 //#include "mcp2515.h"
 //#include "can.h"
-#include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
@@ -46,7 +45,7 @@ int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/st
 extern int mastOrientation; // mast compass position relative to boat compass position
 extern int sensOrientation; // Honeywell orientation relative to centerline
 extern int boatOrientation; // boat compass position relative to centerline
-extern float mastAngle[];
+extern int mastAngle[];
 int compassFrequency;
 extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
