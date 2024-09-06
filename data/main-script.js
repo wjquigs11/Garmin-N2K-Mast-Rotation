@@ -30,9 +30,11 @@ if (!!window.EventSource) {
     source.addEventListener("new_readings", function(e) {
         console.log("new_readings", e.data);
         var myObj = JSON.parse(e.data);
-        console.log(myObj);
-        if (myObj.mastRotate) document.getElementById("honeywell").style.display = "block";
-        else document.getElementById("honeywell").style.display = "none";
+        var Honeywell = document.getElementById("honeywell");
+        if (Honeywell) {
+            if (myObj.mastRotate) Honeywell.style.display = "block";
+            else Honeywell.style.display = "none";
+        }
         var gaugeCanvas = document.getElementById("gauge-magrot");
         if (gaugeCanvas) {
             if (myObj.compass) {
@@ -59,11 +61,11 @@ if (!!window.EventSource) {
         if (elementThis = document.getElementById("windAngle")) elementThis.innerHTML = myObj.windAngle;
         if (elementThis = document.getElementById("mastHeading")) elementThis.innerHTML = myObj.mastHeading;
         if (elementThis = document.getElementById("boatHeading")) elementThis.innerHTML = myObj.boatHeading;
+        if (elementThis = document.getElementById("boatHeadingPi")) elementThis.innerHTML = myObj.boatHeadingPi;
         if (elementThis = document.getElementById("boatTrue")) elementThis.innerHTML = myObj.boatTrue;
         if (elementThis = document.getElementById("rotateout")) elementThis.innerHTML = myObj.rotateout;
         if (elementThis = document.getElementById("calibration")) {
             elementThis.innerHTML = myObj.boatCalStatus;
-            console.log("imageElement: ", elementThis);
             if (elementThis) {
                 console.log("calstatus: ", myObj.boatCalStatus);
                 switch (myObj.boatCalStatus) {

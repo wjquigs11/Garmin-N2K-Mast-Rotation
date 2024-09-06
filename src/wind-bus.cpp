@@ -194,6 +194,7 @@ extern int sensOrientation; // delta between mast centered and Honeywell sensor 
 extern int boatOrientation; // delta between boat compass and magnetic north
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
+extern float boatCompassPi;
 extern float mastDelta;
 extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
@@ -213,7 +214,7 @@ const int CMPS14_ADDRESS = 0x60;
 // robotshop CMPS14 (boat compass)
 #endif
 #ifdef BNO08X
-// compass
+// compass but now defined in BNO08X directive
 const int ADABNO = 0x4A;
 const int SFBNO = 0x4B;
 const int BNO08X_RESET = -1;
@@ -221,6 +222,10 @@ Adafruit_BNO08x bno08x(BNO08X_RESET);
 sh2_SensorValue_t sensorValue;
 #endif
 bool compassReady=false;
+#ifdef PICOMPASS
+void setupPiComp();
+void loopPiComp();
+#endif
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -233,6 +238,7 @@ void logToAlln(String s);
 void i2cScan();
 void ParseWindCAN();
 void demoIncr();
+float readCompassDelta();
 
 void ToggleLed() {
   static bool led_state = false;
@@ -491,6 +497,7 @@ void OLEDdataWindDebug() {
   if (compassOnToggle) {
     #ifdef MASTCOMPASS
     display.printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCalStatus);
+    display.printf("Pi:%.1f\n", boatCompassPi);
     display.printf("Delta: %2d\n", mastAngle[1]);
     #else
     display.printf("Heading: %.1f\n", boatCompassDeg);
@@ -640,11 +647,7 @@ void setup() {
 #ifdef BNO08X
   // compassReady means we have a local boat compass in the controller
   // compassOnTog used for turning it on and off
-#ifdef SH_ESP32
-  compassReady = bno08x.begin_I2C(SFBNO);
-#else
-  compassReady = bno08x.begin_I2C(ADABNO);
-#endif
+  compassReady = bno08x.begin_I2C(BNO08X);
   if (compassReady) {
     Serial.println("BNO08x Found");
     for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
@@ -653,12 +656,17 @@ void setup() {
     }
     if (!bno08x.enableReport(SH2_ROTATION_VECTOR, 100))
       Serial.println("Could not enable rotation vector");
+#if 0 // shouldn't need these since we're using the fusion report
     if (!bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
       Serial.println("Could not enable gyroscope");
     if (!bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED))
       Serial.println("Could not enable magnetic field calibrated");
+#endif
   } else
-    Serial.printf("Failed to find BNO08x chip @ 0x%x\n", ADABNO);
+    Serial.printf("Failed to find BNO08x chip @ 0x%x\n", BNO08X);
+#endif
+#ifdef PICOMPASS
+  setupPiComp();  // serial connection to RPI Zero with pypilot
 #endif
   mastCompDelta.begin();
   Serial.println("OLED started");
@@ -822,6 +830,9 @@ void setup() {
 
   app.onRepeat(1, []() {
     WebSerial.loop();
+#ifdef PICOMPASS
+    loopPiComp();
+#endif
   });
 
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
@@ -861,14 +872,13 @@ void setup() {
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
       // the global boatCompassDeg will always contain the boat compass (magnetic)
-      boatCompassDeg = getCompass(boatOrientation);
-      //logToAll(String(mastCompassDeg+mastOrientation) + ", " + String(boatCompassDeg) + ", " + String(mastCompassDeg+mastOrientation-boatCompassDeg));
-      Serial.print(">mast: ");
-      Serial.println(mastCompassDeg+mastOrientation);
+      readCompassDelta();
+#ifdef PLOTTER
       Serial.print(">boat: ");
       Serial.println(boatCompassDeg);
       Serial.print(">delta: ");
       Serial.println(mastAngle[1]);   
+#endif
       BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
       if (BoatData.TrueHeading > 359) BoatData.TrueHeading -= 360;
       if (BoatData.TrueHeading < 0) BoatData.TrueHeading += 360;

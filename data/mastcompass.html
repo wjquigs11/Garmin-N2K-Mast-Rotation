@@ -16,7 +16,7 @@
         <div class="mobile-container">
             <div class="topnav">
                 <a href="/" class="active">
-                    <h1>Mast Compass</h1>
+                    <h1>Mast Compass Alignment</h1>
                 </a>
                 <div id="myLinks">
                     <a href="/settings">Settings</a>
@@ -31,38 +31,20 @@
                 </a>
             </div>
             <div class="content">
-                <div class="content">
-                    <div class="card-grid">
-                    <div class="card">
-                        <p class="card-title"><i style="color:#059e8a;"></i>Mast Heading</p>
-                        <p class="reading"><span id="mastHeading"></span></p>
-                    </div>
-                    <div class="card">
-                        <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading</p>
-                        <p class="reading"><span id="boatHeading"></span></p>
-                    </div>
-                    <div class="card">
-                        <p class="card-title"><i style="color:#059e8a;"></i>Mast Delta</p>
-                        <p class="reading"><span id="mastDelta"></span></p>
-                    </div>
-                    <p>Center mast and press Confirm to change mast compass orientation</p>
-                    <form action="/mastcompass" method="post">
-                        <button type="submit">Confirm</button>
-                    </form>
-                    <br>
-                    <form action="http://ESPcompass.local/config" method="get">
-                        <p>orientation: <input type="text" name="orientation" value=%orientation% size="4"></p>
-                        <button type="submit">OK</button>
-                      </form>
-                      <form action="http://ESPcompass.local/config" method="get">
-                        <p>variation: <input type="text" name="variation" value=%variation% size="4"></p>
-                        <button type="submit">OK</button>
-                      </form>
-                      <p><a href="/"><button class="button">Cancel</button></a></p>
-                </div>
+                <p>Center mast and press Confirm to align mast and boat compass.</p>
+                <form action="/mastcompass" method="get">
+                    <input type="hidden" name="confirm" value="aligned">
+                    <button type="submit" class="button">Confirm</button>
+                </form>
+                <form>
+                    <input type="hidden" name="cancel" value="cancel">
+                    <button type="submit" class="button">Cancel</button>
+                </form>
+                <canvas id="gauge-magrot"></canvas>
             </div>
         </div>
     </div>
     <script src="main-script.js"></script>
+    <script src="magrot-script.js"></script>
 </body>
 </html>

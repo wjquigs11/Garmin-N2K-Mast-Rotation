@@ -70,6 +70,10 @@ extern const char* serverName;
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
+#ifdef PICOMPASS
+extern float boatCompassPi;
+extern int piCompCount;
+#endif
 extern int boatCalStatus;
 #ifdef CMPS14
 extern byte calibrationStatus[];
@@ -78,7 +82,6 @@ extern float mastDelta;
 
 extern int num_n2k_messages;
 extern int num_wind_messages;
-
 
 void mastHeading();
 extern int mastAngle[2]; // array for both sensors
@@ -216,6 +219,10 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     if (words[i].equals("compass")) {
       WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
       WebSerial.println("       Calibration(0-3): " + String(boatCalStatus));
+#ifdef PICOMPASS
+      WebSerial.println("        Boat Pi Compass: " + String(boatCompassPi));
+      WebSerial.println("                 piComp: " + String(piCompCount));
+#endif
 #ifdef CMPS14
       WebSerial.printf("            [Calibration]: ");
       String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
