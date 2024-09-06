@@ -49,7 +49,7 @@ extern int mastAngle[];
 int compassFrequency;
 extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
-extern float mastCompassDeg, boatCompassDeg;
+extern float mastCompassDeg, boatCompassDeg, boatCompassPi;
 extern int boatCalStatus;
 extern tBoatData BoatData;
 
@@ -72,22 +72,25 @@ const char* PARAM_INPUT_2 = "state";
 
 void logToAll(String s);
 void demoInit();
+int compassDifference(int angle1, int angle2);
 
 // Get Sensor Readings and return JSON object
 String getSensorReadings() {
-  readings["rotateout"] = String(rotateout,0);
+  readings["rotateout"] = rotateout;
   readings["mastHeading"] = "";
   readings["mastDelta"] = "";
   if (honeywellOnToggle) {
-    readings["mastRotate"] = String(mastAngle[0],0);
-    readings["PotValue"] = String(PotValue,0);
+    readings["mastRotate"] = mastAngle[0];
+    readings["PotValue"] = PotValue;
   }
   if (compassOnToggle) {
-    if (mastCompassDeg > 0) { // set to -1 if mast compass times out
-      readings["mastHeading"] = String(mastCompassDeg,0);
-      readings["mastDelta"] = String(mastAngle[1],0);
+    if (mastCompassDeg >= 0) { // set to -1 if mast compass times out
+      //readings["mastHeading"] = String(mastCompassDeg,0);
+      readings["mastHeading"] = (int)(mastCompassDeg * 100 + 0.5) / 100.0;
+      readings["mastDelta"] = mastAngle[1];
     }
     readings["boatHeading"] = String(boatCompassDeg,0);
+    readings["boatHeadingPi"] = String(boatCompassPi,0);
     readings["boatCalStatus"] = boatCalStatus;
     readings["boatTrue"] = String(BoatData.TrueHeading,0);
     if (!honeywellOnToggle) // honeywell takes precedence if both are present
@@ -309,8 +312,24 @@ void startWebServer() {
     request->send(SPIFFS, "/compass.html", "text/html");
   });
 
+  static int oldMastOrientation;
   server.on("/mastcompass", HTTP_GET, [](AsyncWebServerRequest *request) {
     logToAll("mastcompass.html");
+    String inputMessage1;
+    String inputMessage2;
+    oldMastOrientation = mastOrientation;
+    mastOrientation = 0;
+    // GET input1 value on <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
+    if (request->hasParam("confirm")) {
+      inputMessage1 = request->getParam("confirm")->value();
+      logToAll("/mastcompass: " + inputMessage1);
+      mastOrientation = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
+    }
+    if (request->hasParam("cancel")) {
+      inputMessage1 = request->getParam("cancel")->value();
+      logToAll("/mastcompass: " + inputMessage1);
+      mastOrientation = oldMastOrientation;
+    }
     request->send(SPIFFS, "/mastcompass.html", "text/html");
   });
 
@@ -487,23 +506,6 @@ void startWebServer() {
       } // isPost
     } // for params
     request->send(SPIFFS, "/index.html", "text/html");
-  });
-
-  // POST on mastcompass means mast is centered and we can calculate orientation
-  server.on("/mastcompass", HTTP_POST, [](AsyncWebServerRequest *request) {
-    logToAll("mastcompass.html");
-    int delta = mastCompassDeg-boatCompassDeg;
-    if (delta > 180) {
-      delta -= 360;
-    } else if (delta < -180) {
-      delta += 360;
-    }
-    mastOrientation = delta;
-    logToAll("mast compass orientation: " + String(delta));
-    preferences.putInt("mastOrientation", mastOrientation);
-    // TBD: build a page with a gauge that reflects mast orientation and redirect there
-    // until then, send back to mastcompass.html so user can verify that compasses agree when mast is centered
-    request->send(SPIFFS, "/mastcompass.html", "text/html");
   });
 
   server.onNotFound([](AsyncWebServerRequest * request) {

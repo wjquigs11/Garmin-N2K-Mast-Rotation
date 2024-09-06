@@ -43,7 +43,7 @@ float comp16;
 #define VARIATION -15.2
 static int variation;
 float mastCompassDeg; 
-float boatCompassDeg, boatAccuracy;
+float boatCompassDeg, boatAccuracy, boatCompassPi;
 int boatCalStatus;
 float mastDelta;
 // how is the compass oriented on the board relative to boat compass
@@ -97,7 +97,11 @@ float getCMPS14(int correction) {
   pitch = Wire.read();
   roll = Wire.read();
   angle16 = (high_byte <<8) + low_byte;                 // Calculate 16 bit angle
-  comp16 = (((angle16/10 + correction)%360 + 360) % 360) + (angle16%10)/10.0;
+  comp16 = (angle16/10) + (angle16%10)/10.0;
+  comp16 += correction;
+  //if (comp16 > 359) comp16 -= 360;
+  //if (comp16 < 0) comp16 += 360;
+#define DEBUG
 #ifdef DEBUG
   Serial.print("angle8: "); Serial.print(angle8, DEC);
   Serial.print(" comp8: "); Serial.print(comp8, DEC);
@@ -105,8 +109,11 @@ float getCMPS14(int correction) {
   Serial.print(angle16/10, DEC);
   Serial.print(".");
   Serial.print(angle16%10, DEC);
-  Serial.print(" a16: "); Serial.printf("%0.2f", (float)(angle16/10) + (float)(angle16%10)/10);
-  Serial.print(" comp16: "); Serial.println(comp16);  
+  Serial.print(" a16: "); Serial.printf("%0.2f", (angle16/10) + (angle16%10)/10.0);
+  Serial.print(" corr: "); Serial.println(correction);
+  if (comp16 > 359) comp16 -= 360;
+  if (comp16 < 0) comp16 += 360;
+  Serial.print(">mast: "); Serial.println(comp16);  
   //Serial.print("roll: ");               // Display roll data
   //Serial.print(roll, DEC);
   
@@ -207,6 +214,7 @@ float getBNO085(int correction) {
     return heading;
     break;
   case SH2_MAGNETIC_FIELD_CALIBRATED:
+    logToAll("magnetic field calibrated");
     /*//Serial.print("Magnetic Field - x: ");
     //Serial.print(sensorValue.un.magneticField.x);
     //Serial.print(" y: ");
@@ -219,8 +227,7 @@ float getBNO085(int correction) {
     return heading;
     break;
   default:
-    printf("ID: %d\n", sensorValue.sensorId);
-    ////Serial.printf("3 heading %0.2f\n", heading);
+    logToAll("BNO got unknown sensor id: " + String(sensorValue.sensorId));
     return heading;
     break;
   }
@@ -306,6 +313,7 @@ endTransmission() returns:
 5: timeout
 */
 
+#if 0
 // called when we get a Mag Heading message from bus (i.e. from RPI, boat heading)
 // checks mast heading (async) and prints difference (in degrees)
 // RETURNS difference, if you want to xmit rudder angle add 50 (if mast range is -50..50)
@@ -355,6 +363,7 @@ int convertMagHeading(const tN2kMsg &N2kMsg) {
   }
   return -1;
 }
+#endif
 
 #if 0
 void parse_mast_comp() {
