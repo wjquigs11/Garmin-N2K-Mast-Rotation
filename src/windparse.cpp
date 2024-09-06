@@ -1,5 +1,5 @@
 // parse wind speed, correct for mast rotation
-#include <Arduino.h>
+//#include <Arduino.h>
 #include <ActisenseReader.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -21,7 +21,6 @@
 #include <ESPmDNS.h>
 //#include "mcp2515.h"
 //#include "can.h"
-#include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
@@ -138,27 +137,17 @@ float readAnalogRotationValue() {
   return mastAngle[0]; 
 }
 
+int compassDifference(int angle1, int angle2) {
+    int diff = (angle1 - angle2 + 360) % 360;
+    //Serial.print("compdiff: "); Serial.println(diff);
+    return (diff > 180) ? (diff - 360) : diff;
+}
+
 float readCompassDelta() {
   if (compassReady) {
     // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
     boatCompassDeg = getCompass(boatOrientation);
-      //logToAll(String(mastCompassDeg+mastOrientation) + ", " + String(boatCompassDeg) + ", " + String(mastCompassDeg+mastOrientation-boatCompassDeg));
-      Serial.print(">mast: ");
-      Serial.println(mastCompassDeg+mastOrientation);
-      Serial.print(">boat: ");
-      Serial.println(boatCompassDeg);
-      Serial.print(">delta: ");
-      Serial.println(mastCompassDeg+mastOrientation-boatCompassDeg);    
-    //logToAll("corrected mast: " + String(mastCompassDeg+mastOrientation) + " boat: " + String(boatCompassDeg+boatOrientation));     ////Serial.printf("parsecompass boatcomp %0.2f mastcomp %0.2f\n", boatCompassDeg, mastCompassDeg);
-    // adjust delta for mast compass orientation relative to boat compass (mastOrientation)
-    //float mastCompassCorr = (float)((int)(mastCompassDeg+mastOrientation) + 360 % 360);
-    mastDelta = boatCompassDeg-mastCompassDeg+mastOrientation;
-    //logToAll("mastDelta: " + String(mastDelta));
-    if (mastDelta > 180) {
-      mastDelta -= 360;
-    } else if (mastDelta < -180) {
-      mastDelta += 360;
-    }
+    mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
     //logToAll("mastDelta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
     mastCompDelta.reading((int)(mastDelta*100)); // moving average

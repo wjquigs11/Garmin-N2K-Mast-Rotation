@@ -7,7 +7,7 @@ Web server for displaying wind speed/angle/mast rotation
 TBD: add wiring from TX on Serial(1) to Autohelm plug; port autopilot code here and modify web interface
 TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 */
-#include <Arduino.h>
+//#include <Arduino.h>
 #include <ActisenseReader.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -29,11 +29,11 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <N2kMessages.h>
 #include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
+#include "esp_wifi.h"
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 #include <SPI.h>
-#include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
@@ -120,11 +120,9 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #endif // SH_ESP32
 
 using namespace reactesp;
-
 ReactESP app;
-
 #define RECOVERY_RETRY_MS 1000  // How long to attempt CAN bus recovery
-
+bool stackTrace = false;
 TwoWire *i2c;
 
 #if defined(PICAN) && defined(NMEA0183)
@@ -174,17 +172,13 @@ extern AsyncWebServer server;
 bool serverStarted=false;
 extern char *hostname;
 extern int WebTimerDelay;
-//extern AsyncWebSocket ws;
 extern AsyncEventSource events;
 extern JSONVar readings;
-extern void setupWifi();
-//extern void loopWifi();
+bool initWiFi();
+void startAP();
 void startWebServer();
-String getSensorReadings();
-void setupESPNOW();
 bool sendMastControl();
-extern DoubleResetDetector* drd;
-extern void check_status();
+String getSensorReadings();
 
 String host = "ESPwind";
 
@@ -200,13 +194,14 @@ extern int sensOrientation; // delta between mast centered and Honeywell sensor 
 extern int boatOrientation; // delta between boat compass and magnetic north
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
+extern float boatCompassPi;
 extern float mastDelta;
 extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
 extern int boatCalStatus;
 void mastHeading();
 extern int compassFrequency;
-float mastAngle[2]; // array for both sensors
+int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 HTTPClient httpC;
@@ -219,7 +214,7 @@ const int CMPS14_ADDRESS = 0x60;
 // robotshop CMPS14 (boat compass)
 #endif
 #ifdef BNO08X
-// compass
+// compass but now defined in BNO08X directive
 const int ADABNO = 0x4A;
 const int SFBNO = 0x4B;
 const int BNO08X_RESET = -1;
@@ -227,6 +222,10 @@ Adafruit_BNO08x bno08x(BNO08X_RESET);
 sh2_SensorValue_t sensorValue;
 #endif
 bool compassReady=false;
+#ifdef PICOMPASS
+void setupPiComp();
+void loopPiComp();
+#endif
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -239,6 +238,7 @@ void logToAlln(String s);
 void i2cScan();
 void ParseWindCAN();
 void demoIncr();
+float readCompassDelta();
 
 void ToggleLed() {
   static bool led_state = false;
@@ -257,7 +257,9 @@ void BoatSpeed(const tN2kMsg &N2kMsg);
 const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 
 // NMEA 2000 message handler for main bus
-void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {   
+void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
+  if (stackTrace) Serial.println("HandleNMEA2000MsgMain");
+   
   //Serial.print("main: "); N2kMsg.Print(&Serial);
   n2kMainOpen = true;
   n2kMain->SetForwardStream(forward_stream);
@@ -338,7 +340,9 @@ void mastcompCounter() {
 // so I use it to parse Wind and Heading from the mast
 
 // NMEA 2000 message handler for wind bus: check if message is wind and handle it
-void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {   
+void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
+  if (stackTrace) Serial.println("HandleNMEA2000MsgWind");
+   
   N2kMsg.Print(&Serial);
   //Serial.printf("wind t: %d R: %d\n", millis(), N2kMsg.PGN);
   if (!n2kWindOpen) {
@@ -372,6 +376,8 @@ byte cdata[MAX_DATA_SIZE] = {0};
 // parse a packet manually from CAN bus data (not using Timo library)
 // set globals for wind speed/angle or heading for processing by WindSpeed() or Heading()
 void ParseWindCAN() {
+  if (stackTrace) Serial.println("ParseWindCAN");
+
   //Serial.print("parsewindcan ");
   uint8_t len;
   int PGN;
@@ -428,6 +434,8 @@ void ParseWindCAN() {
 String can_state;
 
 void RecoverFromCANBusOff() {
+  if (stackTrace) Serial.println("RecoverFromCANBusOff");
+
   // This recovery routine first discussed in
   // https://www.esp32.com/viewtopic.php?t=5010 and also implemented in
   // https://github.com/wellenvogel/esp32-nmea2000
@@ -489,7 +497,8 @@ void OLEDdataWindDebug() {
   if (compassOnToggle) {
     #ifdef MASTCOMPASS
     display.printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCalStatus);
-    display.printf("Delta: %2.1f\n", mastAngle[1]);
+    display.printf("Pi:%.1f\n", boatCompassPi);
+    display.printf("Delta: %2d\n", mastAngle[1]);
     #else
     display.printf("Heading: %.1f\n", boatCompassDeg);
     #endif
@@ -638,11 +647,7 @@ void setup() {
 #ifdef BNO08X
   // compassReady means we have a local boat compass in the controller
   // compassOnTog used for turning it on and off
-#ifdef SH_ESP32
-  compassReady = bno08x.begin_I2C(SFBNO);
-#else
-  compassReady = bno08x.begin_I2C(ADABNO);
-#endif
+  compassReady = bno08x.begin_I2C(BNO08X);
   if (compassReady) {
     Serial.println("BNO08x Found");
     for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
@@ -651,12 +656,17 @@ void setup() {
     }
     if (!bno08x.enableReport(SH2_ROTATION_VECTOR, 100))
       Serial.println("Could not enable rotation vector");
+#if 0 // shouldn't need these since we're using the fusion report
     if (!bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
       Serial.println("Could not enable gyroscope");
     if (!bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED))
       Serial.println("Could not enable magnetic field calibrated");
+#endif
   } else
-    Serial.printf("Failed to find BNO08x chip @ 0x%x\n", ADABNO);
+    Serial.printf("Failed to find BNO08x chip @ 0x%x\n", BNO08X);
+#endif
+#ifdef PICOMPASS
+  setupPiComp();  // serial connection to RPI Zero with pypilot
 #endif
   mastCompDelta.begin();
   Serial.println("OLED started");
@@ -669,8 +679,11 @@ void setup() {
   display.display();
   Serial.println("display init");
 
-  setupWifi();
-  startWebServer();
+  if (initWiFi()) {
+    startWebServer();
+  } else {
+    startAP();
+  }
   serverStarted=true;
   //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
@@ -778,13 +791,6 @@ void setup() {
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
   });
 
-  app.onRepeat(1000, []() {
-    //Serial.println("drd loop");
-    drd->loop(); // double reset detector
-    //Serial.println("elegant OTA loop");
-    //ElegantOTA.loop();
-  });
-
 #if 0
   // temporary since our mast compass isn't reporting on n2k but is on wifi     
   app.onRepeat(1000, []() {
@@ -824,6 +830,9 @@ void setup() {
 
   app.onRepeat(1, []() {
     WebSerial.loop();
+#ifdef PICOMPASS
+    loopPiComp();
+#endif
   });
 
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
@@ -832,10 +841,9 @@ void setup() {
     // we have to clear counters sometime because otherwise they roll off screen
     num_n2k_messages = 0;
     num_wind_messages = 0;  
-    check_status(); // wifi
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("WiFi not connected");
-      setupWifi();
+      initWiFi();
     }
     // check for connected clients
     int numClients = WiFi.softAPgetStationNum();
@@ -864,14 +872,16 @@ void setup() {
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
       // the global boatCompassDeg will always contain the boat compass (magnetic)
-      boatCompassDeg = getCompass(boatOrientation);
-      //logToAll(String(mastCompassDeg+mastOrientation) + ", " + String(boatCompassDeg) + ", " + String(mastCompassDeg+mastOrientation-boatCompassDeg));
-      Serial.print(">mast: ");
-      Serial.println(mastCompassDeg+mastOrientation);
+      readCompassDelta();
+#ifdef PLOTTER
       Serial.print(">boat: ");
       Serial.println(boatCompassDeg);
       Serial.print(">delta: ");
-      Serial.println(mastCompassDeg+mastOrientation-boatCompassDeg);         BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
+      Serial.println(mastAngle[1]);   
+#endif
+      BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
+      if (BoatData.TrueHeading > 359) BoatData.TrueHeading -= 360;
+      if (BoatData.TrueHeading < 0) BoatData.TrueHeading += 360;
       // transmit heading
       if (n2kMainOpen) {
         SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);

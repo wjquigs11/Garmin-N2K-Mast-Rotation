@@ -19,12 +19,12 @@
 #include <N2kMessages.h>
 #include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
+#include "esp_wifi.h"
 #include "SPIFFS.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 //#include "mcp2515.h"
 //#include "can.h"
-#include "Async_ConfigOnDoubleReset_Multi.h"
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
@@ -53,17 +53,12 @@ extern AsyncWebServer server;
 extern bool serverStarted;
 extern char *hostname;
 extern int WebTimerDelay;
-//extern AsyncWebSocket ws;
 extern AsyncEventSource events;
 extern JSONVar readings;
 extern void setupWifi();
 //extern String host;
 extern void loopWifi();
 void startWebServer();
-String getSensorReadings();
-void setupESPNOW();
-extern DoubleResetDetector* drd;
-void check_status();
 
 // mast compass
 int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
@@ -75,6 +70,10 @@ extern const char* serverName;
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
+#ifdef PICOMPASS
+extern float boatCompassPi;
+extern int piCompCount;
+#endif
 extern int boatCalStatus;
 #ifdef CMPS14
 extern byte calibrationStatus[];
@@ -84,9 +83,8 @@ extern float mastDelta;
 extern int num_n2k_messages;
 extern int num_wind_messages;
 
-
 void mastHeading();
-extern float mastAngle[2]; // array for both sensors
+extern int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 
@@ -221,6 +219,10 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     if (words[i].equals("compass")) {
       WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
       WebSerial.println("       Calibration(0-3): " + String(boatCalStatus));
+#ifdef PICOMPASS
+      WebSerial.println("        Boat Pi Compass: " + String(boatCompassPi));
+      WebSerial.println("                 piComp: " + String(piCompCount));
+#endif
 #ifdef CMPS14
       WebSerial.printf("            [Calibration]: ");
       String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
