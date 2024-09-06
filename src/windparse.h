@@ -86,7 +86,7 @@ extern char prbuf[PRBUF];
 // Honeywell observed range
 #define lowset 56
 #define highset 311
-extern float mastAngle[];
+extern int mastAngle[];
 
 #define DEGTORAD 0.01745329252
 #define RADTODEG 57.2957795131
