@@ -194,7 +194,9 @@ extern int sensOrientation; // delta between mast centered and Honeywell sensor 
 extern int boatOrientation; // delta between boat compass and magnetic north
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
+#ifdef PICOMPASS
 extern float boatCompassPi;
+#endif
 extern float mastDelta;
 extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
@@ -497,7 +499,9 @@ void OLEDdataWindDebug() {
   if (compassOnToggle) {
     #ifdef MASTCOMPASS
     display.printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCalStatus);
+    #ifdef PICOMPASS
     display.printf("Pi:%.1f\n", boatCompassPi);
+    #endif
     display.printf("Delta: %2d\n", mastAngle[1]);
     #else
     display.printf("Heading: %.1f\n", boatCompassDeg);
@@ -873,6 +877,7 @@ void setup() {
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
       // the global boatCompassDeg will always contain the boat compass (magnetic)
       readCompassDelta();
+#define PLOTTER
 #ifdef PLOTTER
       Serial.print(">boat: ");
       Serial.println(boatCompassDeg);
