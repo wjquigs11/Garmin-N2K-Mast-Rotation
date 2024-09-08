@@ -8,7 +8,7 @@
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <SPIFFS.h>
-#include <Adafruit_BNO08x.h>
+#include <SparkFun_BNO08x_Arduino_Library.h>
 #include <math.h>
 #include <esp_wifi.h>
 #include <ESPAsyncWebServer.h>
@@ -189,6 +189,7 @@ bool initWiFi() {
     if (WiFi.status() == WL_CONNECTED) {
       Serial.print(" connected: ");
       Serial.println(WiFi.localIP());
+      
       return true;
     }
   }

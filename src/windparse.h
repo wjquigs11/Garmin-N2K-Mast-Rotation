@@ -1,7 +1,7 @@
 #include "elapsedMillis.h"
 #include <N2kMessages.h>
 #include <NMEA2000_esp32.h>
-#include <Adafruit_BNO08x.h>
+#include <SparkFun_BNO08x_Arduino_Library.h>
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21
@@ -73,7 +73,7 @@ extern bool compassReady;
 extern const int CMPS14_ADDRESS;
 extern const int ADABNO;
 extern const int BNO08X_RESET;
-extern Adafruit_BNO08x bno08x;
+extern BNO08x bno08x;
 extern sh2_SensorValue_t sensorValue;
 
 #ifdef DISPLAYON

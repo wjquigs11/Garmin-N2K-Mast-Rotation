@@ -15,7 +15,7 @@
 #include "compass.h"
 
 #ifdef BNO08X
-#include <Adafruit_BNO08x.h>
+#include <SparkFun_BNO08x_Arduino_Library.h>
 extern sh2_SensorValue_t sensorValue;
 #endif
 
@@ -24,6 +24,7 @@ extern float mastCompassDeg;
 extern float boatCompassDeg;
 extern int boatCompassCalStatus;
 extern float mastDelta;
+extern float boatCalStatus;
 // how is the compass oriented on the board relative to boat compass
 // when mast is centered, mast compass+orientation == boat compass
 extern int mastOrientation;
@@ -48,8 +49,37 @@ extern int mastAngle[];
 
 float getCompass(int correction);
 float calculateHeading(float r, float i, float j, float k, int correction);
+float readCompassDelta();
 
 sh2_SensorValue_t sensorValueMast;
+
+float calculateYawDifference(float w1, float i1, float j1, float k1,
+                             float w2, float i2, float j2, float k2) {
+  // Step 1: Calculate the difference quaternion
+  float w = w1*w2 + i1*i2 + j1*j2 + k1*k2;
+  float i = w1*i2 - i1*w2 - j1*k2 + k1*j2;
+  float j = w1*j2 + i1*k2 - j1*w2 - k1*i2;
+  float k = w1*k2 - i1*j2 + j1*i2 - k1*w2;
+  
+  // Step 2: Normalize the difference quaternion
+  float magnitude = sqrt(w*w + i*i + j*j + k*k);
+  w /= magnitude;
+  i /= magnitude;
+  j /= magnitude;
+  k /= magnitude;
+  
+  // Step 3: Convert the difference quaternion to Euler angles
+  float yaw = atan2(2.0f * (w*k + i*j), 1.0f - 2.0f * (j*j + k*k));
+  
+  // Step 4: Convert yaw from radians to degrees
+  yaw = yaw * 180.0f / PI;
+  
+  // Step 5: Ensure the result is in the range [-180, 180]
+  if (yaw > 180.0f) yaw -= 360.0f;
+  if (yaw < -180.0f) yaw += 360.0f;
+  
+  return yaw;
+}
 
 // callback function that will be executed when data is received from mast compass
 void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) { 
@@ -66,26 +96,36 @@ void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) 
     if (foundPeer) { // we have a peer so process compass data
         memcpy(&sensorValueMast, incomingData, sizeof(sensorValueMast));
         //Serial.printf("sensorValueMast: %d\n", sensorValueMast.sensorId);
-        if (sensorValueMast.sensorId == SH2_ROTATION_VECTOR) {
-            //Serial.printf(">3D|quaternionSphere:%0.4ld:S:sphere:P:0:0:0:Q:%.3f:%.3f:%.3f:%.3f:RA:1:C:blue\n",millis(),sensorValueMast.un.rotationVector.real, sensorValueMast.un.rotationVector.i, sensorValueMast.un.rotationVector.j, sensorValueMast.un.rotationVector.k);
-            //Serial.printf(" mast accuracy: %d ", sensorValueMast.un.rotationVector.accuracy);
+        if (sensorValueMast.sensorId == SENSOR_REPORTID_AR_VR_STABILIZED_ROTATION_VECTOR) {
+            //Serial.printf(">3D|quaternionSphere:%0.4ld:S:sphere:P:0:0:0:Q:%.3f:%.3f:%.3f:%.3f:RA:1:C:blue\n",millis(),sensorValueMast.un.arvrStabilizedRV.real, sensorValueMast.un.arvrStabilizedRV.i, sensorValueMast.un.arvrStabilizedRV.j, sensorValueMast.un.arvrStabilizedRV.k);
+            //Serial.printf(" mast accuracy: %d ", sensorValueMast.un.arvrStabilizedRV.accuracy);
             //Serial.printf(" mast cal status: %d\n", sensorValueMast.status);
             unsigned long ts = millis();
-            mastCompassDeg = calculateHeading(sensorValueMast.un.rotationVector.real, sensorValueMast.un.rotationVector.i, sensorValueMast.un.rotationVector.j, sensorValueMast.un.rotationVector.k, 0);
-            Serial.printf(">Mr:%0.4ld:%0.2f\n", ts, sensorValueMast.un.rotationVector.real);
-            Serial.printf(">Mi:%0.4ld:%0.2f\n", ts, sensorValueMast.un.rotationVector.i); 
-            Serial.printf(">Mj:%0.4ld:%0.2f\n", ts, sensorValueMast.un.rotationVector.j);
-            Serial.printf(">Mk:%0.4ld:%0.2f\n", ts, sensorValueMast.un.rotationVector.k); 
+            mastCompassDeg = calculateHeading(sensorValueMast.un.arvrStabilizedRV.real, sensorValueMast.un.arvrStabilizedRV.i, sensorValueMast.un.arvrStabilizedRV.j, sensorValueMast.un.arvrStabilizedRV.k, mastOrientation);
+            readCompassDelta();
+#ifdef TELEPLOT
+            Serial.printf(">Mr:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.real);
+            Serial.printf(">Mi:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.i); 
+            Serial.printf(">Mj:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.j);
+            Serial.printf(">Mk:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.k); 
             Serial.printf(">Mhead:%0.4ld:%0.0f\n", ts, mastCompassDeg);
+            Serial.printf(">Macc:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.accuracy*RADTODEG);
+            Serial.printf(">Mcal:%0.4ld:%d\n", ts, sensorValueMast.status);
             ts = millis();
-            //boatCompassDeg = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, 0);        
-            Serial.printf(">Br:%0.4ld:%0.2f\n", ts, sensorValue.un.rotationVector.real);
-            Serial.printf(">Bi:%0.4ld:%0.2f\n", ts, sensorValue.un.rotationVector.i);
-            Serial.printf(">Bj:%0.4ld:%0.2f\n", ts, sensorValue.un.rotationVector.j);
-            Serial.printf(">Bk:%0.4ld:%0.2f\n", ts, sensorValue.un.rotationVector.k);   
+            //boatCompassDeg = calculateHeading(sensorValue.un.arvrStabilizedRV.real, sensorValue.un.arvrStabilizedRV.i, sensorValue.un.arvrStabilizedRV.j, sensorValue.un.arvrStabilizedRV.k, 0);        
+            Serial.printf(">Br:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.real);
+            Serial.printf(">Bi:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.i);
+            Serial.printf(">Bj:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.j);
+            Serial.printf(">Bk:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.k);   
             Serial.printf(">Bhead:%0.4ld:%0.0f\n", ts, boatCompassDeg);
+            Serial.printf(">Bacc:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.accuracy*RADTODEG);
+            Serial.printf(">Bcal:%0.4ld:%d\n", ts, sensorValue.status);
+            float rotateM = calculateYawDifference(sensorValueMast.un.arvrStabilizedRV.real, sensorValueMast.un.arvrStabilizedRV.i, sensorValueMast.un.arvrStabilizedRV.j, sensorValueMast.un.arvrStabilizedRV.k,
+                                                    sensorValue.un.arvrStabilizedRV.real, sensorValue.un.arvrStabilizedRV.i, sensorValue.un.arvrStabilizedRV.j, sensorValue.un.arvrStabilizedRV.k);
+            Serial.printf(">Mrotate:%0.4ld:%0.0f\n", ts, rotateM);
+#endif
         } else
-            Serial.printf("unknown sensorID %d\n", sensorValueMast.sensorId);
+            Serial.printf("ESPNOW ondatarecv(): got unknown sensorID 0x%0x\n", sensorValueMast.sensorId);
     } else { // first time hearing from peer
         Serial.printf("found peer\n");
         foundPeer = true;

@@ -28,7 +28,7 @@
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
+#include <SparkFun_BNO08x_Arduino_Library.h>
 #include "windparse.h"
 
 extern tBoatData *pBD;
@@ -103,6 +103,8 @@ extern bool foundPeer;
 extern int rxCount;
 #endif
 
+extern BNO08x bno08x;
+
 void logToAll(String s) {
   Serial.println(s);
   //consLog.println(s);
@@ -170,7 +172,7 @@ void i2cScan() {
   }
 }
 
-String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass", "windrx", "espnow"};
+String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass", "windrx", "espnow", "tare"};
 #define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 String words[10]; // Assuming a maximum of 10 words
 
@@ -309,7 +311,12 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println("sending broadcast...");
       espNowBroadcast();
     }
-  }
+    if (words[i].equals("tare")) {
+      if (bno08x.tareNow())
+        logToAll("tare successful");
+      return;
+    }
+   }
   for (int i=0; i<wordCount; i++) words[i] = String();
   dataS = String();
 }

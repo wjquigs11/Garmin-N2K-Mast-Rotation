@@ -24,7 +24,7 @@
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
+#include <SparkFun_BNO08x_Arduino_Library.h>
 #include "esp_system.h"
 #include "esp32-hal-log.h"
 
@@ -147,7 +147,7 @@ int compassDifference(int angle1, int angle2) {
 
 float readCompassDelta() {
   if (compassReady) {
-    mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
+    mastDelta = compassDifference(boatCompassDeg, mastCompassDeg);
     //logToAll("mastDelta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
     mastCompDelta.reading((int)(mastDelta*100)); // moving average

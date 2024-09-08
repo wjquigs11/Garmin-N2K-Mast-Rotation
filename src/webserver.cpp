@@ -26,7 +26,7 @@
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
+#include <SparkFun_BNO08x_Arduino_Library.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include "esp_system.h"
@@ -234,7 +234,7 @@ void startWebServer() {
   mastOrientation = preferences.getInt("mastOrientation", 0);
   sensOrientation = preferences.getInt("sensOrientation", 0);
   boatOrientation = preferences.getInt("boatOrientation", 0);
-  compassFrequency = preferences.getInt("compassFrequency", 50);
+  compassFrequency = preferences.getInt("compassFreq", 50);
   logToAll("compassFrequency = " + String(compassFrequency));
   BoatData.Variation = preferences.getFloat("variation", 0);
 
@@ -492,7 +492,7 @@ void startWebServer() {
         }
         if (p->name() == "frequency") {
           compassFrequency = atoi(p->value().c_str());
-          preferences.putInt("compassFrequency", compassFrequency);
+          preferences.putInt("compassFreq", compassFrequency);
         }
         if (p->name() == "variation") {
           BoatData.Variation = atof(p->value().c_str());

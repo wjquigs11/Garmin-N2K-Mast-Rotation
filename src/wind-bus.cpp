@@ -37,7 +37,7 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 #include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
+#include <SparkFun_BNO08x_Arduino_Library.h>
 #include <HTTPClient.h>
 #include "esp_system.h"
 #include "esp32-hal-log.h"
@@ -227,7 +227,7 @@ const int CMPS14_ADDRESS = 0x60;
 const int ADABNO = 0x4A;
 const int SFBNO = 0x4B;
 const int BNO08X_RESET = -1;
-Adafruit_BNO08x bno08x(BNO08X_RESET);
+BNO08x bno08x;
 sh2_SensorValue_t sensorValue;
 #endif
 bool compassReady=false;
@@ -663,23 +663,26 @@ void setup() {
 #ifdef BNO08X
   // compassReady means we have a local boat compass in the controller
   // compassOnTog used for turning it on and off
-  compassReady = bno08x.begin_I2C(BNO08X);
+  Wire.begin();
+  compassReady = bno08x.begin(BNO08X, Wire, BNO08X_INT, BNO08X_RST);
   if (compassReady) {
     Serial.println("BNO08x Found");
     for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
       String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
       Serial.println(logString);
     }
-    if (!bno08x.enableReport(SH2_ROTATION_VECTOR, 100))
-      Serial.println("Could not enable rotation vector");
+//    if (!bno08x.enableReport(SH2_ROTATION_VECTOR, 100))
+//      Serial.println("Could not enable rotation vector");
 #if 0 // shouldn't need these since we're using the fusion report
     if (!bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
       Serial.println("Could not enable gyroscope");
     if (!bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED))
       Serial.println("Could not enable magnetic field calibrated");
 #endif
-  } else
+  } else {
     Serial.printf("Failed to find BNO08x chip @ 0x%x\n", BNO08X);
+    i2cScan();
+  }
 #endif
 #ifdef PICOMPASS
   setupPiComp();  // serial connection to RPI Zero with pypilot
@@ -865,6 +868,10 @@ void setup() {
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("WiFi not connected");
       initWiFi();
+      if (WiFi.status() == WL_CONNECTED) {
+        startWebServer();
+        serverStarted=true;
+      }
     }
     // check for connected clients
     int numClients = WiFi.softAPgetStationNum();
