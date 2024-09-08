@@ -33,4 +33,5 @@ extern "C" void IRAM_ATTR __wrap_esp_panic_handler(void* info) {
   // Call the original panic handler
   //extern void __real_esp_panic_handler(void* info);
   //__real_esp_panic_handler(info);
+  while (true) ;
 }

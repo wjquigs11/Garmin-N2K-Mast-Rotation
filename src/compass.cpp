@@ -30,11 +30,12 @@ TBD remove enum for compass type and just compile with different types; change #
 #include <ESPAsyncWebServer.h>
 //#include <ElegantOTA.h>
 //#include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
+#include <SparkFun_BNO08x_Arduino_Library.h>
 #include "esp_system.h"
 #include "esp32-hal-log.h"
 
 #include "windparse.h"
+#include "compass.h"
 
 unsigned char high_byte, low_byte, angle8;
 char pitch, roll;
@@ -170,7 +171,7 @@ float getBNO085(int correction) {
 
   if (bno08x.wasReset()) {
     Serial.print("sensor was reset ");
-    if (!bno08x.enableReport(SH2_ROTATION_VECTOR, 100))
+    if (!bno08x.enableReport(SENSOR_REPORTID_AR_VR_STABILIZED_ROTATION_VECTOR))
       Serial.println("Could not enable rotation vector");
 #if 0
     if (!bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
@@ -179,27 +180,40 @@ float getBNO085(int correction) {
       //Serial.println("Could not enable magnetic field calibrated");
 #endif
   }
-  if (!bno08x.getSensorEvent(&sensorValue)) {
+  if (!bno08x.getSensorEvent()) {
     return -3.0;
   }
-  // printf("ID: %d\n", sensorValue.sensorId);
+  sensorValue.sensorId = bno08x.getSensorEventID();
+  sensorValue = bno08x.sensorValue;
   /* Status of a sensor
    *   0 - Unreliable
    *   1 - Accuracy low
    *   2 - Accuracy medium
    *   3 - Accuracy high
    */
-  ////Serial.printf("calStatus: 0x%x\n", boatCalStatus);
+  float quatRadianAccuracy, yaw;
+  int sensAccuracy;
+
   switch (sensorValue.sensorId) {
-  case SH2_ROTATION_VECTOR:
+  case SH2_ARVR_STABILIZED_RV:
+  //case SENSOR_REPORTID_AR_VR_STABILIZED_ROTATION_VECTOR:
+    float i,j,k,r,acc;
+    uint8_t cal;
+    bno08x.getQuat(i,j,k,r,acc,cal);
+    Serial.printf("r %0.2f i %0.2f j %0.2f k %0.2f acc %0.2f cal %d\n", r, i, j, k, acc, cal);
+    Serial.printf("r %0.2f i %0.2f j %0.2f k %0.2f acc %0.2f cal %d\n", sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, sensorValue.un.rotationVector.accuracy, sensorValue.status);
     boatAccuracy = sensorValue.un.rotationVector.accuracy;
     boatCalStatus = sensorValue.status;
+    quatRadianAccuracy = bno08x.getQuatRadianAccuracy();
+    sensAccuracy = bno08x.getQuatAccuracy();
     heading = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      
-    ////Serial.printf("0 heading %0.2f\n", heading);
-    //logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus);
+    Serial.printf("0 heading %0.2f accuracy %0.2f/%0.2f cal status %d/%d\n", heading, boatAccuracy*RADTODEG, quatRadianAccuracy*RADTODEG, boatCalStatus, sensAccuracy);
+    yaw = bno08x.getYaw();
+    Serial.printf("yaw: %0.2f\n", yaw*RADTODEG);
     return heading;
     break;
   case SH2_GYROSCOPE_CALIBRATED:
+    logToAll("gyroscope calibrated");
   /*
     //Serial.print("Gyro - x: ");
     //Serial.print(sensorValue.un.gyroscope.x);
@@ -225,7 +239,7 @@ float getBNO085(int correction) {
     return heading;
     break;
   default:
-    logToAll("BNO got unknown sensor id: " + String(sensorValue.sensorId));
+    logToAll("getBNO085() got unknown sensor id: 0x" + String(sensorValue.sensorId, HEX));
     return heading;
     break;
   }
@@ -249,7 +263,7 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   float phi = atan2(r32, r33);
   // Calculate yaw (psi)
   float psi = atan2(-r21, r11);
-  float heading = (psi * 180 / M_PI) + (float)correction;
+  float heading = (psi * RADTODEG) + (float)correction;
   ////Serial.printf("theta %0.2f phi %0.2f psi %0.2f h %0.2f ", theta, phi, psi, heading);
   ////Serial.printf("h %0.2f ", heading);
   // correction may be positive or negative
