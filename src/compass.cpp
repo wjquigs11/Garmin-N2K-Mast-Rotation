@@ -55,8 +55,6 @@ extern JSONVar readings;
 
 extern bool compassOnToggle;
 
-JSONVar board;
-
 extern AsyncWebServer server;
 extern AsyncEventSource events;
 
