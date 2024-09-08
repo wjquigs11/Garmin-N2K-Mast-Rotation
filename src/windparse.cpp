@@ -27,6 +27,8 @@
 #include <Adafruit_BNO08x.h>
 #include "esp_system.h"
 #include "esp32-hal-log.h"
+
+#include "compass.h"
 #include "windparse.h"
 
 #ifdef PICAN
@@ -145,8 +147,6 @@ int compassDifference(int angle1, int angle2) {
 
 float readCompassDelta() {
   if (compassReady) {
-    // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
-    boatCompassDeg = getCompass(boatOrientation);
     mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
     //logToAll("mastDelta: " + String(mastDelta));
     mastAngle[1] = mastDelta;

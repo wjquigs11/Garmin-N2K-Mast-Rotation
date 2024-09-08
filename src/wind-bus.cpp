@@ -42,7 +42,9 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include "esp_system.h"
 #include "esp32-hal-log.h"
 
+#include "compass.h"
 #include "windparse.h"
+
 #ifdef PICAN
 #include <N2kMsg.h>
 #include <NMEA2000.h>
@@ -179,6 +181,11 @@ void startAP();
 void startWebServer();
 bool sendMastControl();
 String getSensorReadings();
+
+#ifdef ESPNOW
+void setupESPNOW();
+void espNowBroadcast();
+#endif
 
 String host = "ESPwind";
 
@@ -363,12 +370,15 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     case 128259L:
       BoatSpeed(N2kMsg);
       break; 
+#if 0   // switching to ESPNOW (for the time being)
     case 127250L:
       mastcompCounter();
       //Serial.printf("WIND Heading: %d\n", N2kMsg.PGN);
       if (compassOnToggle) ParseCompassN2K(N2kMsg);
       break;
+#endif
   } 
+  // TBD: pass-through everything that's not from the same source as the wind PGN (for Paul with depth transducer on wind bus)
 }
 #endif
 #ifdef RS485CAN
@@ -415,6 +425,7 @@ void ParseWindCAN() {
     } 
 // if I don't get a compass reading for some time, should I set mastCompassDeg to 0?
 // or should I set it to zero after transmitting wind?
+#if 0
     case 127250: { 
       mastcompCounter();
       mastCompassDeg = (((cdata[2] << 8) | cdata[1]) / 10000.0) * RADTODEG;
@@ -426,6 +437,7 @@ void ParseWindCAN() {
 #endif
       break;
     }
+#endif
   }
 }
 #else
@@ -737,6 +749,11 @@ void setup() {
 } else
   Serial.println("WiFi Disconnected");
 
+#ifdef ESPNOW
+  setupESPNOW();
+  espNowBroadcast();
+#endif
+
   Serial.printf("ESP flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
 
   // No need to parse the messages at every single loop iteration; 1 ms will do
@@ -871,13 +888,15 @@ void setup() {
   // check in for new heading 100 msecs = 10Hz
   if (compassReady && !demoModeToggle)
     //app.onRepeat(compassFrequency, []() {
-    app.onRepeat(50, []() {
+    app.onRepeat(100, []() {
       // TBD: delete reaction and recreate if frequency changes
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
       // the global boatCompassDeg will always contain the boat compass (magnetic)
-      readCompassDelta();
-#define PLOTTER
+    // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
+    boatCompassDeg = getCompass(boatOrientation);
+    readCompassDelta();
+//#define PLOTTER
 #ifdef PLOTTER
       Serial.print(">boat: ");
       Serial.println(boatCompassDeg);
