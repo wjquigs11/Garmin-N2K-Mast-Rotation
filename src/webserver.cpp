@@ -1,36 +1,4 @@
-//#include <Arduino.h>
-#include <ActisenseReader.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <N2kMessages.h>
-#include <NMEA2000_esp32.h>
-#include <NMEA0183Msg.h>
-#include <NMEA0183Messages.h>
-#include "NMEA0183Handlers.h"
-#include "BoatData.h"
-#include <ReactESP.h>
-#include <Wire.h>
-#include <esp_int_wdt.h>
-#include <esp_task_wdt.h>
-#include <movingAvg.h>
-#include "elapsedMillis.h"
-#include <Arduino.h>
-#include <N2kMessages.h>
-#include <Adafruit_ADS1X15.h>
-#include <WiFi.h>
-#include "SPIFFS.h"
-#include <Arduino_JSON.h>
-#include <ESPmDNS.h>
-//#include "mcp2515.h"
-//#include "can.h"
-#include <ESPAsyncWebServer.h>
-//#include <ElegantOTA.h>
-#include <WebSerial.h>
-#include <SparkFun_BNO08x_Arduino_Library.h>
-#include <HTTPClient.h>
-#include <Preferences.h>
-#include "esp_system.h"
-#include "esp32-hal-log.h"
+
 #include "windparse.h"
 
 Preferences preferences;     

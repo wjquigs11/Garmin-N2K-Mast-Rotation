@@ -46,7 +46,7 @@ lib_deps =
 	https://github.com/khoih-prog/ESPAsync_WiFiManager
 	https://github.com/khoih-prog/ESP_DoubleResetDetector
 	https://github.com/khoih-prog/ESPAsyncDNSServer
-	adafruit/Adafruit BNO08x@1.2.5
+	adafruit/Adafruit Adafruit_BNO08x bno08x@1.2.5
 	https://github.com/mathieucarbou/AsyncTCP#v3.1.4
 	https://github.com/mathieucarbou/ESPAsyncWebServer#v3.0.6
 	ayushsharma82/WebSerial@^2.0.6

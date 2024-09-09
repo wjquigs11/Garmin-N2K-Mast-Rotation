@@ -1,7 +1,39 @@
-#include "elapsedMillis.h"
+#include <Arduino.h>
+#include <ActisenseReader.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 #include <N2kMessages.h>
 #include <NMEA2000_esp32.h>
-#include <SparkFun_BNO08x_Arduino_Library.h>
+#ifdef NMEA0183
+#include <NMEA0183Msg.h>
+#include <NMEA0183Messages.h>
+#include "NMEA0183Handlers.h"
+#endif
+#include "BoatData.h"
+#include <ReactESP.h>
+#include <Wire.h>
+#include <esp_int_wdt.h>
+#include <esp_task_wdt.h>
+#include <movingAvg.h>
+#include "elapsedMillis.h"
+#include <Arduino.h>
+#include <N2kMessages.h>
+#include <Adafruit_ADS1X15.h>
+#include <WiFi.h>
+#include "esp_wifi.h"
+#include "SPIFFS.h"
+#include <Arduino_JSON.h>
+#include <ESPmDNS.h>
+#include <SPI.h>
+#include <ESPAsyncWebServer.h>
+#include <WebSerial.h>
+#include <Adafruit_BNO08x.h>
+#include <HTTPClient.h>
+#include "esp_system.h"
+#include "esp32-hal-log.h"
+#include <Arduino_JSON.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21
@@ -14,7 +46,7 @@ void IRAM_ATTR NewDataReadyISR();
 //#define SH_ESP32  // these defs will probably change with SINGLECAN
 //#define SINGLECAN  // for testing (or non-Garmin) we can use one bus 
 //#define CMPS14
-//#define BNO08X
+//#define Adafruit_BNO08x bno08x
 #define MASTCOMPASS
 #define DISPLAYON
 
@@ -72,8 +104,8 @@ extern String host;
 extern bool compassReady;
 extern const int CMPS14_ADDRESS;
 extern const int ADABNO;
-extern const int BNO08X_RESET;
-extern BNO08x bno08x;
+extern const int bno08x_RESET;
+extern Adafruit_BNO08x bno08x;
 extern sh2_SensorValue_t sensorValue;
 
 #ifdef DISPLAYON

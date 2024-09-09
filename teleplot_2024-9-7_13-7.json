@@ -2424,7 +2424,7 @@
       },
       {
          "timestamp": 1725739402.553,
-         "text": "BNO08x Found\r"
+         "text": "Adafruit_BNO08x bno08x Found\r"
       },
       {
          "timestamp": 1725739402.556,
@@ -2600,7 +2600,7 @@
       },
       {
          "timestamp": 1725739597.265,
-         "text": "BNO08x Found\r"
+         "text": "Adafruit_BNO08x bno08x Found\r"
       },
       {
          "timestamp": 1725739597.269,
