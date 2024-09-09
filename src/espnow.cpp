@@ -55,6 +55,8 @@ float readCompassDelta();
 
 sh2_SensorValue_t sensorValueMast;
 
+void logToAll(String s);
+
 float calculateYawDifference(float w1, float i1, float j1, float k1,
                              float w2, float i2, float j2, float k2) {
   // Step 1: Calculate the difference quaternion
@@ -98,32 +100,32 @@ void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) 
     if (foundPeer) { // we have a peer so process compass data
         memcpy(&sensorValueMast, incomingData, sizeof(sensorValueMast));
         //Serial.printf("sensorValueMast: %d\n", sensorValueMast.sensorId);
-        if (sensorValueMast.sensorId == SH2_ARVR_STABILIZED_RV) {
-            //Serial.printf(">3D|quaternionSphere:%0.4ld:S:sphere:P:0:0:0:Q:%.3f:%.3f:%.3f:%.3f:RA:1:C:blue\n",millis(),sensorValueMast.un.arvrStabilizedRV.real, sensorValueMast.un.arvrStabilizedRV.i, sensorValueMast.un.arvrStabilizedRV.j, sensorValueMast.un.arvrStabilizedRV.k);
-            //Serial.printf(" mast accuracy: %d ", sensorValueMast.un.arvrStabilizedRV.accuracy);
+        if (sensorValueMast.sensorId == SH2_GAME_ROTATION_VECTOR) {
+            //Serial.printf(">3D|quaternionSphere:%0.4ld:S:sphere:P:0:0:0:Q:%.3f:%.3f:%.3f:%.3f:RA:1:C:blue\n",millis(),sensorValueMast.un.gameRotationVector.real, sensorValueMast.un.gameRotationVector.i, sensorValueMast.un.gameRotationVector.j, sensorValueMast.un.gameRotationVector.k);
+            //Serial.printf(" mast accuracy: %d ", sensorValueMast.un.gameRotationVector.accuracy);
             //Serial.printf(" mast cal status: %d\n", sensorValueMast.status);
             unsigned long ts = millis();
-            mastCompassDeg = calculateHeading(sensorValueMast.un.arvrStabilizedRV.real, sensorValueMast.un.arvrStabilizedRV.i, sensorValueMast.un.arvrStabilizedRV.j, sensorValueMast.un.arvrStabilizedRV.k, mastOrientation);
+            mastCompassDeg = calculateHeading(sensorValueMast.un.gameRotationVector.real, sensorValueMast.un.gameRotationVector.i, sensorValueMast.un.gameRotationVector.j, sensorValueMast.un.gameRotationVector.k, mastOrientation);
             readCompassDelta();
             if (teleplot) {
-                Serial.printf(">Mr:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.real);
-                Serial.printf(">Mi:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.i); 
-                Serial.printf(">Mj:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.j);
-                Serial.printf(">Mk:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.k); 
+                Serial.printf(">Mr:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.real);
+                Serial.printf(">Mi:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.i); 
+                Serial.printf(">Mj:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.j);
+                Serial.printf(">Mk:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.k); 
                 Serial.printf(">Mhead:%0.4ld:%0.0f\n", ts, mastCompassDeg);
-                Serial.printf(">Macc:%0.4ld:%0.2f\n", ts, sensorValueMast.un.arvrStabilizedRV.accuracy*RADTODEG);
+                //Serial.printf(">Macc:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.accuracy*RADTODEG);
                 Serial.printf(">Mcal:%0.4ld:%d\n", ts, sensorValueMast.status);
                 ts = millis();
-                //boatCompassDeg = calculateHeading(sensorValue.un.arvrStabilizedRV.real, sensorValue.un.arvrStabilizedRV.i, sensorValue.un.arvrStabilizedRV.j, sensorValue.un.arvrStabilizedRV.k, 0);        
-                Serial.printf(">Br:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.real);
-                Serial.printf(">Bi:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.i);
-                Serial.printf(">Bj:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.j);
-                Serial.printf(">Bk:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.k);   
+                //boatCompassDeg = calculateHeading(sensorValue.un.gameRotationVector.real, sensorValue.un.gameRotationVector.i, sensorValue.un.gameRotationVector.j, sensorValue.un.gameRotationVector.k, 0);        
+                Serial.printf(">Br:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.real);
+                Serial.printf(">Bi:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.i);
+                Serial.printf(">Bj:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.j);
+                Serial.printf(">Bk:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.k);   
                 Serial.printf(">Bhead:%0.4ld:%0.0f\n", ts, boatCompassDeg);
-                Serial.printf(">Bacc:%0.4ld:%0.2f\n", ts, sensorValue.un.arvrStabilizedRV.accuracy*RADTODEG);
+                //Serial.printf(">Bacc:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.accuracy*RADTODEG);
                 Serial.printf(">Bcal:%0.4ld:%d\n", ts, sensorValue.status);
-                float rotateM = calculateYawDifference(sensorValueMast.un.arvrStabilizedRV.real, sensorValueMast.un.arvrStabilizedRV.i, sensorValueMast.un.arvrStabilizedRV.j, sensorValueMast.un.arvrStabilizedRV.k,
-                                                        sensorValue.un.arvrStabilizedRV.real, sensorValue.un.arvrStabilizedRV.i, sensorValue.un.arvrStabilizedRV.j, sensorValue.un.arvrStabilizedRV.k);
+                float rotateM = calculateYawDifference(sensorValueMast.un.gameRotationVector.real, sensorValueMast.un.gameRotationVector.i, sensorValueMast.un.gameRotationVector.j, sensorValueMast.un.gameRotationVector.k,
+                                                        sensorValue.un.gameRotationVector.real, sensorValue.un.gameRotationVector.i, sensorValue.un.gameRotationVector.j, sensorValue.un.gameRotationVector.k);
                 Serial.printf(">Mrotate:%0.4ld:%0.0f\n", ts, rotateM);
             }
         } else
@@ -191,16 +193,15 @@ void espNowBroadcast() {
     peerInfo.channel = 0;
     int err;  
     if (err=esp_now_add_peer(&peerInfo) != ESP_OK){
-        Serial.printf("Failed to add broadcast peer: %d\n", err);
-        return;
-    } else Serial.println("ESP-NOW broadcast peer added");
+        logToAll("Failed to add broadcast peer:" + String(err) + " (OK if already added)");
+    } else logToAll("ESP-NOW broadcast peer added");
     esp_err_t result;
     for (int retries = 0; retries < 5; retries++) {
         result = esp_now_send(broadcastAddress, (uint8_t *) &outCommand, sizeof(outCommand));
         if (result == ESP_OK) {
-            Serial.printf("sent broadcast\n");
+            logToAll("sent broadcast");
         } else {
-            Serial.printf("Error sending the data: %d\n", result);
+            logToAll("Error sending broadcast: " + String(result));
         }
         delay(100);
     }

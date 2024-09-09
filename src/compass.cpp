@@ -141,7 +141,7 @@ float getBNO085(int correction) {
 
   if (bno08x.wasReset()) {
     Serial.print("sensor was reset ");
-    if (!bno08x.enableReport(SH2_ARVR_STABILIZED_RV))
+    if (!bno08x.enableReport(SH2_GAME_ROTATION_VECTOR))
       Serial.println("Could not enable rotation vector");
 #if 0
     if (!Adafruit_BNO08x bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
@@ -163,12 +163,11 @@ float getBNO085(int correction) {
   int sensAccuracy;
 
   switch (sensorValue.sensorId) {
-  case SH2_ARVR_STABILIZED_RV:
+  case SH2_GAME_ROTATION_VECTOR:
     boatAccuracy = sensorValue.un.rotationVector.accuracy;
     boatCalStatus = sensorValue.status;
     heading = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      
-    ////Serial.printf("0 heading %0.2f\n", heading);
-    logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus);
+    //logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus + " size: " + String(sizeof(sensorValue)));
     return heading;
     break;
   case SH2_GYROSCOPE_CALIBRATED:
@@ -226,8 +225,12 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   ////Serial.printf("theta %0.2f phi %0.2f psi %0.2f h %0.2f ", theta, phi, psi, heading);
   ////Serial.printf("h %0.2f ", heading);
   // correction may be positive or negative
-  if (heading > 359) heading -= 360.0;
-  if (heading < 0) heading += 360.0;
+  if ((int)heading > 359) {
+    heading -= 360.0;
+  }
+  if ((int)heading < 0) {
+    heading += 360.0;
+  }
   //Serial.printf("h %0.2f\n", heading);
   return heading;
 }
