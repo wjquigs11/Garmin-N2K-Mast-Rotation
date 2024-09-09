@@ -1,22 +1,4 @@
-
-#include <Arduino.h>
-#include <Arduino_JSON.h>
-#include <Wire.h>
-#include <WiFi.h>
-#include <WiFiClient.h>
-#include <WiFiMulti.h>
-#include <ESPmDNS.h>
-#include <Preferences.h>
-#include <SPIFFS.h>
-#include <SparkFun_BNO08x_Arduino_Library.h>
-#include <math.h>
-#include <esp_wifi.h>
-#include <ESPAsyncWebServer.h>
-#include <WebSerial.h>
-#include <ReactESP.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include "elapsedMillis.h"
+#include "windparse.h"
 
 #define HTTP_PORT 80
 extern AsyncWebServer server;

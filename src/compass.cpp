@@ -3,36 +3,6 @@ Currently receiving Heading PGN from mast compass on N2K network with Wind senso
 Using HTTP PUT to change mast compass settings
 TBD remove enum for compass type and just compile with different types; change #ifdef back to CMPS14
 */
-//#include <Arduino.h>
-#include <ActisenseReader.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <N2kMessages.h>
-#include <NMEA2000_esp32.h>
-#include <NMEA0183Msg.h>
-#include <NMEA0183Messages.h>
-#include "NMEA0183Handlers.h"
-#include "BoatData.h"
-#include <ReactESP.h>
-#include <Wire.h>
-#include <esp_int_wdt.h>
-#include <esp_task_wdt.h>
-#include <movingAvg.h>
-#include "elapsedMillis.h"
-#include <N2kMessages.h>
-#include <Adafruit_ADS1X15.h>
-#include <WiFi.h>
-#include "SPIFFS.h"
-#include <Arduino_JSON.h>
-#include <ESPmDNS.h>
-//#include "mcp2515.h"
-//#include "can.h"
-#include <ESPAsyncWebServer.h>
-//#include <ElegantOTA.h>
-//#include <WebSerial.h>
-#include <SparkFun_BNO08x_Arduino_Library.h>
-#include "esp_system.h"
-#include "esp32-hal-log.h"
 
 #include "windparse.h"
 #include "compass.h"
@@ -171,20 +141,18 @@ float getBNO085(int correction) {
 
   if (bno08x.wasReset()) {
     Serial.print("sensor was reset ");
-    if (!bno08x.enableReport(SENSOR_REPORTID_AR_VR_STABILIZED_ROTATION_VECTOR))
+    if (!bno08x.enableReport(SH2_ARVR_STABILIZED_RV))
       Serial.println("Could not enable rotation vector");
 #if 0
-    if (!bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
+    if (!Adafruit_BNO08x bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
       //Serial.println("Could not enable gyroscope");
-    if (!bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED))
+    if (!Adafruit_BNO08x bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED))
       //Serial.println("Could not enable magnetic field calibrated");
 #endif
   }
-  if (!bno08x.getSensorEvent()) {
+  if (!bno08x.getSensorEvent(&sensorValue)) {
     return -3.0;
   }
-  sensorValue.sensorId = bno08x.getSensorEventID();
-  sensorValue = bno08x.sensorValue;
   /* Status of a sensor
    *   0 - Unreliable
    *   1 - Accuracy low
@@ -196,20 +164,11 @@ float getBNO085(int correction) {
 
   switch (sensorValue.sensorId) {
   case SH2_ARVR_STABILIZED_RV:
-  //case SENSOR_REPORTID_AR_VR_STABILIZED_ROTATION_VECTOR:
-    float i,j,k,r,acc;
-    uint8_t cal;
-    bno08x.getQuat(i,j,k,r,acc,cal);
-    Serial.printf("r %0.2f i %0.2f j %0.2f k %0.2f acc %0.2f cal %d\n", r, i, j, k, acc, cal);
-    Serial.printf("r %0.2f i %0.2f j %0.2f k %0.2f acc %0.2f cal %d\n", sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, sensorValue.un.rotationVector.accuracy, sensorValue.status);
     boatAccuracy = sensorValue.un.rotationVector.accuracy;
     boatCalStatus = sensorValue.status;
-    quatRadianAccuracy = bno08x.getQuatRadianAccuracy();
-    sensAccuracy = bno08x.getQuatAccuracy();
     heading = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      
-    Serial.printf("0 heading %0.2f accuracy %0.2f/%0.2f cal status %d/%d\n", heading, boatAccuracy*RADTODEG, quatRadianAccuracy*RADTODEG, boatCalStatus, sensAccuracy);
-    yaw = bno08x.getYaw();
-    Serial.printf("yaw: %0.2f\n", yaw*RADTODEG);
+    ////Serial.printf("0 heading %0.2f\n", heading);
+    logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus);
     return heading;
     break;
   case SH2_GYROSCOPE_CALIBRATED:

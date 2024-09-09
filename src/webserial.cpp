@@ -1,34 +1,4 @@
 
-#include <Arduino.h>
-#include <ActisenseReader.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <N2kMessages.h>
-#include <NMEA2000_esp32.h>
-#include <NMEA0183Msg.h>
-#include <NMEA0183Messages.h>
-#include "NMEA0183Handlers.h"
-#include "BoatData.h"
-#include <ReactESP.h>
-#include <Wire.h>
-#include <esp_int_wdt.h>
-#include <esp_task_wdt.h>
-#include <movingAvg.h>
-#include "elapsedMillis.h"
-#include <Arduino.h>
-#include <N2kMessages.h>
-#include <Adafruit_ADS1X15.h>
-#include <WiFi.h>
-#include "esp_wifi.h"
-#include "SPIFFS.h"
-#include <Arduino_JSON.h>
-#include <ESPmDNS.h>
-//#include "mcp2515.h"
-//#include "can.h"
-#include <ESPAsyncWebServer.h>
-//#include <ElegantOTA.h>
-#include <WebSerial.h>
-#include <SparkFun_BNO08x_Arduino_Library.h>
 #include "windparse.h"
 
 extern tBoatData *pBD;
@@ -89,6 +59,7 @@ extern int mastAngle[2]; // array for both sensors
 // 1 = compass
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
+extern bool teleplot;
 
 #ifdef RS485CAN
 void WindSpeed();
@@ -103,7 +74,7 @@ extern bool foundPeer;
 extern int rxCount;
 #endif
 
-extern BNO08x bno08x;
+extern Adafruit_BNO08x bno08x;
 
 void logToAll(String s) {
   Serial.println(s);
@@ -172,7 +143,7 @@ void i2cScan() {
   }
 }
 
-String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass", "windrx", "espnow", "tare"};
+String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass", "windrx", "espnow", "teleplot"};
 #define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 String words[10]; // Assuming a maximum of 10 words
 
@@ -311,9 +282,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println("sending broadcast...");
       espNowBroadcast();
     }
-    if (words[i].equals("tare")) {
-      if (bno08x.tareNow())
-        logToAll("tare successful");
+    if (words[i].equals("teleplot")) {
+      teleplot = !teleplot;
+      logToAll("teleplot: " + teleplot?"on":"off");
       return;
     }
    }
