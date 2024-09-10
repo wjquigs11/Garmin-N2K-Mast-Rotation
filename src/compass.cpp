@@ -37,6 +37,8 @@ void logToAlln(String message);
 extern tNMEA2000 *n2kMain;
 extern tN2kMsg correctN2kMsg;
 
+int reportType;
+
 #ifdef CMPS14
 extern const int CMPS14_ADDRESS;  // Address of CMPS14 shifted right one bit for arduino wire library
 #define ANGLE_8  1          // Register to read 8bit angle from (starting...we read 5 bytes)
@@ -140,9 +142,11 @@ float getBNO085(int correction) {
   //previousReading = currentMillis;
 
   if (bno08x.wasReset()) {
-    Serial.print("sensor was reset ");
-    if (!bno08x.enableReport(SH2_GAME_ROTATION_VECTOR))
-      Serial.println("Could not enable rotation vector");
+    logToAll("sensor was reset ");
+    if (!bno08x.enableReport(reportType))
+      logToAll("Could not enable report 0x" + String(reportType,HEX));
+    else
+      logToAll("bno08x enabled report 0x" + String(reportType, HEX));
 #if 0
     if (!Adafruit_BNO08x bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
       //Serial.println("Could not enable gyroscope");
@@ -164,9 +168,16 @@ float getBNO085(int correction) {
 
   switch (sensorValue.sensorId) {
   case SH2_GAME_ROTATION_VECTOR:
+  case SH2_GEOMAGNETIC_ROTATION_VECTOR:
     boatAccuracy = sensorValue.un.rotationVector.accuracy;
     boatCalStatus = sensorValue.status;
     heading = calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      
+    //logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus + " size: " + String(sizeof(sensorValue)));
+    return heading;
+    break;
+  case SH2_ARVR_STABILIZED_GRV:
+    boatCalStatus = sensorValue.status;
+    heading = calculateHeading(sensorValue.un.arvrStabilizedGRV.real, sensorValue.un.arvrStabilizedGRV.i, sensorValue.un.arvrStabilizedGRV.j, sensorValue.un.arvrStabilizedGRV.k, correction);      
     //logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus + " size: " + String(sizeof(sensorValue)));
     return heading;
     break;

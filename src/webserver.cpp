@@ -21,6 +21,8 @@ extern float mastCompassDeg, boatCompassDeg, boatCompassPi;
 extern int boatCalStatus;
 extern tBoatData BoatData;
 
+extern int reportType;
+
 // Create AsyncWebServer object on port 80
 #define HTTP_PORT 80
 AsyncWebServer server(HTTP_PORT);
@@ -53,12 +55,11 @@ String getSensorReadings() {
   }
   if (compassOnToggle) {
     if (mastCompassDeg >= 0) { // set to -1 if mast compass times out
-      //readings["mastHeading"] = String(mastCompassDeg,0);
-      readings["mastHeading"] = (int)(mastCompassDeg * 100 + 0.5) / 100.0;
+      readings["mastHeading"] = String(mastCompassDeg,2);
       readings["mastDelta"] = mastAngle[1];
     }
-    readings["boatHeading"] = String(boatCompassDeg,0);
-    readings["boatHeadingPi"] = String(boatCompassPi,0);
+    readings["boatHeading"] = String(boatCompassDeg,2);
+    readings["boatHeadingPi"] = String(boatCompassPi,2);
     readings["boatCalStatus"] = boatCalStatus;
     readings["boatTrue"] = String(BoatData.TrueHeading,0);
     if (!honeywellOnToggle) // honeywell takes precedence if both are present
@@ -205,6 +206,8 @@ void startWebServer() {
   compassFrequency = preferences.getInt("compassFreq", 50);
   logToAll("compassFrequency = " + String(compassFrequency));
   BoatData.Variation = preferences.getFloat("variation", 0);
+  reportType = preferences.getInt("rtype", SH2_GAME_ROTATION_VECTOR);
+  logToAll("reportType = 0x" + String(reportType,HEX));
 
   if (!MDNS.begin(host.c_str()) ) {
     logToAll("Error starting MDNS responder.");
@@ -521,4 +524,46 @@ void startWebServer() {
 
   server.begin();
   logToAll("HTTP server started @ " + WiFi.localIP().toString());
+}
+
+HTTPClient httpC;
+char *mastCompassURL = "http://mastcomp.local/readings";
+JSONVar mastCompRead;
+String jsonString;
+bool isConnected = false;
+
+float getMastHeading() {
+    // ping mast compass needs work for use case where mast compass isn't connected to external AP
+    if(WiFi.status() == WL_CONNECTED) {  
+      if (isConnected) {
+        int httpResponseCode = httpC.GET();
+        if (httpResponseCode>0) {
+          //Serial.print("HTTP Response code: ");
+          //Serial.println(httpResponseCode);
+          jsonString = httpC.getString();
+          //Serial.println(jsonString);
+          JSONVar myObject = JSON.parse(jsonString);
+          if (JSON.typeof(myObject) == "undefined") {
+            Serial.println("Parsing input failed!");
+            return -1.0;
+          }
+          //float bearing = JSON.stringify(myObject["bearing"]).toFloat();
+          String bS = JSON.stringify(myObject["bearing"]);
+          bS.replace("\"", ""); // Remove quotes
+          float bearing = bS.toFloat();
+          int variation = myObject["variation"];
+          int orientation = myObject["orientation"];
+          int frequency = myObject["frequency"];
+          int calstatus = myObject["calstatus"];
+          //Serial.printf("%s %0.2f %d %d %d %d\n", bS.c_str(), bearing, variation, orientation, frequency, calstatus);
+          return bearing;
+        }
+      } else {
+        if (httpC.begin(mastCompassURL)) {
+          isConnected = true;
+          // all good but wait until next time
+        } else Serial.println("Unable to connect");
+      }
+     } else Serial.println("WiFi Disconnected");
+    return -2.0;
 }

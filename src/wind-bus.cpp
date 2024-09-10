@@ -48,7 +48,6 @@ mcp2515_can n2kWind(SPI_CS_PIN); // CAN0 interface CS
 const int CAN0_INT = 25;    // RPi Pin 12 -- IO25
 #endif // RS485CAN
 
-
 #ifdef PICAN  // v1 of the controller uses PICAN-M HAT
 #define N2k_SPI_CS_PIN 5    
 //#define N2k_CAN_INT_PIN 25  
@@ -178,10 +177,7 @@ extern int compassFrequency;
 int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
-HTTPClient httpC;
-String mastCompass = "http://mastcomp.local/readings";
-JSONVar mastCompRead;
-String jsonString;
+float getMastHeading();
 
 #ifdef CMPS14
 const int CMPS14_ADDRESS = 0x60;
@@ -205,6 +201,7 @@ void loopPiComp();
 #define MAX_RX_WAIT_TIME_MS 30000
 
 bool displayOnToggle=true, compassOnToggle=false, honeywellOnToggle=false, demoModeToggle=false;
+extern bool teleplot;
 
 void WebSerialonMessage(uint8_t *data, size_t len);
 void logToAll(String s);
@@ -628,7 +625,7 @@ void setup() {
 #ifdef BNO08X
   // compassReady means we have a local boat compass in the controller
   // compassOnTog used for turning it on and off
-  Wire.begin();
+  //Wire.begin(); // getting an error that it's already on?
   compassReady = bno08x.begin_I2C(BNO08X);
   if (compassReady) {
     Serial.println("Adafruit_BNO08x bno08x Found");
@@ -673,49 +670,7 @@ void setup() {
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
 
-  // ping mast compass needs work for use case where mast compass isn't connected to external AP
-  if(WiFi.status()== WL_CONNECTED) {    
-    httpC.begin(mastCompass.c_str());
-    int httpResponseCode = httpC.GET();
-    if (httpResponseCode>0) {
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
-      jsonString = httpC.getString();
-  #if 0
-  // Parse the JSON string manually
-  char* key = jsonString.c_str();
-  char* value;
-
-  // Find the first key
-  key = strtok(key, ":");
-  while (key != NULL) {
-    // Find the corresponding value
-    value = strtok(NULL, ",}");
-
-    // Check which key we have and parse the value accordingly
-    if (strstr(key, "bearing") != NULL) {
-      bearing = atof(value);
-    } else if (strstr(key, "calstatus") != NULL) {
-      calstatus = atoi(value);
-    }
-
-    // Find the next key
-    key = strtok(NULL, ":");
-  }
-
-  // Print the extracted values
-  Serial.print("Bearing: ");
-  Serial.println(bearing);
-  Serial.print("Calstatus: ");
-  Serial.println(calstatus);
-#endif
-    } else {
-      Serial.print("HTTP GET Error code: ");
-      Serial.println(httpResponseCode);
-    }
-    httpC.end();
-} else
-  Serial.println("WiFi Disconnected");
+  mastCompassDeg = getMastHeading();
 
 #ifdef ESPNOW
   setupESPNOW();
@@ -867,27 +822,30 @@ void setup() {
       // the global boatCompassDeg will always contain the boat compass (magnetic)
     // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
     boatCompassDeg = getCompass(boatOrientation);
-    readCompassDelta();
-//#define PLOTTER
-#ifdef PLOTTER
-      Serial.print(">boat: ");
-      Serial.println(boatCompassDeg);
-      Serial.print(">delta: ");
-      Serial.println(mastAngle[1]);   
-#endif
-      BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
-      if (BoatData.TrueHeading > 359) BoatData.TrueHeading -= 360;
-      if (BoatData.TrueHeading < 0) BoatData.TrueHeading += 360;
-      // transmit heading
-      if (n2kMainOpen) {
-        SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
-        if (n2kMain->SendMsg(correctN2kMsg)) {
-          //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
-        } else {
-          Serial.println("Failed to send heading from compass reaction");
-        }
+    mastCompassDeg = getMastHeading();
+    //logToAll("mastCompassDeg: " + String(mastCompassDeg));
+    float delta = readCompassDelta();
+    if (teleplot) {
+        Serial.print(">mast:");
+        Serial.println(mastCompassDeg);
+        Serial.print(">boat:");
+        Serial.println(boatCompassDeg);
+        Serial.print(">delta:");
+        Serial.println(delta);   
+    }
+    BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
+    if (BoatData.TrueHeading > 359) BoatData.TrueHeading -= 360;
+    if (BoatData.TrueHeading < 0) BoatData.TrueHeading += 360;
+    // transmit heading
+    if (n2kMainOpen) {
+      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
+      if (n2kMain->SendMsg(correctN2kMsg)) {
+        //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
+      } else {
+        Serial.println("Failed to send heading from compass reaction");
       }
-    });
+    }
+  });
   else logToAll("compass not ready no heading reaction");
 
 #ifdef DISPLAYON

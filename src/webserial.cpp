@@ -59,7 +59,7 @@ extern int mastAngle[2]; // array for both sensors
 // 1 = compass
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
-extern bool teleplot;
+bool teleplot;
 
 #ifdef RS485CAN
 void WindSpeed();
@@ -72,9 +72,13 @@ void BoatSpeed(const tN2kMsg &N2kMsg);
 void espNowBroadcast();
 extern bool foundPeer;
 extern int rxCount;
+void sendMastControl();
 #endif
+extern int reportType;
 
 extern Adafruit_BNO08x bno08x;
+
+extern Preferences preferences;
 
 void logToAll(String s) {
   Serial.println(s);
@@ -143,7 +147,7 @@ void i2cScan() {
   }
 }
 
-String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass", "windrx", "espnow", "teleplot"};
+String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype"};
 #define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 String words[10]; // Assuming a maximum of 10 words
 
@@ -187,13 +191,18 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println("             uptime: " + String(millis() / 1000));
       WebSerial.println("           AWS (in): " + String(WindSensor::windSpeedKnots));
       WebSerial.println("           AWA (in): " + String(WindSensor::windAngleDegrees));
+      WebSerial.flush();
       WebSerial.println(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
       WebSerial.println("       Sensor angle: " + String(mastRotate));
       WebSerial.println("        Correct AWA: " + String(rotateout));
+      WebSerial.flush();
       WebSerial.println("       Mast Compass: " + String(mastCompassDeg));
       WebSerial.println("         Mast angle: " + String(mastDelta));
+#ifdef N2K
       WebSerial.println("           n2k main: " + String(num_n2k_messages));
       WebSerial.println("           n2k wind: " + String(num_wind_messages));
+#endif
+      WebSerial.flush();
     }
     if (words[i].equals("compass")) {
       WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
@@ -214,6 +223,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println();
       CV = String();
 #endif
+      WebSerial.println("     compass report: 0x+ " + String(reportType,HEX));
     }
     if (words[i].equals("format")) {
       SPIFFS.format();
@@ -276,18 +286,47 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       if (time_since_last_wind_rx > 0.0)
         WebSerial.println(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
     }    
+#ifdef ESPNOW
     if (words[i].equals("espnow")) {
       WebSerial.println("espnow peer? " + String(foundPeer));
       WebSerial.println("espnow rx count: " + String(rxCount));
       WebSerial.println("sending broadcast...");
       espNowBroadcast();
     }
+#endif
     if (words[i].equals("teleplot")) {
       teleplot = !teleplot;
       logToAll("teleplot: " + teleplot?"on":"off");
       return;
     }
-   }
+    if (words[i].equals("hostname")) {
+      if (!words[++i].isEmpty()) {
+        host = words[i];
+        preferences.putString("hostname", host);
+        logToAll("hostname set to " + host + "\n");
+        logToAll("restart to change hostname\n");
+        logToAll("preferences " + preferences.getString("hostname"));
+      } else {
+        logToAll("hostname: " + host);
+      }
+      return;
+    }    
+    if (words[i].equals("rtype")) {
+      if (!words[++i].isEmpty()) {
+        reportType = (int)strtol(words[i].c_str(), NULL, 16);
+        preferences.putInt("rtype", reportType);
+        WebSerial.printf("compass report type set to 0x%x\n", reportType);
+#ifdef ESPNOW
+        sendMastControl();
+#endif
+        if (!bno08x.enableReport(reportType))
+              WebSerial.printf("Could not enable local report 0x%x\n",reportType);
+      } else {
+        WebSerial.printf("compass report type is 0x%x\n",reportType);
+      }
+      return;
+    }
+  }
   for (int i=0; i<wordCount; i++) words[i] = String();
   dataS = String();
 }

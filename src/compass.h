@@ -1,5 +1,5 @@
 typedef struct compass_s {
-    int id;
+    int id; // report type
     float heading;
     float accuracy;
     int calStatus;
