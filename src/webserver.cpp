@@ -27,6 +27,7 @@ extern int reportType;
 #define HTTP_PORT 80
 AsyncWebServer server(HTTP_PORT);
 AsyncEventSource events("/events");
+//AsyncWebSocket ws("/ws");
 
 // Json Variable to Hold Sensor Readings
 JSONVar readings;
@@ -527,12 +528,12 @@ void startWebServer() {
 }
 
 HTTPClient httpC;
-char *mastCompassURL = "http://mastcomp.local/readings";
+char mastCompassURL[] = "http://mastcomp.local/readings";
 JSONVar mastCompRead;
 String jsonString;
 bool isConnected = false;
 
-float getMastHeading() {
+float getMastHeadingHTTP() {
     // ping mast compass needs work for use case where mast compass isn't connected to external AP
     if(WiFi.status() == WL_CONNECTED) {  
       if (isConnected) {

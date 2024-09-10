@@ -38,6 +38,45 @@ extern tNMEA2000 *n2kMain;
 extern tN2kMsg correctN2kMsg;
 
 int reportType;
+TMAG5273 sensor; //  hall-effect sensor
+uint8_t i2cAddress = TMAG5273_I2C_ADDRESS_INITIAL;
+extern bool teleplot;
+
+int hallLoop() {
+  if(sensor.getMagneticChannel() != 0) {
+    float magX = sensor.getXData();
+    float magY = sensor.getYData();
+    float magZ = sensor.getZData();
+    float temp = sensor.getTemp()*9/5+32;
+    int totalMag = abs(magX) + abs(magY) + abs(magZ);
+    if (teleplot) {
+      Serial.print(">magX:");
+      Serial.println(magX);
+      Serial.print(">magY:");
+      Serial.println(magY);
+      Serial.print(">magZ:");
+      Serial.println(magZ);
+      Serial.println(">temp:");
+      Serial.println(temp);
+      Serial.print(">totalMag:");
+      Serial.println(totalMag);
+    }
+    return totalMag;
+  } else {
+    return -1;
+  }
+}
+
+void initHall() {
+  if(sensor.begin(i2cAddress, Wire) == 1) {
+    logToAll("started Hall Effect sensor");
+    if (hallLoop()<0) {
+      logToAll("Mag Channels disabled");
+    } else sensor.setTemperatureEn(true);
+  } else {
+    logToAll("failed to start Hall Effect sensor");
+  }
+}
 
 #ifdef CMPS14
 extern const int CMPS14_ADDRESS;  // Address of CMPS14 shifted right one bit for arduino wire library
