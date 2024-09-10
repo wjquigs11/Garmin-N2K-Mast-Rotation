@@ -34,6 +34,7 @@
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include <SparkFun_TMAG5273_Arduino_Library.h>
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21

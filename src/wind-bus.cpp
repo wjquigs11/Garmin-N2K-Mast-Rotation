@@ -210,6 +210,8 @@ void i2cScan();
 void ParseWindCAN();
 void demoIncr();
 float readCompassDelta();
+void initHall();
+int hallLoop();
 
 void ToggleLed() {
   static bool led_state = false;
@@ -224,6 +226,7 @@ void ParseWindN2K(const tN2kMsg &N2kMsg);
 void ParseCompassN2K(const tN2kMsg &N2kMsg);
 #endif
 void BoatSpeed(const tN2kMsg &N2kMsg);
+
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 
@@ -633,14 +636,7 @@ void setup() {
       String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
       Serial.println(logString);
     }
-//    if (!Adafruit_BNO08x bno08x.enableReport(SH2_ROTATION_VECTOR, 100))
-//      Serial.println("Could not enable rotation vector");
-#if 0 // shouldn't need these since we're using the fusion report
-    if (!Adafruit_BNO08x bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED))
-      Serial.println("Could not enable gyroscope");
-    if (!Adafruit_BNO08x bno08x.enableReport(SH2_MAGNETIC_FIELD_CALIBRATED))
-      Serial.println("Could not enable magnetic field calibrated");
-#endif
+    initHall(); // hall effect sensor for zero
   } else {
     Serial.printf("Failed to find Adafruit_BNO08x bno08x chip @ 0x%x\n", BNO08X);
     i2cScan();
@@ -679,6 +675,7 @@ void setup() {
 
   Serial.printf("ESP flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
 
+#ifdef N2K
   // No need to parse the messages at every single loop iteration; 1 ms will do
     app.onRepeat(1, []() {
     PollCANStatus();
@@ -705,27 +702,7 @@ void setup() {
 #endif
 #endif
   });
-
-/*  app.onRepeat(100, []() {
-    if (time_since_last_can_rx > MAX_RX_WAIT_TIME_MS/10) {
-      // No CAN messages received in a while; turn off forwarding so we don't get constant fail messages
-      //logToAll("disable forwarding");
-      if (n2kMain) n2kMain->EnableForward(false);
-#ifdef PICAN
-      if (n2kWind) n2kWind->EnableForward(false);
 #endif
-    }
-    ///* optionally reboot 
-    if (time_since_last_can_rx > MAX_RX_WAIT_TIME_MS) {
-      esp_task_wdt_init(1, true);
-      esp_task_wdt_add(NULL);
-      while (true) {
-        // wait for watchdog to trigger
-      }
-    }
-    //
-  });
-  */
 
   // update web page
   app.onRepeat(WebTimerDelay, []() {
@@ -735,45 +712,9 @@ void setup() {
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
   });
 
-#if 0
-  // temporary since our mast compass isn't reporting on n2k but is on wifi     
-  app.onRepeat(1000, []() {
-    if(WiFi.status()== WL_CONNECTED) {    
-      httpC.begin(mastCompass.c_str());
-      int httpResponseCode = httpC.GET();
-      if (httpResponseCode>0) {
-        Serial.print("HTTP Response code: ");
-        Serial.println(httpResponseCode);
-        String payload = httpC.getString();
-        //mastCompRead = JSON.parse(payload);
-      }
-        if (JSON.typeof(myObject) == "undefined") {
-          Serial.println("Parsing input failed!");
-        }
-        else 
-          Serial.println(myObject);
-        if (myObject.hasOwnProperty("bearing")) {
-          float bearing = (float)myObject["bearing"];
-          //mastCompassDeg = bearing;
-          Serial.print("Bearing: ");
-          Serial.println(bearing);
-        }
-        if (myObject.hasOwnProperty("calstatus")) {
-          int calstatus = (int)myObject["calstatus"];
-          Serial.print("mast Calstatus: ");
-          Serial.println(calstatus);
-        }    
-      } else {
-        Serial.print("HTTP GET Error code: ");
-        Serial.println(httpResponseCode);
-      }
-      httpC.end();
-    }
-  });
-#endif
-
-  app.onRepeat(1, []() {
+  app.onRepeat(10, []() {
     WebSerial.loop();
+//    Serial.printf(">hall:%ld:%d\n", millis(), hallLoop());
 #ifdef PICOMPASS
     loopPiComp();
 #endif
@@ -814,15 +755,14 @@ void setup() {
 
   // check in for new heading 100 msecs = 10Hz
   if (compassReady && !demoModeToggle)
-    //app.onRepeat(compassFrequency, []() {
-    app.onRepeat(100, []() {
+    app.onRepeat(compassFrequency, []() {
       // TBD: delete reaction and recreate if frequency changes
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
       // the global boatCompassDeg will always contain the boat compass (magnetic)
     // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
     boatCompassDeg = getCompass(boatOrientation);
-    mastCompassDeg = getMastHeading();
+    //mastCompassDeg = getMastHeading();
     //logToAll("mastCompassDeg: " + String(mastCompassDeg));
     float delta = readCompassDelta();
     if (teleplot) {
@@ -836,6 +776,7 @@ void setup() {
     BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
     if (BoatData.TrueHeading > 359) BoatData.TrueHeading -= 360;
     if (BoatData.TrueHeading < 0) BoatData.TrueHeading += 360;
+  #ifdef N2K
     // transmit heading
     if (n2kMainOpen) {
       SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
@@ -845,8 +786,9 @@ void setup() {
         Serial.println("Failed to send heading from compass reaction");
       }
     }
-  });
-  else logToAll("compass not ready no heading reaction");
+  #endif
+    });
+    else logToAll("compass not ready no heading reaction");
 
 #ifdef DISPLAYON
   // update results
