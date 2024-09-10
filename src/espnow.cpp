@@ -32,7 +32,7 @@ extern int mastOrientation;
 extern int mastFrequency;
 extern bool compassOnToggle;
 extern JSONVar readings;
-bool teleplot=false;
+extern bool teleplot=false;
 
 uint8_t compassAddress[ESP_NOW_ETH_ALEN];  // = {0xE4, 0x65, 0xB8, 0x78, 0xE9, 0x7C};
 //uint8_t compassAddress[] = {0x08, 0xB6, 0x1F, 0xB8, 0x66, 0x3C};
@@ -40,6 +40,7 @@ uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 esp_now_peer_info_t peerInfo;
 bool foundPeer = false;
 int rxCount;
+extern int reportType;
 
 compass_s outCommand;
 
@@ -85,6 +86,34 @@ float calculateYawDifference(float w1, float i1, float j1, float k1,
   return yaw;
 }
 
+void teleplotter(unsigned long ts, float Mreal, float Mi, float Mj, float Mk, float Breal, float Bi, float Bj, float Bk) {
+    Serial.printf(">Mr:%0.4ld:%0.2f\n", ts, Mreal);
+    Serial.printf(">Mi:%0.4ld:%0.2f\n", ts, Mi); 
+    Serial.printf(">Mj:%0.4ld:%0.2f\n", ts, Mj);
+    Serial.printf(">Mk:%0.4ld:%0.2f\n", ts, Mk); 
+    Serial.printf(">Mhead:%0.4ld:%0.0f\n", ts, mastCompassDeg);
+    ts = millis();
+    Serial.printf(">Br:%0.4ld:%0.2f\n", ts, Breal);
+    Serial.printf(">Bi:%0.4ld:%0.2f\n", ts, Bi);
+    Serial.printf(">Bj:%0.4ld:%0.2f\n", ts, Bj);
+    Serial.printf(">Bk:%0.4ld:%0.2f\n", ts, Bk);   
+    Serial.printf(">Bhead:%0.4ld:%0.0f\n", ts, boatCompassDeg);
+    float rotateM = calculateYawDifference(Mreal, Mi, Mj, Mk, Breal, Bi, Bj, Bk);
+    Serial.printf(">Mrotate:%0.4ld:%0.0f\n", ts, rotateM);
+}
+
+void teleplotterNAC(unsigned long ts, sh2_RotationVector_t Mast, sh2_RotationVector_t Boat) {
+    teleplotter(ts, Mast.real, Mast.i, Mast.j, Mast.k, Boat.real, Boat.i, Boat.j, Boat.k);
+}
+
+void teleplotterAC(unsigned long ts, sh2_RotationVectorWAcc_t Mast, sh2_RotationVectorWAcc_t Boat) {
+    teleplotter(ts, Mast.real, Mast.i, Mast.j, Mast.k, Boat.real, Boat.i, Boat.j, Boat.k);
+    //Serial.printf(">Macc:%0.4ld:%0.2f\n", ts, Maccuracy*RADTODEG);
+    //Serial.printf(">Mcal:%0.4ld:%d\n", ts, sensorValueMstatus);
+    //Serial.printf(">Bacc:%0.4ld:%0.2f\n", ts, Baccuracy*RADTODEG);
+    //Serial.printf(">Bcal:%0.4ld:%d\n", ts, sensorValue.status); // maybe in both?
+}
+
 // callback function that will be executed when data is received from mast compass
 void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) { 
     rxCount++;
@@ -100,59 +129,60 @@ void OnDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) 
     if (foundPeer) { // we have a peer so process compass data
         memcpy(&sensorValueMast, incomingData, sizeof(sensorValueMast));
         //Serial.printf("sensorValueMast: %d\n", sensorValueMast.sensorId);
-        if (sensorValueMast.sensorId == SH2_GAME_ROTATION_VECTOR) {
-            //Serial.printf(">3D|quaternionSphere:%0.4ld:S:sphere:P:0:0:0:Q:%.3f:%.3f:%.3f:%.3f:RA:1:C:blue\n",millis(),sensorValueMast.un.gameRotationVector.real, sensorValueMast.un.gameRotationVector.i, sensorValueMast.un.gameRotationVector.j, sensorValueMast.un.gameRotationVector.k);
-            //Serial.printf(" mast accuracy: %d ", sensorValueMast.un.gameRotationVector.accuracy);
-            //Serial.printf(" mast cal status: %d\n", sensorValueMast.status);
-            unsigned long ts = millis();
+        unsigned long ts = millis();
+        switch (sensorValueMast.sensorId) {
+        case SH2_ROTATION_VECTOR:
+             mastCompassDeg = calculateHeading(sensorValueMast.un.geoMagRotationVector.real, sensorValueMast.un.geoMagRotationVector.i, sensorValueMast.un.geoMagRotationVector.j, sensorValueMast.un.geoMagRotationVector.k, mastOrientation);
+            readCompassDelta();
+            if (teleplot) {
+                teleplotterAC(ts, sensorValueMast.un.geoMagRotationVector,sensorValue.un.geoMagRotationVector);
+            }
+            break;       
+        case SH2_GAME_ROTATION_VECTOR:
             mastCompassDeg = calculateHeading(sensorValueMast.un.gameRotationVector.real, sensorValueMast.un.gameRotationVector.i, sensorValueMast.un.gameRotationVector.j, sensorValueMast.un.gameRotationVector.k, mastOrientation);
             readCompassDelta();
             if (teleplot) {
-                Serial.printf(">Mr:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.real);
-                Serial.printf(">Mi:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.i); 
-                Serial.printf(">Mj:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.j);
-                Serial.printf(">Mk:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.k); 
-                Serial.printf(">Mhead:%0.4ld:%0.0f\n", ts, mastCompassDeg);
-                //Serial.printf(">Macc:%0.4ld:%0.2f\n", ts, sensorValueMast.un.gameRotationVector.accuracy*RADTODEG);
-                Serial.printf(">Mcal:%0.4ld:%d\n", ts, sensorValueMast.status);
-                ts = millis();
-                //boatCompassDeg = calculateHeading(sensorValue.un.gameRotationVector.real, sensorValue.un.gameRotationVector.i, sensorValue.un.gameRotationVector.j, sensorValue.un.gameRotationVector.k, 0);        
-                Serial.printf(">Br:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.real);
-                Serial.printf(">Bi:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.i);
-                Serial.printf(">Bj:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.j);
-                Serial.printf(">Bk:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.k);   
-                Serial.printf(">Bhead:%0.4ld:%0.0f\n", ts, boatCompassDeg);
-                //Serial.printf(">Bacc:%0.4ld:%0.2f\n", ts, sensorValue.un.gameRotationVector.accuracy*RADTODEG);
-                Serial.printf(">Bcal:%0.4ld:%d\n", ts, sensorValue.status);
-                float rotateM = calculateYawDifference(sensorValueMast.un.gameRotationVector.real, sensorValueMast.un.gameRotationVector.i, sensorValueMast.un.gameRotationVector.j, sensorValueMast.un.gameRotationVector.k,
-                                                        sensorValue.un.gameRotationVector.real, sensorValue.un.gameRotationVector.i, sensorValue.un.gameRotationVector.j, sensorValue.un.gameRotationVector.k);
-                Serial.printf(">Mrotate:%0.4ld:%0.0f\n", ts, rotateM);
+                teleplotterNAC(ts, sensorValueMast.un.gameRotationVector,sensorValue.un.gameRotationVector);
             }
-        } else
+            break;
+        case SH2_ARVR_STABILIZED_GRV:
+            mastCompassDeg = calculateHeading(sensorValueMast.un.arvrStabilizedGRV.real, sensorValueMast.un.arvrStabilizedGRV.i, sensorValueMast.un.arvrStabilizedGRV.j, sensorValueMast.un.arvrStabilizedGRV.k, mastOrientation);
+            readCompassDelta();
+            if (teleplot) {
+                teleplotterNAC(ts, sensorValueMast.un.arvrStabilizedGRV,sensorValue.un.arvrStabilizedGRV);
+            }
+            break;
+        default:
             Serial.printf("ESPNOW ondatarecv(): got unknown sensorID 0x%0x\n", sensorValueMast.sensorId);
+            break;
+        }
     } else { // first time hearing from peer
         Serial.printf("found peer\n");
         foundPeer = true;
-        //Serial.printf("\nchannel: %d ifidx: %x encrypt: %d addr size %d (6)\n", peerInfo.channel, peerInfo.ifidx, peerInfo.encrypt, sizeof(peerInfo.peer_addr));
+        Serial.printf("channel: %d ifidx: %x encrypt: %d addr size %d (6)\n", peerInfo.channel, peerInfo.ifidx, peerInfo.encrypt, sizeof(peerInfo.peer_addr));
         Serial.printf("ESP peer MAC addr: ");
         for (int i=0; i<ESP_NOW_ETH_ALEN; i++)
             Serial.printf("%02X ", mac_addr[i]);
-        }
-        //memcpy(compassAddress, peerInfo.peer_addr, ESP_NOW_ETH_ALEN);  // set compass address
+        memcpy(compassAddress, peerInfo.peer_addr, ESP_NOW_ETH_ALEN);  // set compass address
+        if (int err=esp_now_add_peer(&peerInfo) != ESP_OK) {
+           logToAll("Failed to add compass peer: 0x" + String(err,HEX));
+        } else logToAll("ESP-NOW compass peer added");
+    }
 }
 
 // Send control message via ESP-NOW
 // called from webserver.cpp when settings are updated "get /params"
 bool sendMastControl() {
-  outCommand.compassOnToggle = compassOnToggle;
-  outCommand.orientation = mastOrientation;
-  outCommand.frequency = mastFrequency;
+//  outCommand.compassOnToggle = compassOnToggle;
+  outCommand.id = reportType;   // specify which bno085 report to use
+//  outCommand.orientation = mastOrientation;
+//  outCommand.frequency = mastFrequency;
   esp_err_t result = esp_now_send(compassAddress, (uint8_t *) &outCommand, sizeof(outCommand));
   if (result == ESP_OK) {
-    Serial.printf("sent mast control\n");
+    logToAll("sent mast control report type 0x" + String(reportType,HEX));
     return true;
   } else {
-    Serial.printf("Error sending the data: %d\n", result);
+    logToAll("Error sending the data: 0x" + String(result,HEX));
   }
   return false;
 }
@@ -197,7 +227,7 @@ void espNowBroadcast() {
     } else logToAll("ESP-NOW broadcast peer added");
     esp_err_t result;
     for (int retries = 0; retries < 5; retries++) {
-        result = esp_now_send(broadcastAddress, (uint8_t *) &outCommand, sizeof(outCommand));
+        result = esp_now_send(broadcastAddress, (uint8_t *) &outCommand, sizeof(outCommand)); // contents don't matter until later
         if (result == ESP_OK) {
             logToAll("sent broadcast");
         } else {
