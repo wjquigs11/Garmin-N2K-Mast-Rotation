@@ -76,8 +76,9 @@ void sendMastControl();
 #endif
 extern int reportType;
 
+#ifdef BNO08X
 extern Adafruit_BNO08x bno08x;
-
+#endif
 extern Preferences preferences;
 
 void logToAll(String s) {
@@ -319,8 +320,10 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 #ifdef ESPNOW
         sendMastControl();
 #endif
-        if (!bno08x.enableReport(reportType))
-              WebSerial.printf("Could not enable local report 0x%x\n",reportType);
+#ifdef BNO08X
+        if (!bno08x.enableReport(reportType)) 
+                WebSerial.printf("Could not enable local report 0x%x\n",reportType);
+#endif
       } else {
         WebSerial.printf("compass report type is 0x%x\n",reportType);
       }

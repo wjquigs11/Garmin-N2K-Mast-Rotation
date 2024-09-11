@@ -28,13 +28,13 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 //#define N2k_SPI_CS_PIN 5    
 //#define N2k_CAN_INT_PIN 26
 // for CMPS14
-#define SDA_PIN 21
-#define SCL_PIN 22
+//#define SDA_PIN 21
+//#define SCL_PIN 22
 // for display
 #ifdef DISPLAYON
 // display is plugged into RS485 CAN HAT pins won't that conflict?
-#define OLED_MOSI  23
-#define OLED_CLK   18
+#define OLED_MOSI  23 // RPI 19
+#define OLED_CLK   18 // RPI 23
 #define OLED_CS    14 // RPI pin 31
 #define OLED_RESET 26 // RPI pin 16 - IO26
 #define OLED_DC    13 // RPI pin 7 - IO13
@@ -178,6 +178,7 @@ int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 float getMastHeading();
+void i2cscan();
 
 #ifdef CMPS14
 const int CMPS14_ADDRESS = 0x60;
@@ -212,6 +213,10 @@ void demoIncr();
 float readCompassDelta();
 void initHall();
 int hallLoop();
+int hallValue;
+elapsedMillis time_since_last_hall_adjust = 0;
+#define HALL_DELAY 500  // don't update compass difference more than twice per second
+#define HALL_LIMIT 10   // arbitrary limit for magnet near sensor; adjust as needed
 
 void ToggleLed() {
   static bool led_state = false;
@@ -227,6 +232,7 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg);
 #endif
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
+void loopHTTPC();
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 
@@ -489,15 +495,49 @@ void OLEDdataWindDebug() {
 }
 #endif
 
+// TBD: clean up
+#include <PicoMQTT.h>
+
+PicoMQTT::Client mqtt("mastcomp.local");
+
+void setupMQTT() {
+    // Subscribe to a topic pattern and attach a callback
+    mqtt.subscribe("#", [](const char * topic, const char * payload) {
+        //Serial.printf("Received message in topic '%s' payload %s\n", topic, payload);
+        mastCompassDeg = atof(payload);
+#if 0
+        JSONVar myObject = JSON.parse(payload);
+        if (JSON.typeof(myObject) == "undefined") {
+          Serial.println("Parsing input failed!");
+          return;
+        }
+        String bS = JSON.stringify(myObject["bearing"]);
+        bS.replace("\"", ""); // Remove quotes
+        float bearing = bS.toFloat();
+        int variation = myObject["variation"];
+        int orientation = myObject["orientation"];
+        int frequency = myObject["frequency"];
+        int calstatus = myObject["calstatus"];
+        //Serial.printf("%s %0.2f %d %d %d %d\n", bS.c_str(), bearing, variation, orientation, frequency, calstatus);
+        mastCompassDeg = bearing;
+#endif
+    });
+
+    // Start the client
+    mqtt.begin();
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
   Serial.println("starting wind correction");
 
+  esp_log_level_set("*", ESP_LOG_VERBOSE);  // Set global log level
+
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
 
-  Wire.begin();
+  //Wire.begin();
 
 #ifdef DISPLAYON  
 #ifdef RS485CAN
@@ -616,13 +656,14 @@ void setup() {
 
 #if defined(CMPS14)
   // check compass
-  Wire.begin(SDA_PIN,SCL_PIN);
+  //Wire.begin(SDA_PIN,SCL_PIN);
   Wire.beginTransmission(CMPS14_ADDRESS);
   // null return indicates no error; compass present
   if (compassReady = (!Wire.endTransmission()))
     Serial.println("CMPS14 present");
   else {
     Serial.println("CMPS14 not found");
+    i2cScan();
   }
 #endif
 #ifdef BNO08X
@@ -665,6 +706,8 @@ void setup() {
   //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
+
+  setupMQTT();
 
   mastCompassDeg = getMastHeading();
 
@@ -710,14 +753,24 @@ void setup() {
     // Send Events to the client with the Sensor Readings Every x seconds
     //events.send("ping",NULL,millis());
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
+//    mastCompassDeg = getMastHeading();
   });
 
   app.onRepeat(10, []() {
     WebSerial.loop();
-//    Serial.printf(">hall:%ld:%d\n", millis(), hallLoop());
+    // when Hall effect sensor is triggered, mast is centered
+    // we can change mastorientation to the difference between the two IMU readings
+    if ((hallValue = hallLoop()) > HALL_LIMIT) {
+      if (time_since_last_hall_adjust > HALL_DELAY) {
+        logToAll("Hall effect detected; mast delta: " + String(mastDelta,2));
+        mastOrientation += mastDelta;
+        time_since_last_hall_adjust = 0;
+      }
+    }
 #ifdef PICOMPASS
     loopPiComp();
 #endif
+    mqtt.loop();
   });
 
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
@@ -764,7 +817,7 @@ void setup() {
     boatCompassDeg = getCompass(boatOrientation);
     //mastCompassDeg = getMastHeading();
     //logToAll("mastCompassDeg: " + String(mastCompassDeg));
-    float delta = readCompassDelta();
+    float delta = readCompassDelta(); // sets mastDelta
     if (teleplot) {
         Serial.print(">mast:");
         Serial.println(mastCompassDeg);

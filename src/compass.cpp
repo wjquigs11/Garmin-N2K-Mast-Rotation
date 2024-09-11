@@ -90,7 +90,7 @@ bool readCalibrationStatus();
 // also called as a Reaction in case we're not connected to mast compass
 // TBD: make this object oriented and overload getCompass for either CMPS14 or BNO085
 float getCMPS14(int correction) {
-  ////Serial.println("getCompass");
+  //Serial.println("getCompass");
   Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
   Wire.write(ANGLE_8);                     // Sends the register we wish to start reading from
   Wire.endTransmission();
@@ -109,27 +109,21 @@ float getCMPS14(int correction) {
   angle16 = (high_byte <<8) + low_byte;                 // Calculate 16 bit angle
   comp16 = (angle16/10) + (angle16%10)/10.0;
   comp16 += correction;
-  //if (comp16 > 359) comp16 -= 360;
-  //if (comp16 < 0) comp16 += 360;
-#define DEBUG
 #ifdef DEBUG
-  Serial.print("angle8: "); Serial.print(angle8, DEC);
-  Serial.print(" comp8: "); Serial.print(comp8, DEC);
-  Serial.print(" angle 16: ");     // Display 16 bit angle with decimal place
-  Serial.print(angle16/10, DEC);
-  Serial.print(".");
-  Serial.print(angle16%10, DEC);
-  Serial.print(" a16: "); Serial.printf("%0.2f", (angle16/10) + (angle16%10)/10.0);
-  Serial.print(" corr: "); Serial.println(correction);
+    Serial.print("angle8: "); Serial.print(angle8, DEC);
+    Serial.print(" comp8: "); Serial.print(comp8, DEC);
+    Serial.print(" angle 16: ");     // Display 16 bit angle with decimal place
+    Serial.print(angle16/10, DEC);
+    Serial.print(".");
+    Serial.print(angle16%10, DEC);
+    Serial.print(" a16: "); Serial.printf("%0.2f", (angle16/10) + (angle16%10)/10.0);
+    Serial.print(" corr: "); Serial.println(correction);
+#endif
   if (comp16 > 359) comp16 -= 360;
   if (comp16 < 0) comp16 += 360;
-  Serial.print(">mast: "); Serial.println(comp16);  
-  //Serial.print("roll: ");               // Display roll data
-  //Serial.print(roll, DEC);
-  
-  //Serial.print("    pitch: ");          // Display pitch data
-  //Serial.print(pitch, DEC);
-#endif
+  if (teleplot) {
+    Serial.print(">mast: "); Serial.println(comp16); 
+  }
   Wire.beginTransmission(CMPS14_ADDRESS);  // starts communication with CMPS14
   Wire.write(CAL_STATE);                     // Sends the register we wish to start reading from
   Wire.endTransmission();

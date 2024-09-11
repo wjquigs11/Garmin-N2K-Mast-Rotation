@@ -119,7 +119,7 @@ int compassDifference(int angle1, int angle2) {
 
 float readCompassDelta() {
   if (compassReady) {
-    mastDelta = compassDifference(boatCompassDeg, mastCompassDeg);
+    mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
     //logToAll("mastDelta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
     mastCompDelta.reading((int)(mastDelta*100)); // moving average

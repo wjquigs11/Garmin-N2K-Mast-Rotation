@@ -533,11 +533,14 @@ JSONVar mastCompRead;
 String jsonString;
 bool isConnected = false;
 
-float getMastHeadingHTTP() {
+float getMastHeading() {
     // ping mast compass needs work for use case where mast compass isn't connected to external AP
     if(WiFi.status() == WL_CONNECTED) {  
       if (isConnected) {
+        Serial.printf("ts0=%ld\n",millis());
+        //httpGETRequest
         int httpResponseCode = httpC.GET();
+        Serial.printf("ts1=%ld\n",millis());
         if (httpResponseCode>0) {
           //Serial.print("HTTP Response code: ");
           //Serial.println(httpResponseCode);
