@@ -306,7 +306,7 @@ float getCompass(int correction) {
     return -1;
 #ifdef CMPS14
   compassVal = getCMPS14(correction);
-#else
+#elif defined(BNO08X)
   compassVal = getBNO085(correction);
   ////Serial.printf("bno085 %0.2f\n", compassVal);
 #endif

@@ -49,7 +49,6 @@ void IRAM_ATTR NewDataReadyISR();
 //#define CMPS14
 //#define Adafruit_BNO08x bno08x
 #define MASTCOMPASS
-#define DISPLAYON
 
 #ifdef SH_ESP32
 #define POT_PIN 36 // SH_ESP32
@@ -110,7 +109,7 @@ extern Adafruit_BNO08x bno08x;
 extern sh2_SensorValue_t sensorValue;
 
 #ifdef DISPLAYON
-extern Adafruit_SSD1306 display;
+extern Adafruit_SSD1306 *display;
 #endif
 
 #define PRBUF 256

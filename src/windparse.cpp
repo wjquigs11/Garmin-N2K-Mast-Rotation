@@ -1,5 +1,9 @@
 // parse wind speed, correct for mast rotation
 
+
+#define RS485CAN  // *** REMOVE LATER THIS IS JUST FOR VS CODE !!!
+
+
 #include "compass.h"
 #include "windparse.h"
 
@@ -18,7 +22,9 @@ extern tNMEA0183 NMEA0183_3;
 tNMEA0183Msg NMEA0183Msg;
 #define NMEA0183serial Serial1
 #endif
-#elif RS485CAN
+#endif
+
+#ifdef RS485CAN
 #include "mcp2515_can.h"
 #endif
 
@@ -58,12 +64,14 @@ int adsInit;
 
 extern tNMEA2000 *n2kMain;
 extern int num_wind_messages;
+extern int num_wind_other;
 
 extern JSONVar readings;
 
 char prbuf[PRBUF];
 
 void calcTrueWind();
+void windCounter();
 
 // returns degrees, and corresponds to the current value of the Honeywell sensor
 float readAnalogRotationValue() {      
@@ -131,6 +139,7 @@ float readCompassDelta() {
 
 tN2kMsg correctN2kMsg;
 
+#ifdef NMEA0183
 byte calculateNMEAChecksum(const char* sentence) {
   byte checksum = 0;
   // Start after the '$' and continue until '*' or end of string
@@ -140,7 +149,6 @@ byte calculateNMEAChecksum(const char* sentence) {
   return checksum;
 }
 
-#ifdef NMEA0183
 char n0183buf[64],n0183cksumbuf[64];
 #endif
 
@@ -277,6 +285,86 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
     //BoatData.TrueHeading = heading;
     //BoatData.Variation = variation;
   } // else
+}
+#endif
+
+#ifdef RS485CAN
+extern mcp2515_can n2kWind;
+extern tN2kMsg correctN2kMsg;
+uint8_t windCANsrc = 0;
+//extern mcp2515_can n2kWind;
+byte cdata[MAX_DATA_SIZE] = {0};
+//#define DEBUG
+// parse a packet manually from CAN bus data (not using Timo library)
+// set globals for wind speed/angle or heading for processing by WindSpeed() or Heading()
+void ParseWindCAN() {
+  //Serial.print("parsewindcan ");
+  uint8_t len;
+  int PGN;
+  unsigned char SID;  
+  if (n2kWind.checkReceive() != CAN_MSGAVAIL) {
+    //Serial.println("no more on wind bus");
+    return;
+  }
+  n2kWind.readMsgBuf(&len, cdata);
+  unsigned long ID = n2kWind.getCanId();
+  PGN = ((ID & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
+  uint8_t SRC = ID & 0xFF;
+  SID = cdata[0];
+//#ifdef DEBUG
+  Serial.printf("CAN PGN %d SRC %d SID %d len %d\n", PGN, SRC, SID, len);
+//#endif
+  switch (PGN) {
+    case 130306: { 
+      if (windCANsrc == 0) // this is our first wind packet, track the source
+        windCANsrc = SRC;
+      windCounter();
+      WindSensor::windSpeedMeters = ((cdata[2] << 8) | cdata[1]) / 100.0;
+      WindSensor::windAngleRadians = ((cdata[4] << 8) | cdata[3]) / 10000.0;
+      wRef = (tN2kWindReference)cdata[5];
+#ifdef DEBUG
+      Serial.printf("CAN parsed wind SID %d Speed %0.2f Angle %0.4f (%0.4f) ref %d (%x)\n", SID, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, WindSensor::windAngleRadians*(180/M_PI), wRef, cdata[5]);
+#endif
+      WindSpeed();
+      break;
+    } 
+    default: { 
+      num_wind_other++; 
+      // everything that's not from wind source, pass through to main bus
+      // done for Paul because he has depth transducer on same branch as wind
+      if (SRC != windCANsrc) {
+        correctN2kMsg.SetPGN(PGN);
+        correctN2kMsg.Priority=2;
+        correctN2kMsg.AddByte(SID);
+        for (int i=1; i<len; i++) {
+          correctN2kMsg.AddByte(cdata[i]);
+        }
+        if (n2kMain->SendMsg(correctN2kMsg)) {
+          //Serial.printf("forward N2k OK %d\n", PGN);
+        } else {
+          logToAll("Failed to forward packet from wind to main.");  
+        }
+#if 0
+        // temporary: check to see if we can parse the message we just created
+        if (PGN == 128259) {
+          double watref, gndref;
+          tN2kSpeedWaterReferenceType type;
+          if (ParseN2kPGN128259(correctN2kMsg, SID, watref, gndref, type))
+            Serial.printf("parsed speed PGN %d that we created SID %d watref %0.2f gndref %0.2f\n", PGN, SID, watref, gndref);
+          else Serial.printf("failed to parse speed PGN %d that we created\n", PGN);
+        }
+        if (PGN == 127250) {
+          double heading, deviation, variation;
+          tN2kHeadingReference headingRef;
+          //if (ParseN2kPGN127250(correctN2kMsg, SID, heading, deviation, variation, headingRef))
+          //  Serial.printf("parsed heading PGN %d that we created\n", PGN);
+          //else Serial.printf("failed to parse heading PGN %d that we created\n", PGN);
+        }
+#endif
+      }
+      break;
+    }
+  }
 }
 #endif
 

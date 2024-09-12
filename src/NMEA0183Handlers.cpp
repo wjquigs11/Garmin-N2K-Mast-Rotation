@@ -1,23 +1,15 @@
-/* 
-NMEA0183Handlers.cpp
-
-2015 Copyright (c) Kave Oy, www.kave.fi  All right reserved.
-
-Author: Timo Lappalainen
-
-  This library is free software; you can redistribute it and/or
-  modify it as you like.
-
-  This library is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-*/
  
+
+#include "NMEA0183Handlers.h"
+#include "BoatData.h"
+
+tBoatData *pBD=0;
+
+#ifdef NMEA0183
 #include <N2kMsg.h>
 #include <NMEA2000.h>
 #include <N2kMessages.h>
 #include <NMEA0183Messages.h>
-#include "NMEA0183Handlers.h"
 
 struct tNMEA0183Handler {
   const char *Code;
@@ -43,7 +35,6 @@ void HandleGSV(const tNMEA0183Msg &NMEA0183Msg);
 
 // Internal variables
 extern tNMEA2000 *n2kMain;
-tBoatData *pBD=0;
 Stream* NMEA0183HandlersDebugStream=0;
 struct tGSV SatInfo[4];
 //struct tSatelliteInfo[MaxSatelliteInfoCount];
@@ -150,5 +141,5 @@ void HandleGSV(const tNMEA0183Msg &NMEA0183Msg) {
   }
       */
 }
-
+#endif
 

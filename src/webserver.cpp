@@ -322,7 +322,7 @@ void startWebServer() {
           logToAll("display off");
           displayOnToggle = false;
 #ifdef DISPLAYON
-          display.clearDisplay();
+          display->clearDisplay();
 #endif
         } else {
           logToAll("display on");
