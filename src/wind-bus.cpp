@@ -10,56 +10,58 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include "compass.h"
 #include "windparse.h"
 
-//#ifdef PICAN
-//#include <N2kMsg.h>
-//#include <NMEA2000.h>
-//#include <mcp_can.h>
-//#include <NMEA2000_mcp.h>
-//#endif
+#ifdef PICAN
+#include <N2kMsg.h>
+#include <NMEA2000.h>
+#include <mcp_can.h>
+#include <NMEA2000_mcp.h>
+#endif
+#ifdef RS485CAN
+#include "mcp2515_can.h"
+#endif
 
 #define SCREEN_WIDTH 128  // OLED display width, in pixels
 #define SCREEN_HEIGHT 64  // OLED display height, in pixels
 
-#define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
-#define CAN_RX_PIN GPIO_NUM_35 // RPI header pin 15
+#ifdef D1MINI
+#define CAN_TX_PIN GPIO_NUM_17
+#define CAN_RX_PIN GPIO_NUM_16
+#endif
 
-#ifdef RS485CAN
-#include "mcp2515_can.h"
-//#define N2k_SPI_CS_PIN 5    
-//#define N2k_CAN_INT_PIN 26
-// for CMPS14
-//#define SDA_PIN 21
-//#define SCL_PIN 22
-// for display
-#ifdef DISPLAYON
-// display is plugged into RS485 CAN HAT pins won't that conflict?
+#ifdef DIYMORE  // SPI display
 #define OLED_MOSI  23 // RPI 19
 #define OLED_CLK   18 // RPI 23
 #define OLED_CS    14 // RPI pin 31
 #define OLED_RESET 26 // RPI pin 16 - IO26
 #define OLED_DC    13 // RPI pin 7 - IO13
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
+//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
+Adafruit_SSD1306 *display;
 #endif
-// Define CAN Ports and their Chip Select/Enable
-//#define CAN_RX_INTERRUPT_MODE 0
-// RS485 CAN HAT
-#define SPI_CS_PIN 5
-mcp2515_can n2kWind(SPI_CS_PIN); // CAN0 interface CS
-const int CAN0_INT = 25;    // RPi Pin 12 -- IO25
-#endif // RS485CAN
 
-#ifdef PICAN  // v1 of the controller uses PICAN-M HAT
-#define N2k_SPI_CS_PIN 5    
-//#define N2k_CAN_INT_PIN 25  
+#define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
+#define CAN_RX_PIN GPIO_NUM_35 // RPI header pin 15
+
+#ifdef PICAN
 tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
 // display
-// v1 uses Wire for I2C at standard pins, no defs needed
-#ifdef DISPLAYON
+// v1 uses Wire for I2C at standard pins, no defs needed?
+#define OGDISPLAY   // original controller is the only one with I2C display
+#ifdef OGDISPLAY  
 #define OLED_RESET 4
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+#define SDA_PIN 16
+#define SCL_PIN 17
+Adafruit_SSD1306 *display;
 #endif
+#endif
+
+#ifdef RS485CAN
+// Define CAN Ports and their Chip Select/Enable
+// RS485 CAN HAT
+#define SPI_CS_PIN 5
+mcp2515_can n2kWind(SPI_CS_PIN); // CAN0 interface CS
+const int CAN0_INT = 25;    // RPi Pin 12 -- IO25#endif
 #endif
 
 #ifdef SH_ESP32
@@ -101,6 +103,7 @@ TwoWire *i2c;
 #define NMEA0183BAUD 4800
 tNMEA0183 NMEA0183_3;
 #endif
+
 extern tBoatData *pBD;
 tBoatData BoatData;
 // TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
@@ -122,6 +125,7 @@ extern int adsInit;
 // timing/display
 int num_n2k_messages = 0;
 int num_wind_messages = 0;
+int num_wind_other = 0;
 int num_mastcomp_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
 elapsedMillis time_since_last_wind_rx = 0;
@@ -208,7 +212,6 @@ void WebSerialonMessage(uint8_t *data, size_t len);
 void logToAll(String s);
 void logToAlln(String s);
 void i2cScan();
-void ParseWindCAN();
 void demoIncr();
 float readCompassDelta();
 void initHall();
@@ -236,13 +239,14 @@ void loopHTTPC();
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 
+// for now, keep main bus as is, but I might swap to process depth on new controller on timo-managed bus
 // NMEA 2000 message handler for main bus
 void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
   if (stackTrace) Serial.println("HandleNMEA2000MsgMain");
    
-  //Serial.print("main: "); N2kMsg.Print(&Serial);
+  Serial.print("main: "); N2kMsg.Print(&Serial);
   n2kMainOpen = true;
-  n2kMain->SetForwardStream(forward_stream);
+  //n2kMain->SetForwardStream(forward_stream);
   num_n2k_messages++;
   time_since_last_can_rx = 0;
   ToggleLed();
@@ -327,7 +331,7 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
   //Serial.printf("wind t: %d R: %d\n", millis(), N2kMsg.PGN);
   if (!n2kWindOpen) {
     n2kWindOpen = true;
-    //n2kWind->SetForwardStream(forward_stream);  // why does uncommenting print garbage on serial monitor?
+    //n2kWind->SetForwardStream(forward_stream);
   }
   ToggleLed();
   // problematic since mast compass can come back online
@@ -351,70 +355,7 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
   } 
   // TBD: pass-through everything that's not from the same source as the wind PGN (for Paul with depth transducer on wind bus)
 }
-#endif
-#ifdef RS485CAN
-extern mcp2515_can n2kWind;
-byte cdata[MAX_DATA_SIZE] = {0};
-//#define DEBUG
-// parse a packet manually from CAN bus data (not using Timo library)
-// set globals for wind speed/angle or heading for processing by WindSpeed() or Heading()
-void ParseWindCAN() {
-  if (stackTrace) Serial.println("ParseWindCAN");
-
-  //Serial.print("parsewindcan ");
-  uint8_t len;
-  int PGN;
-  unsigned char SID;  
-  if (n2kWind.checkReceive() != CAN_MSGAVAIL) {
-    //Serial.println("no more on wind bus");
-    return;
-  }
-  n2kWind.readMsgBuf(&len, cdata);
-  unsigned long ID = n2kWind.getCanId();
-  PGN = ((ID & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
-  uint8_t SRC = ID & 0xFF;
-  SID = cdata[0];
-#ifdef DEBUG
-  Serial.printf("CAN PGN %d SRC %d SID %d len %d ", PGN, SRC, SID, len);
-#endif
-  if (time_since_last_mastcomp_rx > 5000) // 5 second timeout on mast compass
-    mastCompassDeg = -1;
-  switch (PGN) {
-    case 130306: { 
-      windCounter();
-      WindSensor::windSpeedMeters = ((cdata[2] << 8) | cdata[1]) / 100.0;
-      WindSensor::windAngleRadians = ((cdata[4] << 8) | cdata[3]) / 10000.0;
-      wRef = (tN2kWindReference)cdata[5];
-#ifdef DEBUG
-      Serial.printf("CAN parsed wind SID %d Speed %0.2f Angle %0.4f (%0.4f) ref %d (%x)\n", SID, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, WindSensor::windAngleRadians*(180/M_PI), wRef, cdata[5]);
-      //for (int i=0; i<len; i++) {
-      //  Serial.printf("%02X ", cdata[i]);
-      //}
-#endif
-      WindSpeed();
-      break;
-    } 
-// if I don't get a compass reading for some time, should I set mastCompassDeg to 0?
-// or should I set it to zero after transmitting wind?
-#if 0
-    case 127250: { 
-      mastcompCounter();
-      mastCompassDeg = (((cdata[2] << 8) | cdata[1]) / 10000.0) * RADTODEG;
-      double Deviation = ((cdata[4] << 8) | cdata[3]) / 10000.0;
-      double Variation = ((cdata[6] << 8) | cdata[5]) / 10000.0;
-      int ref = cdata[7];
-#ifdef DEBUG
-      Serial.printf("CAN parsed mast heading %.2f deviation %0.2f Variation %0.2f ref %d\n", mastCompassDeg, Deviation, Variation, ref);
-#endif
-      break;
-    }
-#endif
-  }
-}
-#else
-
-#endif
-
+#endif // PICAN
 
 String can_state;
 
@@ -464,40 +405,39 @@ void PollCANStatus() {
 void OLEDdataWindDebug() {      
   double windSpeedKnots = WindSensor::windSpeedKnots;
   double windAngleDegrees = WindSensor::windAngleDegrees;
-  display.clearDisplay();
-  display.setCursor(0, 5);
-  display.printf("CAN: %s ", can_state.c_str());
+  display->clearDisplay();
+  display->setCursor(0, 5);
+  display->printf("CAN: %s ", can_state.c_str());
   unsigned long uptime = millis() / 1000;
-  display.printf("Up: %lu\n", uptime);
+  display->printf("Up: %lu\n", uptime);
   if (uptime % 60 == 0)  
     logToAll("uptime: " + String(uptime) + " heap: " + String(ESP.getFreeHeap()));
-  display.printf("N2K: %d ", num_n2k_messages);
-  display.printf("Wind: %d\n", num_wind_messages);
-  display.printf("S/A/R:%2.1f/%2.0f/%2.0f\n", windSpeedKnots, windAngleDegrees,rotateout);
-  //display.printf("Rot:%d\n", mastRotate);
+  display->printf("N2K: %d ", num_n2k_messages);
+  display->printf("Wind: %d\n", num_wind_messages);
+  display->printf("S/A/R:%2.1f/%2.0f/%2.0f\n", windSpeedKnots, windAngleDegrees,rotateout);
+  //display->printf("Rot:%d\n", mastRotate);
   if (honeywellOnToggle) {
-    display.printf("Sensor: %d/%d/%d\n", PotLo, PotValue, PotHi);
-    display.printf("Angle: %2.1f\n", mastAngle[0]);
+    display->printf("Sensor: %d/%d/%d\n", PotLo, PotValue, PotHi);
+    display->printf("Angle: %2.1f\n", mastAngle[0]);
   }
   if (compassOnToggle) {
     #ifdef MASTCOMPASS
-    display.printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCalStatus);
+    display->printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCalStatus);
     #ifdef PICOMPASS
-    display.printf("Pi:%.1f\n", boatCompassPi);
+    display->printf("Pi:%.1f\n", boatCompassPi);
     #endif
-    display.printf("Delta: %2d\n", mastAngle[1]);
+    display->printf("Delta: %2d\n", mastAngle[1]);
     #else
-    display.printf("Heading: %.1f\n", boatCompassDeg);
+    display->printf("Heading: %.1f\n", boatCompassDeg);
     #endif
   }
   //Serial.printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
-  display.display();
+  display->display();
 }
 #endif
 
-// TBD: clean up
+#ifdef MQTT
 #include <PicoMQTT.h>
-
 PicoMQTT::Client mqtt("mastcomp.local");
 
 void setupMQTT() {
@@ -526,6 +466,7 @@ void setupMQTT() {
     // Start the client
     mqtt.begin();
 }
+#endif
 
 void setup() {
   Serial.begin(115200);
@@ -539,25 +480,28 @@ void setup() {
 
   //Wire.begin();
 
-#ifdef DISPLAYON  
-#ifdef RS485CAN
-  if(!display.begin(SSD1306_EXTERNALVCC, 0, true))
-#endif
-#ifdef PICAN
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true))
-    Serial.println(F("SSD1306 allocation failed"));
+#ifdef DIYMORE
+  display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
+  if(!display->begin(SSD1306_EXTERNALVCC, 0, true))
+    Serial.println(F("SSD1306 SPI allocation failed"));
   else
-    Serial.println(F("SSD1306 allocation success"));
+    Serial.println(F("SSD1306 SPI allocation success"));
+#endif
+#ifdef OGDISPLAY
+  pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
+  digitalWrite(OLED_RESET, LOW);
+  delay(500);
+  digitalWrite(OLED_RESET, HIGH);
+  display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #endif
 #ifdef SH_ESP32
   i2c = new TwoWire(0);
   i2c->begin(SDA_PIN, SCL_PIN);
-  //display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
-    Serial.println(F("SSD1306 allocation failed"));
+  display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
+  if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+    Serial.println(F("SSD1306 I2C allocation failed"));
   else
-    Serial.println(F("SSD1306 allocation success"));
-#endif
+    Serial.println(F("SSD1306 I2C allocation success"));
 #endif
   // toggle the LED pin at rate of 1 Hz
   pinMode(LED_BUILTIN, OUTPUT);
@@ -584,6 +528,7 @@ void setup() {
   else
     Serial.println("opened NMEA0183 serial port");
 #endif
+#ifdef N2K
   // instantiate the NMEA2000 object for the main bus
   n2kMain = new tNMEA2000_esp32(CAN_TX_PIN, CAN_RX_PIN);
   // Reserve enough buffer for sending all messages.
@@ -607,8 +552,8 @@ void setup() {
   );
   n2kMain->SetMode(tNMEA2000::N2km_ListenAndSend);
   n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
-  n2kMain->EnableForward(false);
-  //n2kMain->SetForwardOwnMessages(true);
+  //n2kMain->EnableForward(false);
+  n2kMain->SetForwardOwnMessages(true);
   n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
   n2kMain->ExtendTransmitMessages(TransmitMessages);
   if (n2kMain->Open()) {
@@ -616,7 +561,7 @@ void setup() {
   } else {
     Serial.println("failed to open n2kMain");
   }
-
+#endif
 #if defined(PICAN) 
   // instantiate the NMEA2000 object for the wind bus
   // does not need to register since it's only listening
@@ -625,9 +570,9 @@ void setup() {
   n2kWind->SetN2kCANMsgBufSize(8);
   n2kWind->SetN2kCANReceiveFrameBufSize(100);
   n2kWind->SetMode(tNMEA2000::N2km_ListenAndSend);
-  //n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
+  n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
   //n2kWind->EnableForward(false); 
-  //n2kWind->SetForwardOwnMessages(true);
+  n2kWind->SetForwardOwnMessages(true);
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   if (n2kWind->Open()) {
     Serial.println("opening n2kWind");
@@ -640,9 +585,9 @@ void setup() {
     //int cRetCode;
     //if ((n2kWind.setBitrate(CAN_250KBPS, MCP_16MHZ) == CAN_OK) && (cRetCode = n2kWind.setListenOnlyMode() == CAN_OK))
   if (n2kWind.begin(CAN_250KBPS, MCP_12MHz) == CAN_OK)
-        Serial.println("CAN0 Initialized.");
+        Serial.println("CAN0 (wind) Initialized.");
     else {
-        Serial.println("CAN0 Initialization Error.");
+        Serial.println("CAN0 (wind) Initialization Error.");
     }
 #endif
  
@@ -687,16 +632,17 @@ void setup() {
   setupPiComp();  // serial connection to RPI Zero with pypilot
 #endif
   mastCompDelta.begin();
+#ifdef DISPLAYON
   Serial.println("OLED started");
-  display.clearDisplay();
-  display.setTextSize(1);             
-  display.setTextColor(SSD1306_WHITE);
-  display.setRotation(2);
-  display.setCursor(10,10);
-  display.println(F("\nESP32 Mast\nRotation\nCorrection"));
-  display.display();
+  display->clearDisplay();
+  display->setTextSize(1);             
+  display->setTextColor(SSD1306_WHITE);
+  display->setRotation(2);
+  display->setCursor(10,10);
+  display->println(F("\nESP32 Mast\nRotation\nCorrection"));
+  display->display();
   Serial.println("display init");
-
+#endif
   if (initWiFi()) {
     startWebServer();
   } else {
@@ -706,9 +652,9 @@ void setup() {
   //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
-
+#ifdef MQTT
   setupMQTT();
-
+#endif
   mastCompassDeg = getMastHeading();
 
 #ifdef ESPNOW
@@ -770,7 +716,9 @@ void setup() {
 #ifdef PICOMPASS
     loopPiComp();
 #endif
+#ifdef MQTT
     mqtt.loop();
+#endif
   });
 
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes

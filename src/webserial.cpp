@@ -52,6 +52,7 @@ extern float mastDelta;
 
 extern int num_n2k_messages;
 extern int num_wind_messages;
+extern int num_wind_other;
 
 void mastHeading();
 extern int mastAngle[2]; // array for both sensors
@@ -202,6 +203,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 #ifdef N2K
       WebSerial.println("           n2k main: " + String(num_n2k_messages));
       WebSerial.println("           n2k wind: " + String(num_wind_messages));
+      WebSerial.println("   n2k wind (other): " + String(num_wind_other));
 #endif
       WebSerial.flush();
     }
@@ -263,11 +265,13 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       WebSerial.println("Compass: " + String(compassOnToggle));
       WebSerial.println("Honeywell: " + String(honeywellOnToggle));
     }
+#ifdef NMEA0183
     if (words[i].equals("gps") && pBD) {
       //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
       WebSerial.println("Latitude: " + String(pBD->Latitude));
       WebSerial.println("Longitude: " + String(pBD->Longitude));
     }
+#endif
     if (words[i].equals("webserver")) {
       WebSerial.print("local IP: ");
       WebSerial.println(WiFi.localIP());
