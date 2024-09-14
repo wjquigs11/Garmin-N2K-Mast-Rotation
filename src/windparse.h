@@ -101,7 +101,7 @@ extern unsigned long total_time_since_last_wind;
 extern unsigned long avg_time_since_last_wind;
 extern String host;
 
-extern bool compassReady;
+extern bool imuReady;
 extern const int CMPS14_ADDRESS;
 extern const int ADABNO;
 extern const int bno08x_RESET;

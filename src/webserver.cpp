@@ -201,7 +201,7 @@ void startWebServer() {
   //demoModeToggle = (preferences.getString("demoModeTog", "false") == "true") ? true : false;
   logToAll("demo = " + String(demoModeToggle));
   WebTimerDelay = preferences.getInt("WebTimerDelay", 500);
-  mastOrientation = preferences.getInt("mastOrientation", 0);
+  //mastOrientation = preferences.getInt("mastOrientation", 0);
   sensOrientation = preferences.getInt("sensOrientation", 0);
   boatOrientation = preferences.getInt("boatOrientation", 0);
   compassFrequency = preferences.getInt("compassFreq", 50);
