@@ -49,14 +49,14 @@ int hallLoop() {
     float magZ = sensor.getZData();
     float temp = sensor.getTemp()*9/5+32;
     int totalMag = abs(magX) + abs(magY) + abs(magZ);
-    if (teleplot) {
+    if (teleplot && 0) {
       Serial.print(">magX:");
       Serial.println(magX);
       Serial.print(">magY:");
       Serial.println(magY);
       Serial.print(">magZ:");
       Serial.println(magZ);
-      Serial.println(">temp:");
+      Serial.println("temp:");
       Serial.println(temp);
       Serial.print(">totalMag:");
       Serial.println(totalMag);
@@ -302,7 +302,7 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
 float getCompass(int correction) {
   //Serial.printf("getcompass corr %d ", correction);
   float compassVal;
-  if (!compassReady)
+  if (!imuReady)
     return -1;
 #ifdef CMPS14
   compassVal = getCMPS14(correction);

@@ -184,6 +184,12 @@ int mastAngle[2]; // array for both sensors
 float getMastHeading();
 void i2cscan();
 
+#ifdef ICM209
+extern ICM_20948_I2C imu; // create an ICM_20948_I2C
+bool compassReady=false;
+float getICMheading(int correction);
+#endif
+
 #ifdef CMPS14
 const int CMPS14_ADDRESS = 0x60;
 // robotshop CMPS14 (boat compass)
@@ -196,7 +202,7 @@ const int bno08x_RESET = -1;
 Adafruit_BNO08x bno08x(bno08x_RESET);
 sh2_SensorValue_t sensorValue;
 #endif
-bool compassReady=false;
+bool imuReady=false;
 #ifdef PICOMPASS
 void setupPiComp();
 void loopPiComp();
@@ -234,8 +240,6 @@ void ParseWindN2K(const tN2kMsg &N2kMsg);
 void ParseCompassN2K(const tN2kMsg &N2kMsg);
 #endif
 void BoatSpeed(const tN2kMsg &N2kMsg);
-
-void loopHTTPC();
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 
@@ -598,13 +602,21 @@ void setup() {
 
   Serial.print("ESP local MAC addr: ");
   Serial.println(WiFi.macAddress());
-
+#ifdef ICM209
+  imu.begin(Wire, AD0_VAL);
+  if (imu.status != ICM_20948_Stat_Ok) {
+    Serial.println(F("ICM_90248 not detected"));
+  } else {
+    Serial.println(F("ICM_90248 detected"));
+    compassReady = true;
+  }
+#endif
 #if defined(CMPS14)
   // check compass
   //Wire.begin(SDA_PIN,SCL_PIN);
   Wire.beginTransmission(CMPS14_ADDRESS);
   // null return indicates no error; compass present
-  if (compassReady = (!Wire.endTransmission()))
+  if (imuReady = (!Wire.endTransmission()))
     Serial.println("CMPS14 present");
   else {
     Serial.println("CMPS14 not found");
@@ -612,11 +624,11 @@ void setup() {
   }
 #endif
 #ifdef BNO08X
-  // compassReady means we have a local boat compass in the controller
+  // imuReady means we have a local boat compass in the controller
   // compassOnTog used for turning it on and off
   //Wire.begin(); // getting an error that it's already on?
-  compassReady = bno08x.begin_I2C(BNO08X);
-  if (compassReady) {
+  imuReady = bno08x.begin_I2C(BNO08X);
+  if (imuReady) {
     Serial.println("Adafruit_BNO08x bno08x Found");
     for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
       String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
@@ -655,7 +667,6 @@ void setup() {
 #ifdef MQTT
   setupMQTT();
 #endif
-  mastCompassDeg = getMastHeading();
 
 #ifdef ESPNOW
   setupESPNOW();
@@ -708,8 +719,8 @@ void setup() {
     // we can change mastorientation to the difference between the two IMU readings
     if ((hallValue = hallLoop()) > HALL_LIMIT) {
       if (time_since_last_hall_adjust > HALL_DELAY) {
-        logToAll("Hall effect detected; mast delta: " + String(mastDelta,2));
-        mastOrientation += mastDelta;
+        logToAll("Hall effect detected, mast (raw): " + String(mastCompassDeg,2) + " mast (cor): " + String(mastCompassDeg+mastOrientation,2) + " boat: " + String(boatCompassDeg,2) + " delta: " + String(mastDelta,2));
+        //mastOrientation = mastDelta;
         time_since_last_hall_adjust = 0;
       }
     }
@@ -762,8 +773,8 @@ void setup() {
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
       // the global boatCompassDeg will always contain the boat compass (magnetic)
     // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
-    boatCompassDeg = getCompass(boatOrientation);
-    //mastCompassDeg = getMastHeading();
+
+    mastCompassDeg = getCompass(0);
     //logToAll("mastCompassDeg: " + String(mastCompassDeg));
     float delta = readCompassDelta(); // sets mastDelta
     if (teleplot) {
@@ -814,7 +825,12 @@ void setup() {
   #endif // DISPLAYON
 }
 
-void loop() { app.tick(); }
+void loop() { 
+  app.tick(); 
+  #ifdef ICM209
+    boatCompassDeg = getICMheading(boatOrientation);
+  #endif
+}
 
 void demoInit() {
   WindSensor::windSpeedKnots = 9.8;

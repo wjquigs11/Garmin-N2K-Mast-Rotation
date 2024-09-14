@@ -21,3 +21,8 @@ extern compass_s compassParams;
 
 #define BNO08X_INT  -1
 #define BNO08X_RST  -1
+
+#include "ICM_20948.h"
+#define WIRE_PORT Wire // desired Wire port.
+#define AD0_VAL 1      // value of the last bit of the I2C address.
+// default I2C address = 0x69

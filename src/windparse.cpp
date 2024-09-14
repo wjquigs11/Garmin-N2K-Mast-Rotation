@@ -1,9 +1,5 @@
 // parse wind speed, correct for mast rotation
 
-
-#define RS485CAN  // *** REMOVE LATER THIS IS JUST FOR VS CODE !!!
-
-
 #include "compass.h"
 #include "windparse.h"
 
@@ -126,7 +122,7 @@ int compassDifference(int angle1, int angle2) {
 }
 
 float readCompassDelta() {
-  if (compassReady) {
+  if (imuReady) {
     mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
     //logToAll("mastDelta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
@@ -311,9 +307,9 @@ void ParseWindCAN() {
   PGN = ((ID & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
   uint8_t SRC = ID & 0xFF;
   SID = cdata[0];
-//#ifdef DEBUG
+#ifdef DEBUG
   Serial.printf("CAN PGN %d SRC %d SID %d len %d\n", PGN, SRC, SID, len);
-//#endif
+#endif
   switch (PGN) {
     case 130306: { 
       if (windCANsrc == 0) // this is our first wind packet, track the source
