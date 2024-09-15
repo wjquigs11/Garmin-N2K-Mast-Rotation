@@ -150,11 +150,6 @@ void startWebServer();
 bool sendMastControl();
 String getSensorReadings();
 
-#ifdef ESPNOW
-void setupESPNOW();
-void espNowBroadcast();
-#endif
-
 String host = "ESPwind";
 
 // mast compass
@@ -169,9 +164,6 @@ extern int sensOrientation; // delta between mast centered and Honeywell sensor 
 extern int boatOrientation; // delta between boat compass and magnetic north
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
-#ifdef PICOMPASS
-extern float boatCompassPi;
-#endif
 extern float mastDelta;
 extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
@@ -182,30 +174,39 @@ int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 float getMastHeading();
-void i2cscan();
 
-#ifdef ICM209
-extern ICM_20948_I2C imu; // create an ICM_20948_I2C
-bool compassReady=false;
-float getICMheading(int correction);
-#endif
+#define W1SCL 33
+#define W1SDA 32
 
 #ifdef CMPS14
 const int CMPS14_ADDRESS = 0x60;
 // robotshop CMPS14 (boat compass)
 #endif
-#ifdef BNO08X
+#if defined(BNO08X) || defined (MASTIMU)
 // compass but now defined in Adafruit_BNO08x bno08x directive
-const int ADABNO = 0x4A;
-const int SFBNO = 0x4B;
+//const int ADABNO = 0x4A;
+//const int SFBNO = 0x4B;
 const int bno08x_RESET = -1;
 Adafruit_BNO08x bno08x(bno08x_RESET);
 sh2_SensorValue_t sensorValue;
 #endif
 bool imuReady=false;
-#ifdef PICOMPASS
-void setupPiComp();
-void loopPiComp();
+bool mastIMUready=false;
+#ifdef ICM209
+extern ICM_20948_I2C imu; // create an ICM_20948_I2C object imu;
+void getICMheading(void *parameter);
+extern movingAvg avgYaw;
+// ICM20948 needs its own thread
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+TaskHandle_t Task1;
+void getICMheading(void *parameter);
+void Task1Function(void *pvParameters) {
+  for (;;) {
+    Serial.println("Task1 is running");
+    vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay for 1 second
+  }
+}
 #endif
 
 // Time after which we should reboot if we haven't received any CAN messages
@@ -217,7 +218,7 @@ extern bool teleplot;
 void WebSerialonMessage(uint8_t *data, size_t len);
 void logToAll(String s);
 void logToAlln(String s);
-void i2cScan();
+void i2cScan(TwoWire Wire);
 void demoIncr();
 float readCompassDelta();
 void initHall();
@@ -349,13 +350,6 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     case 128259L:
       BoatSpeed(N2kMsg);
       break; 
-#if 0   // switching to ESPNOW (for the time being)
-    case 127250L:
-      mastcompCounter();
-      //Serial.printf("WIND Heading: %d\n", N2kMsg.PGN);
-      if (compassOnToggle) ParseCompassN2K(N2kMsg);
-      break;
-#endif
   } 
   // TBD: pass-through everything that's not from the same source as the wind PGN (for Paul with depth transducer on wind bus)
 }
@@ -427,9 +421,6 @@ void OLEDdataWindDebug() {
   if (compassOnToggle) {
     #ifdef MASTCOMPASS
     display->printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCalStatus);
-    #ifdef PICOMPASS
-    display->printf("Pi:%.1f\n", boatCompassPi);
-    #endif
     display->printf("Delta: %2d\n", mastAngle[1]);
     #else
     display->printf("Heading: %.1f\n", boatCompassDeg);
@@ -437,38 +428,6 @@ void OLEDdataWindDebug() {
   }
   //Serial.printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
   display->display();
-}
-#endif
-
-#ifdef MQTT
-#include <PicoMQTT.h>
-PicoMQTT::Client mqtt("mastcomp.local");
-
-void setupMQTT() {
-    // Subscribe to a topic pattern and attach a callback
-    mqtt.subscribe("#", [](const char * topic, const char * payload) {
-        //Serial.printf("Received message in topic '%s' payload %s\n", topic, payload);
-        mastCompassDeg = atof(payload);
-#if 0
-        JSONVar myObject = JSON.parse(payload);
-        if (JSON.typeof(myObject) == "undefined") {
-          Serial.println("Parsing input failed!");
-          return;
-        }
-        String bS = JSON.stringify(myObject["bearing"]);
-        bS.replace("\"", ""); // Remove quotes
-        float bearing = bS.toFloat();
-        int variation = myObject["variation"];
-        int orientation = myObject["orientation"];
-        int frequency = myObject["frequency"];
-        int calstatus = myObject["calstatus"];
-        //Serial.printf("%s %0.2f %d %d %d %d\n", bS.c_str(), bearing, variation, orientation, frequency, calstatus);
-        mastCompassDeg = bearing;
-#endif
-    });
-
-    // Start the client
-    mqtt.begin();
 }
 #endif
 
@@ -482,7 +441,13 @@ void setup() {
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
 
-  //Wire.begin();
+  Wire.setClock(100000);
+
+  if (Wire1.begin(W1SDA, W1SCL))
+    Serial.println("Wire1 OK");
+  else
+    Serial.println("Wire1 FAIL");
+  Wire1.setClock(100000);
 
 #ifdef DIYMORE
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
@@ -602,15 +567,8 @@ void setup() {
 
   Serial.print("ESP local MAC addr: ");
   Serial.println(WiFi.macAddress());
-#ifdef ICM209
-  imu.begin(Wire, AD0_VAL);
-  if (imu.status != ICM_20948_Stat_Ok) {
-    Serial.println(F("ICM_90248 not detected"));
-  } else {
-    Serial.println(F("ICM_90248 detected"));
-    compassReady = true;
-  }
-#endif
+ 
+  // imuReady means we have a local boat compass in the controller
 #if defined(CMPS14)
   // check compass
   //Wire.begin(SDA_PIN,SCL_PIN);
@@ -620,29 +578,59 @@ void setup() {
     Serial.println("CMPS14 present");
   else {
     Serial.println("CMPS14 not found");
-    i2cScan();
+    i2cScan(TwoWire Wire);
   }
 #endif
-#ifdef BNO08X
-  // imuReady means we have a local boat compass in the controller
-  // compassOnTog used for turning it on and off
-  //Wire.begin(); // getting an error that it's already on?
-  imuReady = bno08x.begin_I2C(BNO08X);
+#ifdef BNO08X // TBD: probably remove. Unlikely we're going to use BNO as boat compass
+  imuReady = bno08x.begin_I2C(BNO08X,&Wire1);
   if (imuReady) {
-    Serial.println("Adafruit_BNO08x bno08x Found");
+    Serial.println("Adafruit_BNO08x bno08x Found (boat compass)");
     for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
       String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
       Serial.println(logString);
     }
-    initHall(); // hall effect sensor for zero
   } else {
     Serial.printf("Failed to find Adafruit_BNO08x bno08x chip @ 0x%x\n", BNO08X);
-    i2cScan();
+    i2cScan(Wire1);
   }
 #endif
-#ifdef PICOMPASS
-  setupPiComp();  // serial connection to RPI Zero with pypilot
+#ifdef ICM209
+  imu.begin(Wire1, ICM209);
+  imuReady = (imu.status == ICM_20948_Stat_Ok);
+  if (imuReady) {
+    xTaskCreatePinnedToCore(
+      getICMheading, // Task function
+      "getICMheading",      // Name of task
+      2048,        // Stack size (bytes)
+      NULL,         // Parameter to pass to the function
+      1,            // Priority of the task
+      &Task1,        // Task handle
+      1
+    );
+    Serial.println("ICM20948 found.\n");
+    avgYaw.begin();
+  } else {
+    Serial.printf("Failed to find ICM20948\n");
+    i2cScan(Wire1);
+  }
 #endif
+#ifdef MASTIMU
+  mastIMUready = bno08x.begin_I2C(MASTIMU,&Wire);
+  if (mastIMUready) {
+    Serial.println("Mast IMU bno08x Found (mast imu)");
+    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
+      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
+      Serial.println(logString);
+    }
+  } else {
+    Serial.printf("Failed to find Adafruit_BNO08x bno08x chip @ 0x%x\n", MASTIMU);
+    i2cScan(Wire);
+  }
+#endif
+  if (imuReady && mastIMUready)
+    initHall(); // hall effect sensor for zero
+  else Serial.printf("Hall not initialized imu: %d mast: %d\n", imuReady, mastIMUready);
+  // init compass
   mastCompDelta.begin();
 #ifdef DISPLAYON
   Serial.println("OLED started");
@@ -664,14 +652,6 @@ void setup() {
   //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
-#ifdef MQTT
-  setupMQTT();
-#endif
-
-#ifdef ESPNOW
-  setupESPNOW();
-  espNowBroadcast();
-#endif
 
   Serial.printf("ESP flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
 
@@ -715,21 +695,18 @@ void setup() {
 
   app.onRepeat(10, []() {
     WebSerial.loop();
+  });
+  
+  app.onRepeat(10, []() {
     // when Hall effect sensor is triggered, mast is centered
     // we can change mastorientation to the difference between the two IMU readings
     if ((hallValue = hallLoop()) > HALL_LIMIT) {
       if (time_since_last_hall_adjust > HALL_DELAY) {
         logToAll("Hall effect detected, mast (raw): " + String(mastCompassDeg,2) + " mast (cor): " + String(mastCompassDeg+mastOrientation,2) + " boat: " + String(boatCompassDeg,2) + " delta: " + String(mastDelta,2));
-        //mastOrientation = mastDelta;
+        mastOrientation = mastDelta;
         time_since_last_hall_adjust = 0;
       }
     }
-#ifdef PICOMPASS
-    loopPiComp();
-#endif
-#ifdef MQTT
-    mqtt.loop();
-#endif
   });
 
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
@@ -766,14 +743,14 @@ void setup() {
 });
 
   // check in for new heading 100 msecs = 10Hz
-  if (compassReady && !demoModeToggle)
+  if (imuReady && !demoModeToggle)
     app.onRepeat(compassFrequency, []() {
       // TBD: delete reaction and recreate if frequency changes
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
       // the global boatCompassDeg will always contain the boat compass (magnetic)
     // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
-
+    //boatCompassDeg = getICMheading(0); moved to task
     mastCompassDeg = getCompass(0);
     //logToAll("mastCompassDeg: " + String(mastCompassDeg));
     float delta = readCompassDelta(); // sets mastDelta
@@ -827,9 +804,6 @@ void setup() {
 
 void loop() { 
   app.tick(); 
-  #ifdef ICM209
-    boatCompassDeg = getICMheading(boatOrientation);
-  #endif
 }
 
 void demoInit() {
