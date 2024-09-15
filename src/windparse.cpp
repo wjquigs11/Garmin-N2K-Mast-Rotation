@@ -160,7 +160,6 @@ void WindSpeed() {
   }
   // read rotation value and correct
   // either read from Honeywell sensor, or from external compass, or both
-  // if external compass, reading will be updated in espnow.cpp
   mastRotate = 0.0;
   if (honeywellOnToggle) {
     mastRotate = readAnalogRotationValue();

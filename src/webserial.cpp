@@ -40,10 +40,6 @@ extern const char* serverName;
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
-#ifdef PICOMPASS
-extern float boatCompassPi;
-extern int piCompCount;
-#endif
 extern int boatCalStatus;
 #ifdef CMPS14
 extern byte calibrationStatus[];
@@ -69,12 +65,6 @@ void WindSpeed(const tN2kMsg &N2kMsg);
 #endif
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
-#ifdef ESPNOW
-void espNowBroadcast();
-extern bool foundPeer;
-extern int rxCount;
-void sendMastControl();
-#endif
 extern int reportType;
 
 #ifdef BNO08X
@@ -124,7 +114,7 @@ void lsAPconn() {
     }
 }
 
-void i2cScan() {
+void i2cScan(TwoWire Wire) {
   byte error, address;
   int nDevices = 0;
   logToAll("Scanning...");
@@ -210,10 +200,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     if (words[i].equals("compass")) {
       WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
       WebSerial.println("       Calibration(0-3): " + String(boatCalStatus));
-#ifdef PICOMPASS
-      WebSerial.println("        Boat Pi Compass: " + String(boatCompassPi));
-      WebSerial.println("                 piComp: " + String(piCompCount));
-#endif
 #ifdef CMPS14
       WebSerial.printf("            [Calibration]: ");
       String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
@@ -248,7 +234,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       //WebSerial.println("done");
     }
     if (words[i].equals("scan")) {
-      i2cScan();
+      i2cScan(Wire);
     }
     if (words[i].equals("readings")) {
       WebSerial.println(readings);
@@ -291,14 +277,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       if (time_since_last_wind_rx > 0.0)
         WebSerial.println(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
     }    
-#ifdef ESPNOW
-    if (words[i].equals("espnow")) {
-      WebSerial.println("espnow peer? " + String(foundPeer));
-      WebSerial.println("espnow rx count: " + String(rxCount));
-      WebSerial.println("sending broadcast...");
-      espNowBroadcast();
-    }
-#endif
     if (words[i].equals("teleplot")) {
       teleplot = !teleplot;
       logToAll("teleplot: " + teleplot?"on":"off");
@@ -321,9 +299,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         reportType = (int)strtol(words[i].c_str(), NULL, 16);
         preferences.putInt("rtype", reportType);
         WebSerial.printf("compass report type set to 0x%x\n", reportType);
-#ifdef ESPNOW
-        sendMastControl();
-#endif
 #ifdef BNO08X
         if (!bno08x.enableReport(reportType)) 
                 WebSerial.printf("Could not enable local report 0x%x\n",reportType);

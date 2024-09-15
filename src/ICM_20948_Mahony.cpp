@@ -1,5 +1,3 @@
-#define ICM209
-#ifdef ICM209
 // Mahony AHRS for the ICM_20948  S.J. Remington 6/2021
 // Requires the Sparkfun ICM_20948 library
 // Standard sensor orientation X North (yaw=0), Y West, Z up
@@ -26,9 +24,8 @@
 
 */
 
-#include <Arduino.h>
-#include <Wire.h>
-#include <ICM_20948.h> // Click here to get the library: http://librarymanager/All#SparkFun_ICM_20948_IMU
+#include "ICM_20948.h" // Click here to get the library: http://librarymanager/All#SparkFun_ICM_20948_IMU
+#include <movingAvg.h>
 #include "compass.h"
 
 //////////////////////////
@@ -36,7 +33,8 @@
 //////////////////////////
 // default settings for accel and magnetometer
 
-
+#define WIRE_PORT Wire // desired Wire port.
+#define AD0_VAL 1      // value of the last bit of the I2C address.
 // On the SparkFun 9DoF IMU breakout the default is 1, and when
 // the ADR jumper is closed the value becomes 0
 
@@ -48,24 +46,28 @@ ICM_20948_I2C imu; // create an ICM_20948_I2C object imu;
 
 //Gyro default scale 250 dps. Convert to radians/sec subtract offsets
 float Gscale = (M_PI / 180.0) * 0.00763; //250 dps scale sensitivity = 131 dps/LSB
-float G_offset[3] = { -172.9, 166.3, 11.5}; 
+float G_offset[3] = {-18.3, 37.2, 24.8};
 
+//Accel scale: divide by 16604.0 to normalize
 float A_B[3]
- { -635.26 , 1208.36 , 341.94 };
+{   79.60,  -18.56,  383.31};
 
 float A_Ainv[3][3]
-{{ 0.06465 , 0.00207 , 0.00276 },
-{ 0.00207 , 0.06477 , 0.00223 },
-{ 0.00276 , 0.00223 , 0.05834 }};
+{ {  1.00847,  0.00470, -0.00428},
+  {  0.00470,  1.00846, -0.00328},
+  { -0.00428, -0.00328,  0.99559}
+};
 
 //Mag scale divide by 369.4 to normalize
-float M_B[3]
- {-10.65344974, -26.85176801, 44.61564847};
+float M_B[3] = { -121.47 , 106.46 , -58.1 };
 
-float M_Ainv[3][3]
- { {3.00647419e+00,  9.60332910e-02, -3.83510520e-04},
- { 9.60332910e-02,  2.77286844e+00,  3.49284717e-01},
- {-3.83510520e-04,  3.49284717e-01,  2.69262449e+00} };
+float M_Ainv[3][3] = {
+{ 3.13678 , -0.11358 , -0.00561 },
+{ -0.11358 , 2.91054 , -0.02742 },
+{ -0.00561 , -0.02742 , 2.98084 }};
+
+// local magnetic declination in degrees
+float declination = VARIATION;
 
 // These are the free parameters in the Mahony filter and fusion scheme,
 // Kp for proportional feedback, Ki for integral
@@ -73,193 +75,125 @@ float M_Ainv[3][3]
 #define Kp 50.0
 #define Ki 0.0
 
+movingAvg avgYaw(25);
+
+unsigned long ICMnow = 0, ICMlast = 0; //micros() timers for AHRS loop
+float ICMdeltat = 0;  //loop time in seconds
+
+#define UPDATE_SPEED 100
+unsigned long lastUpdate = 0;
+#define PRINT_SPEED 0 // ms between angle prints (0 for none)
+unsigned long lastPrint = 0; // Keep track of print time
+
 // Vector to hold quaternion
 static float q[4] = {1.0, 0.0, 0.0, 0.0};
 static float yaw, pitch, roll; //Euler angle output
+
+extern float boatCompassDeg; // magnetic heading not corrected for variation
 
 float calculateHeading(float r, float i, float j, float k, int correction);
 void get_scaled_IMU(float Gxyz[3], float Axyz[3], float Mxyz[3]);
 void MahonyQuaternionUpdate(float ax, float ay, float az, float gx, float gy, float gz, float mx, float my, float mz, float deltat);
 
-unsigned long ICMnow = 0, ICMlast = 0; //micros() timers for AHRS loop
-float ICMdeltat = 0;  //loop time in seconds
-
 #if 0
-unsigned long now = 0, last = 0; //micros() timers for AHRS loop
-float deltat = 0;  //loop time in seconds
-#endif
-
-#define PRINT_SPEED 100 // ms between angle prints
-unsigned long lastPrint = 0; // Keep track of print time
-
-#if 0
-void setupICM()
+void setup()
 {
   Serial.begin(115200);
   while (!Serial); //wait for connection
   WIRE_PORT.begin();
-  WIRE_PORT.setClock(400000);
+  WIRE_PORT.setClock(100000);
   imu.begin(WIRE_PORT, AD0_VAL);
   if (imu.status != ICM_20948_Stat_Ok) {
     Serial.println(F("ICM_90248 not detected"));
     while (1);
   }
+  avgYaw.begin();
 }
 #endif
 
-float getICMheading(int correction) {
-
-  static int loop_counter = 0; //sample & update loop counter
-  static float Gxyz[3], Axyz[3], Mxyz[3]; //centered and scaled gyro/accel/mag data
-
-
-  // Update the sensor values whenever new data is available
-  if ( imu.dataReady() ) {
-
-    imu.getAGMT();
-
-    loop_counter++;
-    get_scaled_IMU(Gxyz, Axyz, Mxyz);
-
-    // reconcile magnetometer and accelerometer axes. X axis points magnetic North for yaw = 0
-
-    Mxyz[1] = -Mxyz[1]; //reflect Y and Z
-    Mxyz[2] = -Mxyz[2]; //must be done after offsets & scales applied to raw data
-
-    ICMnow = micros();
-    ICMdeltat = (ICMnow - ICMlast) * 1.0e-6; //seconds since last update
-    ICMlast = ICMnow;
-
-    Serial.printf(">cor:%lu:%d\n", ICMnow*1000,correction);
-    Serial.printf(">Axyz[0]:%lu:%.4f\n", ICMnow*1000, Axyz[0]);
-    Serial.printf(">Axyz[1]:%lu:%.4f\n", ICMnow*1000, Axyz[1]);
-    Serial.printf(">Axyz[2]:%lu:%.4f\n", ICMnow*1000, Axyz[2]);
-    Serial.printf(">Gxyz[0]:%lu:%.4f\n", ICMnow*1000, Gxyz[0]);
-    Serial.printf(">Gxyz[1]:%lu:%.4f\n", ICMnow*1000, Gxyz[1]);
-    Serial.printf(">Gxyz[2]:%lu:%.4f\n", ICMnow*1000, Gxyz[2]);
-    Serial.printf(">Mxyz[0]:%lu:%.4f\n", ICMnow*1000, Mxyz[0]);
-    Serial.printf(">Mxyz[1]:%lu:%.4f\n", ICMnow*1000, Mxyz[1]);
-    Serial.printf(">Mxyz[2]:%lu:%.4f\n", ICMnow*1000, Mxyz[2]);
-
-    //   Gxyz[0] = Gxyz[1] = Gxyz[2] = 0;
-    MahonyQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0], Gxyz[1], Gxyz[2],
-                           Mxyz[0], Mxyz[1], Mxyz[2], ICMdeltat);
-
-    if (millis() - lastPrint > PRINT_SPEED) {
-
-      // Define Tait-Bryan angles. Strictly valid only for approximately level movement
-      
-      // Standard sensor orientation : X magnetic North, Y West, Z Up (NWU)
-      // this code corrects for magnetic declination.
-      // Pitch is angle between sensor x-axis and Earth ground plane, toward the
-      // Earth is positive, up toward the sky is negative. Roll is angle between
-      // sensor y-axis and Earth ground plane, y-axis up is positive roll.
-      // Tait-Bryan angles as well as Euler angles are
-      // non-commutative; that is, the get the correct orientation the rotations
-      // must be applied in the correct order.
-      //
-      // http://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-      // which has additional links.
-            
-      // WARNING: This angular conversion is for DEMONSTRATION PURPOSES ONLY. It WILL
-      // MALFUNCTION for certain combinations of angles! See https://en.wikipedia.org/wiki/Gimbal_lock
-      
-      roll  = atan2((q[0] * q[1] + q[2] * q[3]), 0.5 - (q[1] * q[1] + q[2] * q[2]));
-      pitch = asin(2.0 * (q[0] * q[2] - q[1] * q[3]));
-      yaw   = atan2((q[1] * q[2] + q[0] * q[3]), 0.5 - ( q[2] * q[2] + q[3] * q[3]));
-    
-      // to degrees
-      yaw   *= 180.0 / PI;
-      pitch *= 180.0 / PI;
-      roll *= 180.0 / PI;
-
-      // http://www.ngdc.noaa.gov/geomag-web/#declination
-      //conventional nav, yaw increases CW from North, corrected for local magnetic declination
-
-      yaw = -(yaw + correction);
-      if (yaw < 0) yaw += 360.0;
-      if (yaw >= 360.0) yaw -= 360.0;
-
-      Serial.print(">y:");
-      Serial.print(lastPrint);
-      Serial.print(":");
-      Serial.println(yaw, 2);
-
-      loop_counter = 0;
-      //Serial.println();
-      lastPrint = millis(); // Update lastPrint time
-    }
-  }
-  return yaw;
-}
-
-#if 0
+void getICMheading(void *pvParameters) {
+  for (;;) {
+    static int loop_counter = 0; //sample & update loop counter
     static float Gxyz[3], Axyz[3], Mxyz[3]; //centered and scaled gyro/accel/mag data
+    unsigned long time;
 
-  // Update the sensor values whenever new data is available
-  if ( imu.dataReady() ) {
+    // Update the sensor values whenever new data is available
+    if ( imu.dataReady() ) {
 
-    imu.getAGMT();
+      imu.getAGMT();
 
-    get_scaled_IMU(Gxyz, Axyz, Mxyz);
+      loop_counter++;
+      get_scaled_IMU(Gxyz, Axyz, Mxyz);
 
-    // reconcile magnetometer and accelerometer axes. X axis points magnetic North for yaw = 0
+      // reconcile magnetometer and accelerometer axes. X axis points magnetic North for yaw = 0
 
-    //Mxyz[1] = -Mxyz[1]; //reflect Y and Z
-    //Mxyz[2] = -Mxyz[2]; //must be done after offsets & scales applied to raw data
+      Mxyz[1] = -Mxyz[1]; //reflect Y and Z
+      Mxyz[2] = -Mxyz[2]; //must be done after offsets & scales applied to raw data
 
-    ICMnow = micros();
-    ICMdeltat = (ICMnow - ICMlast) * 1.0e-6; //seconds since last update
-    ICMlast = ICMnow;
+      ICMnow = micros();
+      ICMdeltat = (ICMnow - ICMlast) * 1.0e-6; //seconds since last update
+      ICMlast = ICMnow;
 
-    //   Gxyz[0] = Gxyz[1] = Gxyz[2] = 0;
-    MahonyQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0], Gxyz[1], Gxyz[2],
-                           Mxyz[0], Mxyz[1], Mxyz[2], ICMdeltat);
+      //   Gxyz[0] = Gxyz[1] = Gxyz[2] = 0;
+      MahonyQuaternionUpdate(Axyz[0], Axyz[1], Axyz[2], Gxyz[0], Gxyz[1], Gxyz[2],
+                            Mxyz[0], Mxyz[1], Mxyz[2], ICMdeltat);
 
-    Serial.printf(">Axyz[0]:%lu:%.4f\n", ICMnow*1000, Axyz[0]);
-    Serial.printf(">Axyz[1]:%lu:%.4f\n", ICMnow*1000, Axyz[1]);
-    Serial.printf(">Axyz[2]:%lu:%.4f\n", ICMnow*1000, Axyz[2]);
-    Serial.printf(">Gxyz[0]:%lu:%.4f\n", ICMnow*1000, Gxyz[0]);
-    Serial.printf(">Gxyz[1]:%lu:%.4f\n", ICMnow*1000, Gxyz[1]);
-    Serial.printf(">Gxyz[2]:%lu:%.4f\n", ICMnow*1000, Gxyz[2]);
-    Serial.printf(">Mxyz[0]:%lu:%.4f\n", ICMnow*1000, Mxyz[0]);
-    Serial.printf(">Mxyz[1]:%lu:%.4f\n", ICMnow*1000, Mxyz[1]);
-    Serial.printf(">Mxyz[2]:%lu:%.4f\n", ICMnow*1000, Mxyz[2]);
+      if ((time = millis()) - lastUpdate > UPDATE_SPEED) {
 
-    //float yaw = calculateHeading(q[0], q[1], q[2], q[3], correction);
-    //float yaw = atan2(2.0 * (q[2] * q[3] + q[0] * q[1]), q[0] * q[0] + q[1] * q[1] - q[2] * q[2] - q[3] * q[3]);
-    //float yaw   = atan2((q[1] * q[2] + q[0] * q[3]), 0.5 - ( q[2] * q[2] + q[3] * q[3]));
-    float siny_cosp = 2 * (q[0] * q[3] + q[1] * q[2]);
-    float cosy_cosp = 1 - 2 * (q[2] * q[2] + q[3] * q[3]);
-     yaw = atan2(siny_cosp, cosy_cosp);
-    //yaw   = atan2((q[1] * q[2] + q[0] * q[3]), 0.5 - ( q[2] * q[2] + q[3] * q[3]));
-    // to degrees
-    yaw   *= RADTODEG;
+        // Define Tait-Bryan angles. Strictly valid only for approximately level movement
+        
+        // Standard sensor orientation : X magnetic North, Y West, Z Up (NWU)
+        // this code corrects for magnetic declination.
+        // Pitch is angle between sensor x-axis and Earth ground plane, toward the
+        // Earth is positive, up toward the sky is negative. Roll is angle between
+        // sensor y-axis and Earth ground plane, y-axis up is positive roll.
+        // Tait-Bryan angles as well as Euler angles are
+        // non-commutative; that is, the get the correct orientation the rotations
+        // must be applied in the correct order.
+        //
+        // http://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+        // which has additional links.
+              
+        // WARNING: This angular conversion is for DEMONSTRATION PURPOSES ONLY. It WILL
+        // MALFUNCTION for certain combinations of angles! See https://en.wikipedia.org/wiki/Gimbal_lock
+        
+        roll  = atan2((q[0] * q[1] + q[2] * q[3]), 0.5 - (q[1] * q[1] + q[2] * q[2]));
+        pitch = asin(2.0 * (q[0] * q[2] - q[1] * q[3]));
+        yaw   = atan2((q[1] * q[2] + q[0] * q[3]), 0.5 - ( q[2] * q[2] + q[3] * q[3]));
+        // to degrees
+        yaw   *= 180.0 / PI;
+        pitch *= 180.0 / PI;
+        roll *= 180.0 / PI;
 
-    // http://www.ngdc.noaa.gov/geomag-web/#declination
-    //conventional nav, yaw increases CW from North, corrected for local magnetic declination
+        // http://www.ngdc.noaa.gov/geomag-web/#declination
+        //conventional nav, yaw increases CW from North, corrected for local magnetic declination
 
-    yaw = -(yaw + correction);
-    if (yaw < 0) yaw += 360.0;
-    if (yaw >= 360.0) yaw -= 360.0;
+        yaw = -(yaw + declination);
+        if (yaw < 0) yaw += 360.0;
+        if (yaw >= 360.0) yaw -= 360.0;
 
-    Serial.print(">y:");
-    Serial.print(ICMnow*1000);
-    Serial.print(":");
-    Serial.println(yaw, 2);
-    Serial.print(">deltat:");
-    Serial.print(ICMnow*1000);
-    Serial.print(":");
-    Serial.println(ICMdeltat*1000, 4);
-    Serial.printf(">q0:%lu:%.4f\n", ICMnow*1000, q[0]);
-    Serial.printf(">q1:%lu:%.4f\n", ICMnow*1000, q[1]);
-    Serial.printf(">q2:%lu:%.4f\n", ICMnow*1000, q[2]);
-    Serial.printf(">q3:%lu:%.4f\n", ICMnow*1000, q[3]);
-    return yaw;
+        if (PRINT_SPEED && (time - lastPrint > PRINT_SPEED)) {
+          //     Serial.print("ypr ");
+          Serial.printf(">yaw:%lu:%0.2f\n", lastPrint, yaw);
+          Serial.printf(">avgyaw:%lu:%d\n", lastPrint, avgYaw.reading(yaw));
+          //Serial.print(yaw, 0);
+          //Serial.print(", ");
+          //Serial.print(pitch, 0);
+          //Serial.print(", ");
+          //Serial.print(roll, 0);
+          //          Serial.print(", ");  //prints 49 in 300 ms (~160 Hz) with 8 MHz ATmega328
+          //          Serial.print(loop_counter);  //sample & update loops per print interval
+          loop_counter = 0;
+          //Serial.println();
+          lastPrint = millis(); // Update lastPrint time
+        }
+        lastUpdate = millis();
+        boatCompassDeg = yaw;
+      }
+    }
+    //vTaskDelay(20 / portTICK_PERIOD_MS);
   }
-  return -1.0;
 }
-#endif    
 
 // vector math
 float vector_dot(float a[3], float b[3])
@@ -390,11 +324,9 @@ void MahonyQuaternionUpdate(float ax, float ay, float az, float gx, float gy, fl
 
  //update quaternion with integrated contribution
  // small correction 1/11/2022, see https://github.com/kriswiner/MPU9250/issues/447
-if (deltat > 0.0f) {
-  gx = gx * (0.5*deltat); // pre-multiply common factors
-  gy = gy * (0.5*deltat);
-  gz = gz * (0.5*deltat);
-}
+gx = gx * (0.5*deltat); // pre-multiply common factors
+gy = gy * (0.5*deltat);
+gz = gz * (0.5*deltat);
 float qa = q1;
 float qb = q2;
 float qc = q3;
@@ -411,4 +343,3 @@ q4 += (qa * gz + qb * gy - qc * gx);
   q[2] = q3 * norm;
   q[3] = q4 * norm;
 }
-#endif

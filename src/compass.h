@@ -18,6 +18,7 @@ extern compass_s compassParams;
 
 #define DEGTORAD 0.01745329252
 #define RADTODEG 57.2957795131
+#define VARIATION -15.2
 
 #define BNO08X_INT  -1
 #define BNO08X_RST  -1

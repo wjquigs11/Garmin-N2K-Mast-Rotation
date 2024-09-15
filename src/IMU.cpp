@@ -1,8 +1,3 @@
-/* 
-Currently receiving Heading PGN from mast compass on N2K network with Wind sensor
-Using HTTP PUT to change mast compass settings
-TBD remove enum for compass type and just compile with different types; change #ifdef back to CMPS14
-*/
 
 #include "windparse.h"
 #include "compass.h"
@@ -11,7 +6,6 @@ unsigned char high_byte, low_byte, angle8;
 char pitch, roll;
 unsigned int angle16, comp8;
 float comp16;
-#define VARIATION -15.2
 static int variation;
 float mastCompassDeg; 
 float boatCompassDeg, boatAccuracy, boatCompassPi;
@@ -31,23 +25,25 @@ extern AsyncEventSource events;
 
 float getCompass(int correction);
 void logToAll(String message);
-void logToAlln(String message);
+void i2cScan(TwoWire Wire);
 
 // for sending mast compass on bus
 extern tNMEA2000 *n2kMain;
 extern tN2kMsg correctN2kMsg;
 
 int reportType;
-TMAG5273 sensor; //  hall-effect sensor
+TMAG5273 hallSensor; //  hall-effect sensor
 uint8_t i2cAddress = TMAG5273_I2C_ADDRESS_INITIAL;
 extern bool teleplot;
 
 int hallLoop() {
-  if(sensor.getMagneticChannel() != 0) {
-    float magX = sensor.getXData();
-    float magY = sensor.getYData();
-    float magZ = sensor.getZData();
-    float temp = sensor.getTemp()*9/5+32;
+  int stat = hallSensor.getDeviceStatus();
+  //Serial.printf("hall status %d\n", stat);
+  if (hallSensor.getMagneticChannel() != 0) {
+    float magX = hallSensor.getXData();
+    float magY = hallSensor.getYData();
+    float magZ = hallSensor.getZData();
+    float temp = hallSensor.getTemp()*9/5+32;
     int totalMag = abs(magX) + abs(magY) + abs(magZ);
     if (teleplot && 0) {
       Serial.print(">magX:");
@@ -68,13 +64,15 @@ int hallLoop() {
 }
 
 void initHall() {
-  if(sensor.begin(i2cAddress, Wire) == 1) {
+  int err;
+  if((err = hallSensor.begin(i2cAddress, Wire)) == 1) {
     logToAll("started Hall Effect sensor");
     if (hallLoop()<0) {
       logToAll("Mag Channels disabled");
-    } else sensor.setTemperatureEn(true);
+    } else hallSensor.setTemperatureEn(true);
   } else {
-    logToAll("failed to start Hall Effect sensor");
+    logToAll("failed to start Hall Effect sensor " + String(err));
+    i2cScan(Wire);
   }
 }
 
@@ -163,17 +161,8 @@ float calculateHeading(float r, float i, float j, float k, int correction);
 
 static float heading;
 
-#ifdef BNO08X
-// TBD make this a library shared between controller and mast compass
+#ifdef MASTIMU
 float getBNO085(int correction) {
-  // not checking timing here since it's controlled by ReactESP
-  //unsigned long currentMillis = millis();
-  //if (currentMillis - previousReading < BNOREADRATE) {
-  //  logToAll("reading too soon" + String(currentMillis) + "-" + String(previousReading));
-  //  return -2.0; // minimum delay in case displayDelay is set too low
-  //}
-  //previousReading = currentMillis;
-
   if (bno08x.wasReset()) {
     logToAll("sensor was reset ");
     if (!bno08x.enableReport(reportType))
@@ -299,6 +288,8 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
 #endif
 
 //#define XMITMAST  // send mast compass on main bus
+// get heading from MASTIMU
+// not using magnetic sensor so not referenced to north
 float getCompass(int correction) {
   //Serial.printf("getcompass corr %d ", correction);
   float compassVal;
@@ -306,7 +297,7 @@ float getCompass(int correction) {
     return -1;
 #ifdef CMPS14
   compassVal = getCMPS14(correction);
-#elif defined(BNO08X)
+#elif defined(MASTIMU)
   compassVal = getBNO085(correction);
   ////Serial.printf("bno085 %0.2f\n", compassVal);
 #endif
