@@ -18,10 +18,7 @@ int compassFrequency;
 extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
 extern float mastCompassDeg, boatCompassDeg, boatCompassPi;
-extern int boatCalStatus;
 extern tBoatData BoatData;
-
-extern int reportType;
 
 // Create AsyncWebServer object on port 80
 #define HTTP_PORT 80
@@ -61,7 +58,6 @@ String getSensorReadings() {
     }
     readings["boatHeading"] = String(boatCompassDeg,2);
     readings["boatHeadingPi"] = String(boatCompassPi,2);
-    readings["boatCalStatus"] = boatCalStatus;
     readings["boatTrue"] = String(BoatData.TrueHeading,0);
     if (!honeywellOnToggle) // honeywell takes precedence if both are present
       readings["rotateout"] = String(rotateout,0);
@@ -207,8 +203,6 @@ void startWebServer() {
   compassFrequency = preferences.getInt("compassFreq", 50);
   logToAll("compassFrequency = " + String(compassFrequency));
   BoatData.Variation = preferences.getFloat("variation", 0);
-  reportType = preferences.getInt("rtype", SH2_GAME_ROTATION_VECTOR);
-  logToAll("reportType = 0x" + String(reportType,HEX));
 
   if (!MDNS.begin(host.c_str()) ) {
     logToAll("Error starting MDNS responder.");

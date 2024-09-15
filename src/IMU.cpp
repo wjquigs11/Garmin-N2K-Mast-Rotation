@@ -9,11 +9,10 @@ float comp16;
 static int variation;
 float mastCompassDeg; 
 float boatCompassDeg, boatAccuracy, boatCompassPi;
-int boatCalStatus;
 float mastDelta;
 // how is the compass oriented on the board relative to boat compass
 // when mast is centered, mast compass+orientation == boat compass
-int mastOrientation, sensOrientation, boatOrientation;
+int mastOrientation=0, sensOrientation, boatOrientation;
 extern int compassFrequency;
 extern bool compassOnToggle;
 extern JSONVar readings;
@@ -161,7 +160,7 @@ float calculateHeading(float r, float i, float j, float k, int correction);
 
 static float heading;
 
-#ifdef MASTIMU
+#if 0
 float getBNO085(int correction) {
   if (bno08x.wasReset()) {
     logToAll("sensor was reset ");
@@ -287,6 +286,7 @@ float calculateHeading(float r, float i, float j, float k, int correction) {
   return heading;
 #endif
 
+#if 0
 //#define XMITMAST  // send mast compass on main bus
 // get heading from MASTIMU
 // not using magnetic sensor so not referenced to north
@@ -310,6 +310,7 @@ float getCompass(int correction) {
 #endif
   return compassVal;
 }
+#endif
 
 /*
 https://www.arduino.cc/reference/en/language/functions/communication/wire/endtransmission/

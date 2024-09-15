@@ -156,7 +156,7 @@ String host = "ESPwind";
 int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
 float parseMastHeading(const tN2kMsg &N2kMsg);  // mast heading
 float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external source
-float getCompass(int correction);      // boat heading from internal ESP32 compass
+//float getCompass(int correction);      // boat heading from internal ESP32 compass
 void httpInit(const char* serverName);
 extern const char* serverName;
 extern int mastOrientation; // delta between mast compass and boat compass
@@ -167,7 +167,6 @@ extern float mastCompassDeg;
 extern float mastDelta;
 extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
-extern int boatCalStatus;
 void mastHeading();
 extern int compassFrequency;
 int mastAngle[2]; // array for both sensors
@@ -182,14 +181,7 @@ float getMastHeading();
 const int CMPS14_ADDRESS = 0x60;
 // robotshop CMPS14 (boat compass)
 #endif
-#if defined(BNO08X) || defined (MASTIMU)
-// compass but now defined in Adafruit_BNO08x bno08x directive
-//const int ADABNO = 0x4A;
-//const int SFBNO = 0x4B;
-const int bno08x_RESET = -1;
-Adafruit_BNO08x bno08x(bno08x_RESET);
-sh2_SensorValue_t sensorValue;
-#endif
+
 bool imuReady=false;
 bool mastIMUready=false;
 #ifdef ICM209
@@ -197,16 +189,14 @@ extern ICM_20948_I2C imu; // create an ICM_20948_I2C object imu;
 void getICMheading(void *parameter);
 extern movingAvg avgYaw;
 // ICM20948 needs its own thread
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-TaskHandle_t Task1;
-void getICMheading(void *parameter);
-void Task1Function(void *pvParameters) {
-  for (;;) {
-    Serial.println("Task1 is running");
-    vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay for 1 second
-  }
-}
+TaskHandle_t compassTask;
+#endif
+
+#ifdef MASTIMU
+extern SparkFun_ISM330DHCX ISM330;
+TaskHandle_t mastTask;
+void getISMheading(void *parameter);
+bool setupMastIMU(TwoWire &wirePort, uint8_t deviceAddress);
 #endif
 
 // Time after which we should reboot if we haven't received any CAN messages
@@ -227,6 +217,7 @@ int hallValue;
 elapsedMillis time_since_last_hall_adjust = 0;
 #define HALL_DELAY 500  // don't update compass difference more than twice per second
 #define HALL_LIMIT 10   // arbitrary limit for magnet near sensor; adjust as needed
+int compassDifference(int angle1, int angle2);
 
 void ToggleLed() {
   static bool led_state = false;
@@ -420,7 +411,7 @@ void OLEDdataWindDebug() {
   }
   if (compassOnToggle) {
     #ifdef MASTCOMPASS
-    display->printf("M:%.1f B:%.1f S:%d\n", mastCompassDeg, boatCompassDeg, boatCalStatus);
+    display->printf("M:%.1f B:%.1f\n", mastCompassDeg, boatCompassDeg);
     display->printf("Delta: %2d\n", mastAngle[1]);
     #else
     display->printf("Heading: %.1f\n", boatCompassDeg);
@@ -569,31 +560,6 @@ void setup() {
   Serial.println(WiFi.macAddress());
  
   // imuReady means we have a local boat compass in the controller
-#if defined(CMPS14)
-  // check compass
-  //Wire.begin(SDA_PIN,SCL_PIN);
-  Wire.beginTransmission(CMPS14_ADDRESS);
-  // null return indicates no error; compass present
-  if (imuReady = (!Wire.endTransmission()))
-    Serial.println("CMPS14 present");
-  else {
-    Serial.println("CMPS14 not found");
-    i2cScan(TwoWire Wire);
-  }
-#endif
-#ifdef BNO08X // TBD: probably remove. Unlikely we're going to use BNO as boat compass
-  imuReady = bno08x.begin_I2C(BNO08X,&Wire1);
-  if (imuReady) {
-    Serial.println("Adafruit_BNO08x bno08x Found (boat compass)");
-    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
-      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
-      Serial.println(logString);
-    }
-  } else {
-    Serial.printf("Failed to find Adafruit_BNO08x bno08x chip @ 0x%x\n", BNO08X);
-    i2cScan(Wire1);
-  }
-#endif
 #ifdef ICM209
   imu.begin(Wire1, ICM209);
   imuReady = (imu.status == ICM_20948_Stat_Ok);
@@ -604,7 +570,7 @@ void setup() {
       2048,        // Stack size (bytes)
       NULL,         // Parameter to pass to the function
       1,            // Priority of the task
-      &Task1,        // Task handle
+      &compassTask,        // Task handle
       1
     );
     Serial.println("ICM20948 found.\n");
@@ -615,15 +581,20 @@ void setup() {
   }
 #endif
 #ifdef MASTIMU
-  mastIMUready = bno08x.begin_I2C(MASTIMU,&Wire);
+  mastIMUready = setupMastIMU(Wire, MASTIMU);
   if (mastIMUready) {
-    Serial.println("Mast IMU bno08x Found (mast imu)");
-    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
-      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
-      Serial.println(logString);
-    }
+    xTaskCreatePinnedToCore(
+      getISMheading, // Task function
+      "getMastHeading",      // Name of task
+      2048,        // Stack size (bytes)
+      NULL,         // Parameter to pass to the function
+      1,            // Priority of the task
+      &mastTask,        // Task handle
+      0
+    );
+    Serial.println("mast IMU ISM330 detected.");  
   } else {
-    Serial.printf("Failed to find Adafruit_BNO08x bno08x chip @ 0x%x\n", MASTIMU);
+    Serial.printf("Failed to find mast IMU ISM330 @ 0x%x\n", MASTIMU);
     i2cScan(Wire);
   }
 #endif
@@ -697,13 +668,14 @@ void setup() {
     WebSerial.loop();
   });
   
+  // TBD move to IMU.cpp
   app.onRepeat(10, []() {
     // when Hall effect sensor is triggered, mast is centered
     // we can change mastorientation to the difference between the two IMU readings
     if ((hallValue = hallLoop()) > HALL_LIMIT) {
       if (time_since_last_hall_adjust > HALL_DELAY) {
         logToAll("Hall effect detected, mast (raw): " + String(mastCompassDeg,2) + " mast (cor): " + String(mastCompassDeg+mastOrientation,2) + " boat: " + String(boatCompassDeg,2) + " delta: " + String(mastDelta,2));
-        mastOrientation = mastDelta;
+        mastOrientation = compassDifference(boatCompassDeg, mastCompassDeg);
         time_since_last_hall_adjust = 0;
       }
     }
@@ -751,16 +723,19 @@ void setup() {
       // the global boatCompassDeg will always contain the boat compass (magnetic)
     // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
     //boatCompassDeg = getICMheading(0); moved to task
-    mastCompassDeg = getCompass(0);
+    //mastCompassDeg = getCompass(0);
     //logToAll("mastCompassDeg: " + String(mastCompassDeg));
-    float delta = readCompassDelta(); // sets mastDelta
+    mastDelta = readCompassDelta();
     if (teleplot) {
         Serial.print(">mast:");
-        Serial.println(mastCompassDeg);
+        float corrMastComp = mastCompassDeg+mastOrientation;
+        if (corrMastComp > 359) corrMastComp -= 360;
+        if (corrMastComp < 0) corrMastComp += 360;
+        Serial.println(corrMastComp);
         Serial.print(">boat:");
         Serial.println(boatCompassDeg);
         Serial.print(">delta:");
-        Serial.println(delta);   
+        Serial.println(mastDelta);   
     }
     BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
     if (BoatData.TrueHeading > 359) BoatData.TrueHeading -= 360;

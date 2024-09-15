@@ -115,6 +115,7 @@ float readAnalogRotationValue() {
   return mastAngle[0]; 
 }
 
+// TBD move to IMU.cpp
 int compassDifference(int angle1, int angle2) {
     int diff = (angle1 - angle2 + 360) % 360;
     //Serial.print("compdiff: "); Serial.println(diff);
@@ -123,7 +124,7 @@ int compassDifference(int angle1, int angle2) {
 
 float readCompassDelta() {
   if (imuReady) {
-    mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
+    float mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
     //logToAll("mastDelta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
     mastCompDelta.reading((int)(mastDelta*100)); // moving average

@@ -75,15 +75,15 @@ float declination = VARIATION;
 #define Kp 50.0
 #define Ki 0.0
 
-movingAvg avgYaw(25);
+movingAvg avgYaw(20);
 
 unsigned long ICMnow = 0, ICMlast = 0; //micros() timers for AHRS loop
 float ICMdeltat = 0;  //loop time in seconds
 
-#define UPDATE_SPEED 100
-unsigned long lastUpdate = 0;
+#define UPDATE_SPEED 50
+static unsigned long lastUpdate = 0;
 #define PRINT_SPEED 0 // ms between angle prints (0 for none)
-unsigned long lastPrint = 0; // Keep track of print time
+static unsigned long lastPrint = 0; // Keep track of print time
 
 // Vector to hold quaternion
 static float q[4] = {1.0, 0.0, 0.0, 0.0};
@@ -111,7 +111,7 @@ void setup()
 }
 #endif
 
-void getICMheading(void *pvParameters) {
+void getICMheading(void *parameter) {
   for (;;) {
     static int loop_counter = 0; //sample & update loop counter
     static float Gxyz[3], Axyz[3], Mxyz[3]; //centered and scaled gyro/accel/mag data
@@ -157,13 +157,13 @@ void getICMheading(void *pvParameters) {
         // WARNING: This angular conversion is for DEMONSTRATION PURPOSES ONLY. It WILL
         // MALFUNCTION for certain combinations of angles! See https://en.wikipedia.org/wiki/Gimbal_lock
         
-        roll  = atan2((q[0] * q[1] + q[2] * q[3]), 0.5 - (q[1] * q[1] + q[2] * q[2]));
-        pitch = asin(2.0 * (q[0] * q[2] - q[1] * q[3]));
+        //roll  = atan2((q[0] * q[1] + q[2] * q[3]), 0.5 - (q[1] * q[1] + q[2] * q[2]));
+        //pitch = asin(2.0 * (q[0] * q[2] - q[1] * q[3]));
         yaw   = atan2((q[1] * q[2] + q[0] * q[3]), 0.5 - ( q[2] * q[2] + q[3] * q[3]));
         // to degrees
         yaw   *= 180.0 / PI;
-        pitch *= 180.0 / PI;
-        roll *= 180.0 / PI;
+        //pitch *= 180.0 / PI;
+        //roll *= 180.0 / PI;
 
         // http://www.ngdc.noaa.gov/geomag-web/#declination
         //conventional nav, yaw increases CW from North, corrected for local magnetic declination
@@ -175,20 +175,12 @@ void getICMheading(void *pvParameters) {
         if (PRINT_SPEED && (time - lastPrint > PRINT_SPEED)) {
           //     Serial.print("ypr ");
           Serial.printf(">yaw:%lu:%0.2f\n", lastPrint, yaw);
-          Serial.printf(">avgyaw:%lu:%d\n", lastPrint, avgYaw.reading(yaw));
-          //Serial.print(yaw, 0);
-          //Serial.print(", ");
-          //Serial.print(pitch, 0);
-          //Serial.print(", ");
-          //Serial.print(roll, 0);
-          //          Serial.print(", ");  //prints 49 in 300 ms (~160 Hz) with 8 MHz ATmega328
-          //          Serial.print(loop_counter);  //sample & update loops per print interval
+          Serial.printf(">avgyaw:%lu:%d\n", lastPrint, avgYaw.getAvg());
           loop_counter = 0;
-          //Serial.println();
           lastPrint = millis(); // Update lastPrint time
         }
         lastUpdate = millis();
-        boatCompassDeg = yaw;
+        boatCompassDeg = avgYaw.reading(yaw);   // moving average is more stable
       }
     }
     //vTaskDelay(20 / portTICK_PERIOD_MS);
