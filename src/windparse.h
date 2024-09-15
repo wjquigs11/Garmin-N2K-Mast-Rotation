@@ -27,7 +27,6 @@
 #include <SPI.h>
 #include <ESPAsyncWebServer.h>
 #include <WebSerial.h>
-#include <Adafruit_BNO08x.h>
 #include <HTTPClient.h>
 #include "esp_system.h"
 #include "esp32-hal-log.h"
@@ -35,6 +34,9 @@
 #include <ESPmDNS.h>
 #include <Preferences.h>
 #include <SparkFun_TMAG5273_Arduino_Library.h>
+#include "SparkFun_ISM330DHCX.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21
@@ -102,11 +104,6 @@ extern unsigned long avg_time_since_last_wind;
 extern String host;
 
 extern bool imuReady;
-extern const int CMPS14_ADDRESS;
-extern const int ADABNO;
-extern const int bno08x_RESET;
-extern Adafruit_BNO08x bno08x;
-extern sh2_SensorValue_t sensorValue;
 
 #ifdef DISPLAYON
 extern Adafruit_SSD1306 *display;

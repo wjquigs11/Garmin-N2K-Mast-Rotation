@@ -12,8 +12,8 @@
 
 
 
-#include <Wire.h>
-#include "SparkFun_ISM330DHCX.h"
+#include "windparse.h"
+#include "compass.h"
 
 SparkFun_ISM330DHCX ISM330;
 
@@ -30,31 +30,38 @@ sfe_ism_data_t gyr;
 float gxyz_offsets[3] = { -80.7, -112.9, -433.8 };
 
 // library returns milliDPS
-float RadiansPerSecond = PI / 180000.0; //conversion factor for Mahony filter
+float RadiansPerSecond = M_PI / 180000.0; //conversion factor for Mahony filter
 float Axyz[3] = {0}, Gxyz[3] = {0}; //arrays for Mahony filter
 
 float Kp = 50.0, Ki = 0.0; //PID constants for Mahony filter
 float q[4] = {1.0, 0.0, 0.0, 0.0}; //initialize quaternion, global access. X points at yaw=0
+static float yaw, pitch, roll; //Euler angle output
+static int16_t temperature;
+
+movingAvg avgMastYaw(20);
 
 // example code just converts and prints Euler angles from time to time
-unsigned long print_ms = 200, now_ms = 0, last_ms = 0; //print every print_ms
+//unsigned long print_ms = 200, now_ms = 0, last_ms = 0; //print every print_ms
+#define UPDATE_SPEED 50
+static unsigned long lastUpdate = 0;
+#define PRINT_SPEED 0 // ms between angle prints (0 for none)
+static unsigned long lastPrint = 0; // Keep track of print time
 
-void setup() {
+void Mahony_update(float ax, float ay, float az, float gx, float gy, float gz, float deltat);
 
-  // power up I2C port
-#if defined(ARDUINO_ADAFRUIT_FEATHER_ESP32S2_TFT)
-  pinMode(TFT_I2C_POWER, OUTPUT);
-  digitalWrite(TFT_I2C_POWER, HIGH);
-#endif
+extern float mastCompassDeg;
 
-  Wire.begin();
+bool setupMastIMU(TwoWire &wirePort, uint8_t deviceAddress) {
 
-  Serial.begin(115200); delay(500);
-  while (!Serial);  //wait for serial monitor to connect (can replace this with delay())
+  //Wire.begin();
 
-  if ( !ISM330.begin(0x6B) ) {  //0x6B is default with SFE library
+  //Serial.begin(115200); delay(500);
+  //while (!Serial);  //wait for serial monitor to connect (can replace this with delay())
+
+  bool initOK = ISM330.begin(wirePort, deviceAddress);
+  if (!initOK) {
     Serial.println("ISM330 not detected.");
-    while (1) delay(1);
+    return false;
   }
 
   //  Serial.println("Applying settings.");
@@ -79,30 +86,6 @@ void setup() {
   ISM330.setGyroFilterLP1();
   ISM330.setGyroLP1Bandwidth(ISM_MEDIUM);
 
-#ifdef CAL_GYRO
-
-#define GYRO_SAMPLES 500
-  Serial.println("Keep gyro still for offset calculation");
-  delay(2000);
-
-
-  int loopcount = 0;
-  while (loopcount < GYRO_SAMPLES) {  //accumulate sums
-    // Check if both gyroscope and accelerometer data are available.
-    if ( ISM330.checkStatus() ) {
-      ISM330.getGyro(&gyr);
-      gxyz_offsets[0] += gyr.xData;
-      gxyz_offsets[1] += gyr.yData;
-      gxyz_offsets[2] += gyr.zData;
-      loopcount++;
-    }
-  }
-
-  // calculate and store gyro offsets
-
-  for (int i = 0; i < 3; i++) gxyz_offsets[i] /= (float)loopcount;
-#endif
-
   // reminder!
   Serial.print("Gyro offsets ");
   for (int i = 0; i < 3; i++) {
@@ -110,6 +93,8 @@ void setup() {
     Serial.print(" ");
   }
   Serial.println();
+  avgMastYaw.begin();
+  return true;
 
 }  //end of setup()
 
@@ -117,96 +102,66 @@ void setup() {
 // getAccel() returns milli_g, regardless of scale setting
 // getGyro() returns milli_DPS, regardless
 
-void loop() {
+void getISMheading(void *parameter) {
+  while(1) {
 
-  static unsigned long last_us = 0, now_us = 0; //microsecond loop timing.
+    static unsigned long last_us = 0, now_us = 0; //microsecond loop timing.
+    unsigned long time;
+    static int loop_counter = 0;
 
-  // Check if both gyroscope and accelerometer data are available.
-  if ( ISM330.checkStatus() ) {
-    ISM330.getAccel(&acc);
-    ISM330.getGyro(&gyr);
-    now_us = micros();
+    if ((time = millis()) - lastUpdate > UPDATE_SPEED) {
+      loop_counter++;
+      // Check if both gyroscope and accelerometer data are available.
+      if ( ISM330.checkStatus() ) {
+        ISM330.getAccel(&acc);
+        ISM330.getGyro(&gyr);
+        now_us = micros();
 
-    //normalize accelerometer data
-    //This would be the place to apply calibration and offsets, if desired
+        //normalize accelerometer data
+        //This would be the place to apply calibration and offsets, if desired
 
-    float amag = sqrt(acc.xData * acc.xData + acc.yData * acc.yData + acc.zData * acc.zData);
+        float amag = sqrt(acc.xData * acc.xData + acc.yData * acc.yData + acc.zData * acc.zData);
 
-    Axyz[0] = acc.xData / amag;
-    Axyz[1] = acc.yData / amag;
-    Axyz[2] = acc.zData / amag;
+        Axyz[0] = acc.xData / amag;
+        Axyz[1] = acc.yData / amag;
+        Axyz[2] = acc.zData / amag;
 
-    Gxyz[0] = (gyr.xData - gxyz_offsets[0]) * RadiansPerSecond;
-    Gxyz[1] = (gyr.yData - gxyz_offsets[1]) * RadiansPerSecond;
-    Gxyz[2] = (gyr.zData - gxyz_offsets[2]) * RadiansPerSecond;
+        Gxyz[0] = (gyr.xData - gxyz_offsets[0]) * RadiansPerSecond;
+        Gxyz[1] = (gyr.yData - gxyz_offsets[1]) * RadiansPerSecond;
+        Gxyz[2] = (gyr.zData - gxyz_offsets[2]) * RadiansPerSecond;
 
 
-    float deltat = (now_us - last_us) * 1.0e-6; //seconds since last update
-    last_us = now_us;
+        float deltat = (now_us - last_us) * 1.0e-6; //seconds since last update
+        last_us = now_us;
 
-    Mahony_update(Axyz[0], Axyz[1], Axyz[2], Gxyz[0], Gxyz[1], Gxyz[2], deltat);
+        Mahony_update(Axyz[0], Axyz[1], Axyz[2], Gxyz[0], Gxyz[1], Gxyz[2], deltat);
 
-    // time to print?
+        //roll  = atan2((q[0] * q[1] + q[2] * q[3]), 0.5 - (q[1] * q[1] + q[2] * q[2]));
+        //pitch = asin(2.0 * (q[0] * q[2] - q[1] * q[3]));
+        //conventional yaw increases clockwise from North. Not that the MPU-6050 knows where North is.
+        yaw   = -atan2((q[1] * q[2] + q[0] * q[3]), 0.5 - (q[2] * q[2] + q[3] * q[3]));
+        // to degrees
+        yaw   *= RADTODEG;
+        if (yaw < 0) yaw += 360.0; //compass circle
+        //pitch *= RADTODEG;
+        //roll *= RADTODEG;
 
-    now_ms = millis(); //time to print?
-    if (now_ms - last_ms >= print_ms) {
-      last_ms = now_ms;
-
-      // DEMO ANGLE CODE
-      // Compute Tait-Bryan angles. >>>Strictly valid only for approximately level movement
-
-      // In this coordinate system, the positive z-axis is up, X north, Y west.
-      // Yaw is the angle between Sensor x-axis and Earth magnetic North
-      // (or true North if corrected for local declination, looking down on the sensor
-      // positive yaw is counterclockwise, which is not conventional for NED navigation.
-      // Pitch is angle between sensor x-axis and Earth ground plane, toward the
-      // Earth is positive, up toward the sky is negative. Roll is angle between
-      // sensor y-axis and Earth ground plane, y-axis up is positive roll. These
-      // arise from the definition of the homogeneous rotation matrix constructed
-      // from quaternions. Tait-Bryan angles as well as Euler angles are
-      // non-commutative; that is, the get the correct orientation the rotations
-      // must be applied in the correct order which for this configuration is yaw,
-      // pitch, and then roll.
-      // http://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
-      // which has additional links.
-
-      // WARNING: This angular conversion is for DEMONSTRATION PURPOSES ONLY. It WILL
-      // MALFUNCTION for certain combinations of angles! See https://en.wikipedia.org/wiki/Gimbal_lock
-
-      float roll  = atan2((q[0] * q[1] + q[2] * q[3]), 0.5 - (q[1] * q[1] + q[2] * q[2]));
-      float pitch = asin(2.0 * (q[0] * q[2] - q[1] * q[3]));
-      //conventional yaw increases clockwise from North. Not that the MPU-6050 knows where North is.
-      float yaw   = -atan2((q[1] * q[2] + q[0] * q[3]), 0.5 - (q[2] * q[2] + q[3] * q[3]));
-      // to degrees
-      yaw   *= 180.0 / PI;
-      if (yaw < 0) yaw += 360.0; //compass circle
-      pitch *= 180.0 / PI;
-      roll *= 180.0 / PI;
-
-      /* debug prints
-              for (int i = 0; i < 3; i++) {
-                    Serial.print(Axyz[i]); Serial.print(" ");
-                  }
-
-              for (int i = 0; i < 3; i++) {
-              Serial.print(Gxyz[i]); Serial.print(" ");
-              }
-              for (int i = 0; i < 4; i++) {
-              Serial.print(q[i]); Serial.print(" ");
-              }
-              Serial.println();
-      */
-
-      // print angles for serial plotter...
-      //  Serial.print("ypr ");
-      Serial.print(yaw, 0);
-      Serial.print(", ");
-      Serial.print(pitch, 0);
-      Serial.print(", ");
-      Serial.println(roll, 0);
+        if (PRINT_SPEED && (time - lastPrint > PRINT_SPEED)) {
+          Serial.printf(">Myaw:%lu:%0.2f\n", lastPrint, yaw);
+          Serial.printf(">Mavgyaw:%lu:%d\n", lastPrint, avgMastYaw.getAvg());
+          lastPrint = millis(); // Update lastPrint time
+        }
+        lastUpdate = millis();
+        mastCompassDeg = avgMastYaw.reading(yaw);      
+        if (loop_counter % 10000 == 1) {
+          temperature = ISM330.getTemp();
+          Serial.printf("temp:%lu:%d\n", lastPrint, temperature);
+        }
+      }
     }
   }
 }
+
 //--------------------------------------------------------------------------------------------------
 // Mahony scheme uses proportional and integral filtering on
 // the error between estimated reference vector (gravity) and measured one.
