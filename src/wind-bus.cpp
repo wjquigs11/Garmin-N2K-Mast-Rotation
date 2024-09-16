@@ -9,6 +9,9 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 */
 #include "compass.h"
 #include "windparse.h"
+#include "BoatData.h"
+#include <Adafruit_ADS1X15.h>
+#include "ICM_20948.h"
 
 #ifdef PICAN
 #include <N2kMsg.h>
@@ -41,6 +44,8 @@ Adafruit_SSD1306 *display;
 #define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
 #define CAN_RX_PIN GPIO_NUM_35 // RPI header pin 15
 
+#define N2k_SPI_CS_PIN 5    
+
 #ifdef PICAN
 tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
@@ -70,7 +75,6 @@ const int CAN0_INT = 25;    // RPi Pin 12 -- IO25#endif
 // external transceiver because on-board one isn't working
 #define CAN_RX_PIN GPIO_NUM_27
 #define CAN_TX_PIN GPIO_NUM_25
-//#define N2k_SPI_CS_PIN 5    
 //#define N2k_CAN_INT_PIN 22   
 //#define MOSI 23
 //#define MISO 19
@@ -159,12 +163,12 @@ float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external sour
 //float getCompass(int correction);      // boat heading from internal ESP32 compass
 void httpInit(const char* serverName);
 extern const char* serverName;
-extern int mastOrientation; // delta between mast compass and boat compass
-extern int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
-extern int boatOrientation; // delta between boat compass and magnetic north
-extern float boatCompassDeg; // magnetic heading not corrected for variation
-extern float mastCompassDeg;
-extern float mastDelta;
+int mastOrientation; // delta between mast compass and boat compass
+int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
+int boatOrientation; // delta between boat compass and magnetic north
+float boatCompassDeg; // magnetic heading not corrected for variation
+float mastCompassDeg;
+float mastDelta;
 extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
 void mastHeading();
@@ -211,12 +215,7 @@ void logToAlln(String s);
 void i2cScan(TwoWire Wire);
 void demoIncr();
 float readCompassDelta();
-void initHall();
-int hallLoop();
-int hallValue;
-elapsedMillis time_since_last_hall_adjust = 0;
-#define HALL_DELAY 500  // don't update compass difference more than twice per second
-#define HALL_LIMIT 10   // arbitrary limit for magnet near sensor; adjust as needed
+
 int compassDifference(int angle1, int angle2);
 
 void ToggleLed() {
@@ -598,10 +597,7 @@ void setup() {
     i2cScan(Wire);
   }
 #endif
-  if (imuReady && mastIMUready)
-    initHall(); // hall effect sensor for zero
-  else Serial.printf("Hall not initialized imu: %d mast: %d\n", imuReady, mastIMUready);
-  // init compass
+
   mastCompDelta.begin();
 #ifdef DISPLAYON
   Serial.println("OLED started");
@@ -668,19 +664,6 @@ void setup() {
     WebSerial.loop();
   });
   
-  // TBD move to IMU.cpp
-  app.onRepeat(10, []() {
-    // when Hall effect sensor is triggered, mast is centered
-    // we can change mastorientation to the difference between the two IMU readings
-    if ((hallValue = hallLoop()) > HALL_LIMIT) {
-      if (time_since_last_hall_adjust > HALL_DELAY) {
-        logToAll("Hall effect detected, mast (raw): " + String(mastCompassDeg,2) + " mast (cor): " + String(mastCompassDeg+mastOrientation,2) + " boat: " + String(boatCompassDeg,2) + " delta: " + String(mastDelta,2));
-        mastOrientation = compassDifference(boatCompassDeg, mastCompassDeg);
-        time_since_last_hall_adjust = 0;
-      }
-    }
-  });
-
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
 // if we get in range, it's simpler to reboot than to constantly check
   app.onRepeat(300000, []() {

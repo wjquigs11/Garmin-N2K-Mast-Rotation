@@ -1,5 +1,7 @@
 
 #include "windparse.h"
+#include <Adafruit_ADS1X15.h>
+#include "BoatData.h"
 
 Preferences preferences;     
 
@@ -17,7 +19,7 @@ extern int mastAngle[];
 int compassFrequency;
 extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
-extern float mastCompassDeg, boatCompassDeg, boatCompassPi;
+extern float mastCompassDeg, boatCompassDeg;
 extern tBoatData BoatData;
 
 // Create AsyncWebServer object on port 80
@@ -57,7 +59,6 @@ String getSensorReadings() {
       readings["mastDelta"] = mastAngle[1];
     }
     readings["boatHeading"] = String(boatCompassDeg,2);
-    readings["boatHeadingPi"] = String(boatCompassPi,2);
     readings["boatTrue"] = String(BoatData.TrueHeading,0);
     if (!honeywellOnToggle) // honeywell takes precedence if both are present
       readings["rotateout"] = String(rotateout,0);

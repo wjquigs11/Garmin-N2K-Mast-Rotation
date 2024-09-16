@@ -9,7 +9,6 @@
 #include <NMEA0183Messages.h>
 #include "NMEA0183Handlers.h"
 #endif
-#include "BoatData.h"
 #include <ReactESP.h>
 #include <Wire.h>
 #include <esp_int_wdt.h>
@@ -18,7 +17,6 @@
 #include "elapsedMillis.h"
 #include <Arduino.h>
 #include <N2kMessages.h>
-#include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
 #include "esp_wifi.h"
 #include "SPIFFS.h"
@@ -33,8 +31,6 @@
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
-#include <SparkFun_TMAG5273_Arduino_Library.h>
-#include "SparkFun_ISM330DHCX.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 

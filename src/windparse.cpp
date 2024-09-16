@@ -2,6 +2,8 @@
 
 #include "compass.h"
 #include "windparse.h"
+#include "BoatData.h"
+#include <Adafruit_ADS1X15.h>
 
 #ifdef PICAN
 #include <N2kMsg.h>
@@ -20,6 +22,7 @@ tNMEA0183Msg NMEA0183Msg;
 #endif
 #endif
 
+#define RS485CAN // temp!!!
 #ifdef RS485CAN
 #include "mcp2515_can.h"
 #endif
@@ -50,6 +53,7 @@ double WindSensor::windAngleDegrees{0.0};
 double WindSensor::windSpeedMeters{0.0};
 double WindSensor::windAngleRadians{0.0};
 tN2kWindReference wRef;
+tN2kHeadingReference hRef;
 double SpeedThruWater; // meters/sec
 double TWS; // meters/sec
 int TWA; // radians
@@ -324,6 +328,23 @@ void ParseWindCAN() {
       WindSpeed();
       break;
     } 
+    case 127250: {
+      float mastCompassRad = ((cdata[2] << 8) | cdata[1]) / 10000.0;
+      mastCompassDeg = mastCompassRad * RADTODEG;
+      // deviation 4|3
+      // variation 6|5
+      hRef = (tN2kHeadingReference)(cdata[7]&0x03);
+      // hack! if hRef == N2khr_true that means mast IMU is aligned with Hall sensor
+      if (hRef == N2khr_true) {
+        mastOrientation = 0;
+      } else {
+        mastOrientation = compassDifference(mastCompassDeg, boatCompassDeg);
+      }
+#ifdef DEBUG
+      Serial.printf("CAN parsed heading SID %d heading %0.4f ref %d (%x)\n", SID, mastCompassDeg, hRef, cdata[5]);
+#endif
+      break;  // don't forward heading
+    }
     default: { 
       num_wind_other++; 
       // everything that's not from wind source, pass through to main bus
