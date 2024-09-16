@@ -1,5 +1,7 @@
 
 #include "windparse.h"
+#include <Adafruit_ADS1X15.h>
+#include "BoatData.h"
 
 extern tBoatData *pBD;
 extern tBoatData BoatData;

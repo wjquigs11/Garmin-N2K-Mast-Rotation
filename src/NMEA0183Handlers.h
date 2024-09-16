@@ -7,6 +7,7 @@
 #include <NMEA0183.h>
 #include <NMEA0183Msg.h>
 #include <NMEA2000.h>
+#include "BoatData.h"
 
 void InitNMEA0183Handlers(tNMEA2000 *_NMEA2000, tBoatData *_BoatData);
 void DebugNMEA0183Handlers(Stream* _stream);

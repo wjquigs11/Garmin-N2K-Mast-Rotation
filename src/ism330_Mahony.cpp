@@ -14,6 +14,7 @@
 
 #include "windparse.h"
 #include "compass.h"
+#include "SparkFun_ISM330DHCX.h"
 
 SparkFun_ISM330DHCX ISM330;
 
