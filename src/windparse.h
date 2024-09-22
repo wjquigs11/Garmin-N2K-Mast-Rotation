@@ -112,3 +112,6 @@ extern char prbuf[PRBUF];
 #define lowset 56
 #define highset 311
 extern int mastAngle[];
+
+#define MAXPGN 64
+#define MAX_NETS 4

@@ -26,3 +26,5 @@ extern compass_s compassParams;
 #define WIRE_PORT Wire // desired Wire port.
 #define AD0_VAL 1      // value of the last bit of the I2C address.
 // default I2C address = 0x69
+
+#define RESET -1

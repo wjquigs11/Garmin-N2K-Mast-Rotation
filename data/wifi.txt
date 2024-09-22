@@ -1,0 +1,3 @@
+dmlgoo:holachica24::
+NEWspot:holachica24::
+testnet:passwd:1.1.1.1:2.2.2.2

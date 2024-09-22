@@ -1,7 +1,8 @@
 
 #include "windparse.h"
-#include <Adafruit_ADS1X15.h>
+#include "compass.h"
 #include "BoatData.h"
+#include <Adafruit_ADS1X15.h>
 
 Preferences preferences;     
 
@@ -21,6 +22,7 @@ extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
 extern float mastCompassDeg, boatCompassDeg;
 extern tBoatData BoatData;
+extern int boatCalStatus;
 
 // Create AsyncWebServer object on port 80
 #define HTTP_PORT 80
@@ -55,11 +57,12 @@ String getSensorReadings() {
   }
   if (compassOnToggle) {
     if (mastCompassDeg >= 0) { // set to -1 if mast compass times out
-      readings["mastHeading"] = String(mastCompassDeg,2);
+      readings["mastHeading"] = String(mastCompassDeg+mastOrientation,2);
       readings["mastDelta"] = mastAngle[1];
     }
     readings["boatHeading"] = String(boatCompassDeg,2);
     readings["boatTrue"] = String(BoatData.TrueHeading,0);
+    readings["boatCalStatus"] = String(boatCalStatus);
     if (!honeywellOnToggle) // honeywell takes precedence if both are present
       readings["rotateout"] = String(rotateout,0);
   }
@@ -203,7 +206,7 @@ void startWebServer() {
   boatOrientation = preferences.getInt("boatOrientation", 0);
   compassFrequency = preferences.getInt("compassFreq", 50);
   logToAll("compassFrequency = " + String(compassFrequency));
-  BoatData.Variation = preferences.getFloat("variation", 0);
+  BoatData.Variation = preferences.getFloat("variation", VARIATION);
 
   if (!MDNS.begin(host.c_str()) ) {
     logToAll("Error starting MDNS responder.");

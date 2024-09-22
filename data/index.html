@@ -44,7 +44,7 @@
                     <p class="card-title"><i style="color:#059e8a;"></i>Uncorrected AWA</p>
                     <p class="reading"><span id="windAngle"></span></p>
                 </div>
-                <div class="card" id="honeywell"> <!-- TBD: hide sensor angle unless we get Honeywell reading -->
+                <div class="card" id="honeywell"> 
                     <p class="card-title"><i style="color:#059e8a;"></i>Sensor Angle</p>
                     <p class="reading"><span id="mastRotate"></span></p>
                 </div>
@@ -53,29 +53,31 @@
                     <p class="reading"><span id="rotateout"></span></p>
                 </div>
                 <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Mast Heading</p>
+                    <p class="card-title"><i style="color:#059e8a;"></i>Mast Orientation</p>
                     <p class="reading"><span id="mastHeading"></span></p>
                 </div>
                 <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading (BNO)</p>
+                    <p class="card-title"><i style="color:#059e8a;"></i>Boat Orientation</p>
                     <p class="reading"><span id="boatHeading"></span></p>
-                    <img id="calibration" src="red.png" width="20" height="20" alt="calibration">
                 </div>
                 <!--div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading (RPI)</p>
                     <p class="reading"><span id="boatHeadingPi"></span></p>
                 </div-->
-                <div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading (True)</p>
+                <!--div class="card">
+                    <p class="card-title"><i style="color:#059e8a;"></i>Heading (True)</p>
                     <p class="reading"><span id="boatTrue"></span></p>
-                </div>
+                    <img id="calibration" src="red.png" width="20" height="20" alt="calibration">
+                </div-->
                 <!--div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Mast Delta</p>
                     <p class="reading"><span id="mastDelta"></span></p>
                 </div-->
                 <br>
-                <div>
+                <div class="card" id="magrot-card">
                     <canvas id="gauge-magrot" hidden></canvas>
+                </div>
+                <div class="card" id="honeyrot-card">
                     <canvas id="gauge-honeyrot" hidden></canvas>
                 </div>
             </div>

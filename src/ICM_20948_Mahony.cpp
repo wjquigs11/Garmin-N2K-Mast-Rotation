@@ -23,10 +23,10 @@
    GND ------------- GND
 
 */
-
+#ifdef ICM209
+#include "compass.h"
 #include "ICM_20948.h" // Click here to get the library: http://librarymanager/All#SparkFun_ICM_20948_IMU
 #include <movingAvg.h>
-#include "compass.h"
 
 //////////////////////////
 // ICM_20948 Library Init //
@@ -75,12 +75,12 @@ float declination = VARIATION;
 #define Kp 50.0
 #define Ki 0.0
 
-movingAvg avgYaw(20);
+movingAvg avgYaw(50);
 
 unsigned long ICMnow = 0, ICMlast = 0; //micros() timers for AHRS loop
 float ICMdeltat = 0;  //loop time in seconds
 
-#define UPDATE_SPEED 50
+#define UPDATE_SPEED 10
 static unsigned long lastUpdate = 0;
 #define PRINT_SPEED 0 // ms between angle prints (0 for none)
 static unsigned long lastPrint = 0; // Keep track of print time
@@ -335,3 +335,4 @@ q4 += (qa * gz + qb * gy - qc * gx);
   q[2] = q3 * norm;
   q[3] = q4 * norm;
 }
+#endif

@@ -20,18 +20,13 @@ const char* P_INPUT_2 = "pass";
 const char* P_INPUT_3 = "ip";
 const char* P_INPUT_4 = "gateway";
 
-#define MAX_NETS 2
 int num_nets;
-String ssid[MAX_NETS] = {"null8chars", "null8chars"};
+String ssid[MAX_NETS];
 String pass[MAX_NETS];
 String ip[MAX_NETS];
 String gateway[MAX_NETS];
 
-// File paths to save input values permanently
-const char* ssidPath = "/ssid.txt";
-const char* passPath = "/pass.txt";
-const char* ipPath = "/ip.txt";
-const char* gatewayPath = "/gateway.txt";
+const char* wifiPath = "/wifi.txt";
 
 IPAddress localIP;
 //IPAddress localIP(192, 168, 1, 200); // hardcoded
@@ -60,6 +55,23 @@ String readFile(fs::FS &fs, const char * path){
   return fileContent;
 }
 
+void writeWiFi(int priority, String ssidNew, String passwdNew) {
+  ssid[priority] = ssidNew;
+  File wifiFile = SPIFFS.open(wifiPath, FILE_WRITE);
+  if(!wifiFile) {
+    Serial.println("- failed to open file for writing");
+    return;
+  }
+  for (int i=0; i<MAX_NETS; i++) {  
+    if (i == priority) {
+      wifiFile.printf("%s:%s::\n",ssidNew,passwdNew);
+    } else {
+      wifiFile.printf("%s:%s:%s:%s\n",ssid[i],ssid[i],ip[i],gateway[i]);
+    }
+  }
+  close(wifiFile);
+}
+
 void writeFile(fs::FS &fs, const char * path, const char * message){
   Serial.printf("Writing file: %s\r\n", path);
 
@@ -76,57 +88,25 @@ void writeFile(fs::FS &fs, const char * path, const char * message){
 }
 
 bool readWiFi() {
-  File file = SPIFFS.open(ssidPath);
+  File file = SPIFFS.open(wifiPath);
   if(!file || file.isDirectory()) {
-    logToAll("failed to open ssid for reading");
+    logToAll("failed to open wifi file for reading");
     return false;
   }
   int i=0;
   while(file.available()) {
-    ssid[i] = file.readStringUntil('\n');
-    logToAll("found SSID " + ssid[i]);
+    ssid[i] = file.readStringUntil(':');
+    pass[i] = file.readStringUntil(':');
+    ip[i] = file.readStringUntil(':');
+    gateway[i] = file.readStringUntil('\n');
+    logToAll("SSID " + ssid[i]);
+    logToAll("passwd " + pass[i]);
+    logToAll("IP " + ip[i]);
+    logToAll("gateway " + gateway[i]);
     i++;
   }
   num_nets=i;
-  i=0;
-  file = SPIFFS.open(passPath);
-  if(!file || file.isDirectory()) {
-    logToAll("failed to open pass for reading");
-    return false;
-  }
-  i=0;
-  while(file.available()) {
-    pass[i] = file.readStringUntil('\n');
-    logToAll("found passwd " + pass[i]);
-    i++;
-  }
-  if (i != num_nets) {
-    logToAll("Number of SSIDs and passwords do not match");
-    return false;
-  }
-  i=0;
-  file = SPIFFS.open(ipPath);
-  if(!file || file.isDirectory()) {
-    logToAll("failed to open IP for reading (ok)");
-  }
-  i=0;
-  while(file.available()) {
-    ip[i++] = file.readStringUntil('\n');
-  }
-  i=0;
-  file = SPIFFS.open(gatewayPath);
-  if(!file || file.isDirectory()) {
-    logToAll("failed to open gateway for reading (ok)");
-  }
-  i=0;
-  while(file.available()) {
-    gateway[i++] = file.readStringUntil('\n');
-  }
   logToAll("found " + String(num_nets) + " networks");
-  for (i=0; i<num_nets; i++) {
-    logToAll("wifi[" + String(i) + "]: " + ssid[i] + " " + pass[i] + " " + ip[i] + " " + gateway[i]);
-  }
-  //logToAll("return readwifi");
   return true;
 }
 

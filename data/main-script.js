@@ -69,16 +69,16 @@ if (!!window.EventSource) {
             if (elementThis) {
                 console.log("calstatus: ", myObj.boatCalStatus);
                 switch (myObj.boatCalStatus) {
-                    case 0:
+                    case "0":
                         elementThis.src = "red.png";
                         break;
-                    case 1:
+                    case "1":
                         elementThis.src = "orange.png";
                         break;
-                    case 2:
+                    case "2":
                         elementThis.src = "yellow.png";
                         break;
-                    case 3:
+                    case "3":
                         elementThis.src = "green.png";
                         break;
                     default:

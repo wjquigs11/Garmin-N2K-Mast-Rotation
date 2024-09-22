@@ -64,7 +64,14 @@ int adsInit;
 
 extern tNMEA2000 *n2kMain;
 extern int num_wind_messages;
-extern int num_wind_other;
+extern int num_wind_other;  // number of non-wind PGNs on wind bus
+extern int num_wind_fail; // number of failed wind messages
+extern int num_wind_ok; // number of successful wind messages
+extern int num_wind_other_fail; // number of failed non-wind PGNs on wind bus
+extern int num_wind_other_ok; // number of successful non-wind PGNs on wind bus
+// an array of PGNs that we've observed on the wind bus that are *not* 127250 or 130306
+unsigned long otherPGN[MAXPGN];
+int otherPGNindex = 0;
 
 extern JSONVar readings;
 
@@ -306,6 +313,7 @@ void ParseWindCAN() {
     //Serial.println("no more on wind bus");
     return;
   }
+  windCounter();
   n2kWind.readMsgBuf(&len, cdata);
   unsigned long ID = n2kWind.getCanId();
   PGN = ((ID & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
@@ -316,9 +324,10 @@ void ParseWindCAN() {
 #endif
   switch (PGN) {
     case 130306: { 
-      if (windCANsrc == 0) // this is our first wind packet, track the source
+      if (windCANsrc == 0) { // this is our first wind packet, track the source
         windCANsrc = SRC;
-      windCounter();
+        logToAll("got first wind from CAN " + String(windCANsrc));
+      }
       WindSensor::windSpeedMeters = ((cdata[2] << 8) | cdata[1]) / 100.0;
       WindSensor::windAngleRadians = ((cdata[4] << 8) | cdata[3]) / 10000.0;
       wRef = (tN2kWindReference)cdata[5];
@@ -336,9 +345,9 @@ void ParseWindCAN() {
       hRef = (tN2kHeadingReference)(cdata[7]&0x03);
       // hack! if hRef == N2khr_true that means mast IMU is aligned with Hall sensor
       if (hRef == N2khr_true) {
+        logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
         mastOrientation = 0;
-      } else {
-        mastOrientation = compassDifference(mastCompassDeg, boatCompassDeg);
+        mastOrientation = mastDelta = readCompassDelta();
       }
 #ifdef DEBUG
       Serial.printf("CAN parsed heading SID %d heading %0.4f ref %d (%x)\n", SID, mastCompassDeg, hRef, cdata[5]);
@@ -347,6 +356,17 @@ void ParseWindCAN() {
     }
     default: { 
       num_wind_other++; 
+      bool PGNfound=false;
+      for (int i=0; i<otherPGNindex; i++) {
+        if (otherPGN[i] == PGN) {
+          PGNfound=true;
+          break;
+        }
+      }
+      if (!PGNfound) {
+        logToAll("new wind PGN " + String(PGN));
+        otherPGN[otherPGNindex++] = PGN;
+      }
       // everything that's not from wind source, pass through to main bus
       // done for Paul because he has depth transducer on same branch as wind
       if (SRC != windCANsrc) {
@@ -357,11 +377,13 @@ void ParseWindCAN() {
           correctN2kMsg.AddByte(cdata[i]);
         }
         if (n2kMain->SendMsg(correctN2kMsg)) {
+          num_wind_other_ok++;
           //Serial.printf("forward N2k OK %d\n", PGN);
         } else {
-          logToAll("Failed to forward packet from wind to main.");  
+          num_wind_other_fail++;
+          if (num_wind_other_fail < 10)
+            logToAll("Failed to forward packet from wind to main PGN: " + String(PGN));  
         }
-#if 0
         // temporary: check to see if we can parse the message we just created
         if (PGN == 128259) {
           double watref, gndref;
@@ -370,6 +392,7 @@ void ParseWindCAN() {
             Serial.printf("parsed speed PGN %d that we created SID %d watref %0.2f gndref %0.2f\n", PGN, SID, watref, gndref);
           else Serial.printf("failed to parse speed PGN %d that we created\n", PGN);
         }
+#if 0
         if (PGN == 127250) {
           double heading, deviation, variation;
           tN2kHeadingReference headingRef;

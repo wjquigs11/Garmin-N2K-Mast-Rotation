@@ -11,7 +11,6 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include "windparse.h"
 #include "BoatData.h"
 #include <Adafruit_ADS1X15.h>
-#include "ICM_20948.h"
 
 #ifdef PICAN
 #include <N2kMsg.h>
@@ -129,7 +128,10 @@ extern int adsInit;
 // timing/display
 int num_n2k_messages = 0;
 int num_wind_messages = 0;
+int num_wind_fail = 0;
 int num_wind_other = 0;
+int num_wind_other_fail = 0;
+int num_wind_other_ok = 0;
 int num_mastcomp_messages = 0;
 elapsedMillis time_since_last_can_rx = 0;
 elapsedMillis time_since_last_wind_rx = 0;
@@ -167,6 +169,7 @@ int mastOrientation; // delta between mast compass and boat compass
 int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
 int boatOrientation; // delta between boat compass and magnetic north
 float boatCompassDeg; // magnetic heading not corrected for variation
+float boatCompassTrue;
 float mastCompassDeg;
 float mastDelta;
 extern tN2kWindReference wRef;
@@ -181,14 +184,16 @@ float getMastHeading();
 #define W1SCL 33
 #define W1SDA 32
 
+bool imuReady=false;
+bool mastIMUready=false;
+
 #ifdef CMPS14
 const int CMPS14_ADDRESS = 0x60;
 // robotshop CMPS14 (boat compass)
 #endif
 
-bool imuReady=false;
-bool mastIMUready=false;
 #ifdef ICM209
+#include "ICM_20948.h"
 extern ICM_20948_I2C imu; // create an ICM_20948_I2C object imu;
 void getICMheading(void *parameter);
 extern movingAvg avgYaw;
@@ -196,12 +201,33 @@ extern movingAvg avgYaw;
 TaskHandle_t compassTask;
 #endif
 
-#ifdef MASTIMU
-extern SparkFun_ISM330DHCX ISM330;
-TaskHandle_t mastTask;
+#ifdef ISM330
+#include "SparkFun_ISM330DHCX.h"
+//extern SparkFun_ISM330DHCX ism330;
+TaskHandle_t compassTask;
 void getISMheading(void *parameter);
-bool setupMastIMU(TwoWire &wirePort, uint8_t deviceAddress);
+bool setupISM330(TwoWire &wirePort, uint8_t deviceAddress);
 #endif
+
+#ifdef BNO08X
+#include <Adafruit_BNO08x.h>
+float getBNO085(int correction);
+void setReports(int reportType);
+extern int reportType;
+extern float boatAccuracy;
+extern int boatCalStatus; 
+extern Adafruit_BNO08x bno08x;
+#endif
+
+#ifdef SFBNO
+#include "SparkFun_BNO08x_Arduino_Library.h"  
+extern BNO08x bno08x;
+extern int reportType;
+float getBNO(int correction);
+void setReports(int reportType, uint16_t timeBetweenReports);
+#endif
+
+int headingErrCount;
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -239,7 +265,7 @@ const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
 void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg) {
   if (stackTrace) Serial.println("HandleNMEA2000MsgMain");
    
-  Serial.print("main: "); N2kMsg.Print(&Serial);
+  //Serial.print("main: "); N2kMsg.Print(&Serial);
   n2kMainOpen = true;
   //n2kMain->SetForwardStream(forward_stream);
   num_n2k_messages++;
@@ -322,7 +348,8 @@ void mastcompCounter() {
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
   if (stackTrace) Serial.println("HandleNMEA2000MsgWind");
    
-  N2kMsg.Print(&Serial);
+  windCounter();
+  //N2kMsg.Print(&Serial);
   //Serial.printf("wind t: %d R: %d\n", millis(), N2kMsg.PGN);
   if (!n2kWindOpen) {
     n2kWindOpen = true;
@@ -334,7 +361,6 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
   //  mastCompassDeg = -1;
   switch (N2kMsg.PGN) {
     case 130306L:
-      windCounter();
       ParseWindN2K(N2kMsg);
       break;
     case 128259L:
@@ -379,10 +405,10 @@ void PollCANStatus() {
 
   switch (bus_status) {
     case 0:
-      can_state = "RUNNING";
+      can_state = "RUN";
       break;
     case 1:
-      can_state = "BUS-OFF";
+      can_state = "OFF";
       // try to automatically recover
       //RecoverFromCANBusOff();
       break;
@@ -395,13 +421,16 @@ void OLEDdataWindDebug() {
   double windAngleDegrees = WindSensor::windAngleDegrees;
   display->clearDisplay();
   display->setCursor(0, 5);
-  display->printf("CAN: %s ", can_state.c_str());
+  //display->printf("CAN: %s ", can_state.c_str());
   unsigned long uptime = millis() / 1000;
-  display->printf("Up: %lu\n", uptime);
+  display->printf("Up: %lu Wifi: ", uptime % 10000); // just print last 3 digits
+  if (WiFi.status() == WL_CONNECTED)
+    display->printf("%s\n", WiFi.SSID());
+  else display->printf("----\n");
   if (uptime % 60 == 0)  
     logToAll("uptime: " + String(uptime) + " heap: " + String(ESP.getFreeHeap()));
-  display->printf("N2K: %d ", num_n2k_messages);
-  display->printf("Wind: %d\n", num_wind_messages);
+  display->printf("N2K: %d ", num_n2k_messages % 10000);
+  display->printf("Wind: %d\n", num_wind_messages % 10000);
   display->printf("S/A/R:%2.1f/%2.0f/%2.0f\n", windSpeedKnots, windAngleDegrees,rotateout);
   //display->printf("Rot:%d\n", mastRotate);
   if (honeywellOnToggle) {
@@ -431,13 +460,16 @@ void setup() {
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
 
+  Wire.begin();
   Wire.setClock(100000);
 
+#if 0
   if (Wire1.begin(W1SDA, W1SCL))
     Serial.println("Wire1 OK");
   else
     Serial.println("Wire1 FAIL");
-  Wire1.setClock(100000);
+  Wire1.setClock(400000); // Set to 400 kHz 
+#endif
 
 #ifdef DIYMORE
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
@@ -570,7 +602,7 @@ void setup() {
       NULL,         // Parameter to pass to the function
       1,            // Priority of the task
       &compassTask,        // Task handle
-      1
+      0
     );
     Serial.println("ICM20948 found.\n");
     avgYaw.begin();
@@ -579,25 +611,53 @@ void setup() {
     i2cScan(Wire1);
   }
 #endif
-#ifdef MASTIMU
-  mastIMUready = setupMastIMU(Wire, MASTIMU);
-  if (mastIMUready) {
+#ifdef ISM330
+  imuReady = setupISM330(Wire1, ISM330);
+  if (imuReady) {
     xTaskCreatePinnedToCore(
       getISMheading, // Task function
-      "getMastHeading",      // Name of task
+      "getISMHeading",      // Name of task
       2048,        // Stack size (bytes)
       NULL,         // Parameter to pass to the function
       1,            // Priority of the task
-      &mastTask,        // Task handle
+      &compassTask,        // Task handle
       0
     );
-    Serial.println("mast IMU ISM330 detected.");  
+    Serial.println("IMU ISM330 detected.");  
   } else {
-    Serial.printf("Failed to find mast IMU ISM330 @ 0x%x\n", MASTIMU);
+    Serial.printf("Failed to find IMU ISM330 @ 0x%x\n", ISM330);
     i2cScan(Wire);
   }
 #endif
-
+#ifdef BNO08X
+  imuReady = bno08x.begin_I2C(BNO08X,&Wire);
+  if (imuReady) {
+    logToAll("BNO08x Found\n");
+    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
+      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
+      logToAll(logString);
+    }
+    setReports(reportType);
+  } else {
+    Serial.println("BNO08x not found");
+    i2cScan(Wire);
+  }
+#endif
+#ifdef SFBNO
+  logToAll("SFBNO");
+  imuReady = bno08x.begin(SFBNO);
+  if (imuReady) {
+    logToAll("SF BNO08x Found\n");
+    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
+      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
+      logToAll(logString);
+    }
+    setReports(reportType, compassFrequency);
+  } else {
+    Serial.println("SF BNO08x not found");
+    i2cScan(Wire);
+  }
+#endif
   mastCompDelta.begin();
 #ifdef DISPLAYON
   Serial.println("OLED started");
@@ -668,8 +728,8 @@ void setup() {
 // if we get in range, it's simpler to reboot than to constantly check
   app.onRepeat(300000, []() {
     // we have to clear counters sometime because otherwise they roll off screen
-    num_n2k_messages = 0;
-    num_wind_messages = 0;  
+    //num_n2k_messages = 0;
+    //num_wind_messages = 0;  
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("WiFi not connected");
       initWiFi();
@@ -697,6 +757,31 @@ void setup() {
     }
 });
 
+#ifdef BNO08X
+  app.onRepeat(compassFrequency, []() {  // compassFrequency?
+    float heading;
+    if (imuReady) {
+      heading = getBNO085(boatOrientation);
+      if (heading >=0 ) boatCompassDeg = heading;
+        else
+          headingErrCount++;
+    }
+  });
+#endif
+#ifdef SFBNO
+  app.onRepeat(compassFrequency, []() {  // compassFrequency?
+    float heading;
+    if (imuReady) {
+      heading = getBNO(boatOrientation);
+      if (heading >=0 ) {
+        boatCompassDeg = heading;
+        //Serial.printf(">heading:%0.2f\n",heading);
+      } else
+          headingErrCount++;
+    }
+  });
+#endif
+
   // check in for new heading 100 msecs = 10Hz
   if (imuReady && !demoModeToggle)
     app.onRepeat(compassFrequency, []() {
@@ -718,12 +803,14 @@ void setup() {
         Serial.print(">boat:");
         Serial.println(boatCompassDeg);
         Serial.print(">delta:");
-        Serial.println(mastDelta);   
+        Serial.println(mastDelta);  
+#ifdef BNO08X
+        Serial.printf(">true:%0.2f\n",BoatData.TrueHeading); 
+        Serial.printf(">calstat:%d\n", boatCalStatus);
+        Serial.printf(">acc:%0.2f\n", boatAccuracy*RADTODEG);
+#endif
     }
-    BoatData.TrueHeading = boatCompassDeg + BoatData.Variation;
-    if (BoatData.TrueHeading > 359) BoatData.TrueHeading -= 360;
-    if (BoatData.TrueHeading < 0) BoatData.TrueHeading += 360;
-  #ifdef N2K
+#if defined(N2K) && defined(NOTDEF)  // do not xmit heading at this time since not using magnetic reference
     // transmit heading
     if (n2kMainOpen) {
       SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
@@ -733,7 +820,7 @@ void setup() {
         Serial.println("Failed to send heading from compass reaction");
       }
     }
-  #endif
+#endif
     });
     else logToAll("compass not ready no heading reaction");
 
