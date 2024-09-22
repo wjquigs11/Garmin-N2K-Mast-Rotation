@@ -1,4 +1,3 @@
-
 #include "windparse.h"
 #include <Adafruit_ADS1X15.h>
 #include "BoatData.h"
@@ -31,6 +30,7 @@ extern void setupWifi();
 //extern String host;
 extern void loopWifi();
 void startWebServer();
+void writeWiFi(int priority, String ssidNew, String passwdNew);
 
 // mast compass
 int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
@@ -50,6 +50,12 @@ extern float mastDelta;
 extern int num_n2k_messages;
 extern int num_wind_messages;
 extern int num_wind_other;
+extern int headingErrCount;
+extern int num_wind_fail;
+extern int num_wind_other_fail;
+extern int num_wind_other_ok;
+extern unsigned long otherPGN[MAXPGN];
+extern int otherPGNindex;
 
 void mastHeading();
 extern int mastAngle[2]; // array for both sensors
@@ -57,7 +63,7 @@ extern int mastAngle[2]; // array for both sensors
 // 1 = compass
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
-bool teleplot;
+bool teleplot=false;
 
 #ifdef RS485CAN
 void WindSpeed();
@@ -67,15 +73,19 @@ void WindSpeed(const tN2kMsg &N2kMsg);
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
 #ifdef BNO08X
+#include <Adafruit_BNO08x.h>
 extern Adafruit_BNO08x bno08x;
 #endif
 extern Preferences preferences;
 
 void logToAll(String s) {
+  if (s.endsWith("\n")) s.remove(s.length() - 1);
   Serial.println(s);
   //consLog.println(s);
-  if (serverStarted)
+  if (serverStarted) {
     WebSerial.println(s);
+    WebSerial.flush();
+  }
   s = String();
 }
 
@@ -138,7 +148,8 @@ void i2cScan(TwoWire Wire) {
   }
 }
 
-String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle", "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype"};
+String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
+   "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi"};
 #define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 String words[10]; // Assuming a maximum of 10 words
 
@@ -147,7 +158,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
   Serial.write(data, len);
   //Serial.println();
   ////Serial.printf("commandList size is: %d\n", ASIZE(commandList));
-  WebSerial.println("Received Data...");
+  logToAll("Received Data...");
   String dataS = String((char*)data);
   // Split the String into an array of Strings using spaces as delimiters
   int wordCount = 0;
@@ -163,120 +174,161 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
   }
   for (int i = 0; i < wordCount; i++) {   
-    WebSerial.println(words[i]); 
+    logToAll(words[i]); 
     int j;
     if (words[i].equals("?")) {
       for (j = 1; j < ASIZE(commandList); j++) {
-        WebSerial.println(String(j) + ":" + commandList[j]);
+        logToAll(String(j) + ":" + commandList[j]);
       }
     }
     if (words[i].toInt() > 0)
       for (j = 1; j < ASIZE(commandList); j++) {
-        //WebSerial.println("j: " + String(j) + " " + commandList[j]);
+        //logToAll("j: " + String(j) + " " + commandList[j]);
         if (words[i].toInt() == j) {
           //Serial.printf("match %d %s %d %s\n", i, words[i].c_str(), j, commandList[j].c_str());
           words[i] = commandList[j];
         }
       }
     if (words[i].equals("status")) {
-      WebSerial.println("             uptime: " + String(millis() / 1000));
-      WebSerial.println("           AWS (in): " + String(WindSensor::windSpeedKnots));
-      WebSerial.println("           AWA (in): " + String(WindSensor::windAngleDegrees));
-      WebSerial.flush();
-      WebSerial.println(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
-      WebSerial.println("       Sensor angle: " + String(mastRotate));
-      WebSerial.println("        Correct AWA: " + String(rotateout));
-      WebSerial.flush();
-      WebSerial.println("       Mast Compass: " + String(mastCompassDeg));
-      WebSerial.println("         Mast angle: " + String(mastDelta));
-#ifdef N2K
-      WebSerial.println("           n2k main: " + String(num_n2k_messages));
-      WebSerial.println("           n2k wind: " + String(num_wind_messages));
-      WebSerial.println("   n2k wind (other): " + String(num_wind_other));
-#endif
-      WebSerial.flush();
+      logToAll("             uptime: " + String(millis() / 1000));
+      logToAll("           AWS (in): " + String(WindSensor::windSpeedKnots));
+      logToAll("           AWA (in): " + String(WindSensor::windAngleDegrees));
+      logToAll(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
+      logToAll("       Sensor angle: " + String(mastRotate,2));
+      logToAll("        Correct AWA: " + String(rotateout,2));
+      logToAll("       Mast Compass: " + String(mastCompassDeg,2));
+      logToAll("         Mast angle: " + String(mastDelta,2));
     }
     if (words[i].equals("compass")) {
-      WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
+      logToAll("           Boat Compass: " + String(boatCompassDeg));
+      logToAll("      heading err count: " + String(headingErrCount));
+      logToAll("           Mast Compass: " + String(mastCompassDeg));
+#ifdef BNO08XXXXX
+      logToAll("           Cal Status: " + String()
+#endif
 #ifdef CMPS14
       WebSerial.printf("            [Calibration]: ");
       String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
-      WebSerial.println("mag: " + String(calibrationStatus[0]) + String(calibrationStatus[1]) + " " + CV);
+      logToAll("mag: " + String(calibrationStatus[0]) + String(calibrationStatus[1]) + " " + CV);
       CV = String((calibrationStatus[2] << 8) | calibrationStatus[3]);
-      WebSerial.println("acc: " + String(calibrationStatus[2]) + String(calibrationStatus[3]) + " " + CV);
+      logToAll("acc: " + String(calibrationStatus[2]) + String(calibrationStatus[3]) + " " + CV);
       // gyro cal is "currently broken"
       CV = String((calibrationStatus[6] << 8) | calibrationStatus[7]);
-      WebSerial.println("sys: " + String(calibrationStatus[6]) + String(calibrationStatus[7]) + " " + CV);
-      WebSerial.println();
+      logToAll("sys: " + String(calibrationStatus[6]) + String(calibrationStatus[7]) + " " + CV);
+      logToAll();
       CV = String();
+#endif
+    }
+    if (words[i].equals("n2k")) {
+#ifdef N2K
+      logToAll("           n2k main: " + String(num_n2k_messages));
+      logToAll("           n2k wind: " + String(num_wind_messages));
+      logToAll("      n2k wind fail: " + String(num_wind_fail));
+      logToAll("       n2k wind fwd: " + String(num_wind_other));
+      logToAll("  n2k wind fwd fail: " + String(num_wind_other_fail));
+      logToAll("    n2k wind fwd ok: " + String(num_wind_other_ok));
+      if (otherPGNindex > 0) {
+        logToAll("n2k other PGNs: ");
+        for (int i=0; i<otherPGNindex; i++) {
+          logToAll(String(otherPGN[i]));
+        }
+      }
 #endif
     }
     if (words[i].equals("format")) {
       SPIFFS.format();
-      WebSerial.println("SPIFFS formatted");
+      logToAll("SPIFFS formatted");
     }
     if (words[i].equals("restart")) {
-      WebSerial.println("Restarting...");
+      logToAll("Restarting...");
       ESP.restart();
     }
     if (words[i].equals("ls")) {
       File root = SPIFFS.open("/");
       File file = root.openNextFile();
       while (file) {
-        WebSerial.println(file.name());
+        logToAll(file.name());
         file.close(); 
         file = root.openNextFile();
       }
       root.close();
-      //WebSerial.println("done");
+      //logToAll("done");
     }
     if (words[i].equals("scan")) {
       i2cScan(Wire);
     }
     if (words[i].equals("readings")) {
-      WebSerial.println(readings);
+      logToAll(JSON.stringify(readings));
     }
     if (words[i].equals("mast")) {
       //sendMastControl();
-      //WebSerial.println(readings);
+      //logToAll(readings);
     }
     if (words[i].equals("lsap")) {
       lsAPconn();
     }
+    if (words[i].equals("wifi")) {
+      int priority;
+      String ssid, passwd;
+      if (!words[++i].isEmpty()) {
+        int j=i;
+        while (!words[j].isEmpty()) {
+          if (words[j].equals("-p")) { // priority (1..3)
+            priority = words[++j].toInt();
+          } 
+          if (words[j].equals("-S")) { // ssid
+            ssid = words[++j];
+          }
+          if (words[j].equals("-P")) { // password
+            passwd = words[++j];
+          }
+          j++;
+        } // while
+        if (priority > 0 && priority <= MAX_NETS && !ssid.isEmpty() && !passwd.isEmpty()) {
+          logToAll("wifi params: -p: " + String(priority) + " -s: " + ssid + " -P: " + passwd);
+          writeWiFi(priority-1, ssid, passwd);
+        } else {
+          logToAll("wifi syntax -p <1..3> -S ssid -P password");
+          logToAll("current: -p: " + String(priority) + " -S: " + ssid + " -P: " + passwd);
+        }
+      } else { // no parameters
+        if (WiFi.status() == WL_CONNECTED)
+          logToAll("connected to: " + WiFi.SSID());  
+        else logToAll("wifi not connected");
+      }
+      return;      
+    }
     if (words[i].equals("toggle")) {
-      WebSerial.println("Display: " + String(displayOnToggle));
-      WebSerial.println("Compass: " + String(compassOnToggle));
-      WebSerial.println("Honeywell: " + String(honeywellOnToggle));
+      logToAll("Display: " + String(displayOnToggle));
+      logToAll("Compass: " + String(compassOnToggle));
+      logToAll("Honeywell: " + String(honeywellOnToggle));
     }
 #ifdef NMEA0183
     if (words[i].equals("gps") && pBD) {
       //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
-      WebSerial.println("Latitude: " + String(pBD->Latitude));
-      WebSerial.println("Longitude: " + String(pBD->Longitude));
+      logToAll("Latitude: " + String(pBD->Latitude));
+      logToAll("Longitude: " + String(pBD->Longitude));
     }
 #endif
     if (words[i].equals("webserver")) {
-      WebSerial.print("local IP: ");
-      WebSerial.println(WiFi.localIP());
-      WebSerial.print("AP IP address: ");
-      WebSerial.println(WiFi.softAPIP());
+      logToAll("local IP: " + WiFi.localIP());
+      logToAll("AP IP address: " + WiFi.softAPIP());
         int clientCount = WiFi.softAPgetStationNum();
         if (clientCount > 0) {
-          WebSerial.print("Clients connected: ");
-          WebSerial.println(clientCount);
+          logToAll("Clients connected: " + clientCount);
         } else {
-          WebSerial.println("No clients connected");
+          logToAll("No clients connected");
         }
 
     }
     if (words[i].equals("windrx")) {
-      WebSerial.println("last wind time: " + String(time_since_last_wind_rx) + " avg wind time: " + String(avg_time_since_last_wind) + " ms");
+      logToAll("last wind time: " + String(time_since_last_wind_rx) + " avg wind time: " + String(avg_time_since_last_wind) + " ms");
       if (time_since_last_wind_rx > 0.0)
-        WebSerial.println(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
+        logToAll(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
     }    
     if (words[i].equals("teleplot")) {
       teleplot = !teleplot;
-      logToAll("teleplot: " + teleplot?"on":"off");
+      logToAll("teleplot: " + teleplot?" on":" off");
       return;
     }
     if (words[i].equals("hostname")) {

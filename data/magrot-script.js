@@ -1,8 +1,12 @@
 
+var container = document.getElementById('magrot-card');
+//var size = Math.min(container.offsetWidth, container.offsetHeight);
+var size = container.offsetWidth;
+
 var gaugeMagRot = new RadialGauge({
   renderTo: 'gauge-magrot',
-  width: 300,
-  height: 300,
+  width: size,
+  height: size,
 //    units: "degrees",
   minValue: -90,
   maxValue: 90,

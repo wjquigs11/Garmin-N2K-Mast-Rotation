@@ -10,13 +10,13 @@
 
 */
 
-
+#ifdef ISM330
 
 #include "windparse.h"
 #include "compass.h"
 #include "SparkFun_ISM330DHCX.h"
 
-SparkFun_ISM330DHCX ISM330;
+SparkFun_ISM330DHCX ism330;
 
 // Structs for X,Y,Z data
 sfe_ism_data_t acc;
@@ -28,7 +28,8 @@ sfe_ism_data_t gyr;
 //float gxyz_offsets[3] = {0};
 // otherwise, define the gyro offsets explicitly
 //float gxyz_offsets[3] = {131.0, -579.0, -183.0};
-float gxyz_offsets[3] = { -80.7, -112.9, -433.8 };
+//float gxyz_offsets[3] = { -80.7, -112.9, -433.8 };
+float gxyz_offsets[3] = { 306.5 -573.7 -119.2 };
 
 // library returns milliDPS
 float RadiansPerSecond = M_PI / 180000.0; //conversion factor for Mahony filter
@@ -50,16 +51,16 @@ static unsigned long lastPrint = 0; // Keep track of print time
 
 void Mahony_update(float ax, float ay, float az, float gx, float gy, float gz, float deltat);
 
-extern float mastCompassDeg;
+extern float mastCompassDeg, boatCompassDeg;
 
-bool setupMastIMU(TwoWire &wirePort, uint8_t deviceAddress) {
+bool setupISM330(TwoWire &wirePort, uint8_t deviceAddress) {
 
   //Wire.begin();
 
   //Serial.begin(115200); delay(500);
   //while (!Serial);  //wait for serial monitor to connect (can replace this with delay())
 
-  bool initOK = ISM330.begin(wirePort, deviceAddress);
+  bool initOK = ism330.begin(wirePort, deviceAddress);
   if (!initOK) {
     Serial.println("ISM330 not detected.");
     return false;
@@ -67,16 +68,16 @@ bool setupMastIMU(TwoWire &wirePort, uint8_t deviceAddress) {
 
   //  Serial.println("Applying settings.");
 
-  ISM330.setDeviceConfig();
-  ISM330.setBlockDataUpdate();
+  ism330.setDeviceConfig();
+  ism330.setBlockDataUpdate();
 
   // Set the output data rate and precision of the accelerometer
-  ISM330.setAccelDataRate(ISM_XL_ODR_104Hz);
-  ISM330.setAccelFullScale(ISM_2g);
+  ism330.setAccelDataRate(ISM_XL_ODR_104Hz);
+  ism330.setAccelFullScale(ISM_2g);
 
   // Set the output data rate and precision of the gyroscope
-  ISM330.setGyroDataRate(ISM_GY_ODR_104Hz);
-  ISM330.setGyroFullScale(ISM_500dps);
+  ism330.setGyroDataRate(ISM_GY_ODR_104Hz);
+  ism330.setGyroFullScale(ISM_500dps);
 
   /*
   	// Turn on the accelerometer's filter and apply settings.
@@ -84,8 +85,8 @@ bool setupMastIMU(TwoWire &wirePort, uint8_t deviceAddress) {
   	ISM330.setAccelSlopeFilter(ISM_LP_ODR_DIV_100);
   */
   // Turn on the gyroscope's filter and apply settings.
-  ISM330.setGyroFilterLP1();
-  ISM330.setGyroLP1Bandwidth(ISM_MEDIUM);
+  ism330.setGyroFilterLP1();
+  ism330.setGyroLP1Bandwidth(ISM_MEDIUM);
 
   // reminder!
   Serial.print("Gyro offsets ");
@@ -113,9 +114,9 @@ void getISMheading(void *parameter) {
     if ((time = millis()) - lastUpdate > UPDATE_SPEED) {
       loop_counter++;
       // Check if both gyroscope and accelerometer data are available.
-      if ( ISM330.checkStatus() ) {
-        ISM330.getAccel(&acc);
-        ISM330.getGyro(&gyr);
+      if ( ism330.checkStatus() ) {
+        ism330.getAccel(&acc);
+        ism330.getGyro(&gyr);
         now_us = micros();
 
         //normalize accelerometer data
@@ -153,9 +154,9 @@ void getISMheading(void *parameter) {
           lastPrint = millis(); // Update lastPrint time
         }
         lastUpdate = millis();
-        mastCompassDeg = avgMastYaw.reading(yaw);      
+        boatCompassDeg = avgMastYaw.reading(yaw);      
         if (loop_counter % 10000 == 1) {
-          temperature = ISM330.getTemp();
+          temperature = ism330.getTemp();
           Serial.printf("temp:%lu:%d\n", lastPrint, temperature);
         }
       }
@@ -231,3 +232,4 @@ void Mahony_update(float ax, float ay, float az, float gx, float gy, float gz, f
   q[2] = q[2] * recipNorm;
   q[3] = q[3] * recipNorm;
 }
+#endif

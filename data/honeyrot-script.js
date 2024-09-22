@@ -1,8 +1,11 @@
+var container = document.getElementById('honeyrot-card');
+//var size = Math.min(container.offsetWidth, container.offsetHeight);
+var size = container.offsetWidth;
 
 var gaugeHoneyRot = new RadialGauge({
   renderTo: 'gauge-honeyrot',
-  width: 300,
-  height: 300,
+  width: size,
+  height: size,
 //    units: "degrees",
   minValue: -50,
   maxValue: 50,
