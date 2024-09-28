@@ -22,7 +22,6 @@ tNMEA0183Msg NMEA0183Msg;
 #endif
 #endif
 
-#define RS485CAN // temp!!!
 #ifdef RS485CAN
 #include "mcp2515_can.h"
 #endif
@@ -73,12 +72,15 @@ extern int num_wind_other_ok; // number of successful non-wind PGNs on wind bus
 unsigned long otherPGN[MAXPGN];
 int otherPGNindex = 0;
 
+extern elapsedMillis time_since_last_mastcomp_rx;
+
 extern JSONVar readings;
 
 char prbuf[PRBUF];
 
 void calcTrueWind();
 void windCounter();
+void mastCompCounter();
 
 // returns degrees, and corresponds to the current value of the Honeywell sensor
 float readAnalogRotationValue() {      
@@ -161,13 +163,13 @@ char n0183buf[64],n0183cksumbuf[64];
 #endif
 
 void WindSpeed() {
-  ////Serial.println("windspeed");
+  //Serial.println("windspeed");
   num_wind_messages++;
   WindSensor::windSpeedKnots = WindSensor::windSpeedMeters * 1.943844; // convert m/s to kts
   WindSensor::windAngleDegrees = WindSensor::windAngleRadians * RADTODEG;
   ////Serial.printf("sensor angle %0.2f\n", WindSensor::windAngleDegrees);
   if (wRef != N2kWind_Apparent) { // N2kWind_Apparent
-    //Serial.printf("got wind PGN not apparent! %d\n", wRef);
+    Serial.printf("got wind PGN not apparent! %d\n", wRef);
     return;
   }
   // read rotation value and correct
@@ -182,9 +184,10 @@ void WindSpeed() {
     if (!honeywellOnToggle)
       mastRotate = readCompassDelta();
   }
+  //#define DEBUG
   #ifdef DEBUG
-  //Serial.print(" mastRotate: ");
-  //Serial.print(mastRotate);
+  Serial.print(" mastRotate: ");
+  Serial.println(mastRotate);
   #endif
   float anglesum = WindSensor::windAngleDegrees + mastRotate;    // sensor AFT of mast so subtract rotation
   // ensure sum is 0-359; rotateout holds the corrected AWA
@@ -206,7 +209,7 @@ void WindSpeed() {
   // and the AWA converted from rads to degrees, corrected, and converted back to rads
   SetN2kPGN130306(correctN2kMsg, 0xFF, WindSensor::windSpeedMeters, rotateout*DEGTORAD, N2kWind_Apparent); 
   if (n2kMain->SendMsg(correctN2kMsg)) {
-    ////Serial.printf("sent n2k wind %0.2f", rotateout);
+    //Serial.printf("sent n2k wind %0.2f", rotateout);
   } else {
     Serial.println("Failed to send wind");  
   }
@@ -298,13 +301,13 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
 #ifdef RS485CAN
 extern mcp2515_can n2kWind;
 extern tN2kMsg correctN2kMsg;
-uint8_t windCANsrc = 0;
+int windCANsrc = -1;
 //extern mcp2515_can n2kWind;
 byte cdata[MAX_DATA_SIZE] = {0};
 //#define DEBUG
 // parse a packet manually from CAN bus data (not using Timo library)
 // set globals for wind speed/angle or heading for processing by WindSpeed() or Heading()
-void ParseWindCAN() {
+void parseWindCAN() {
   //Serial.print("parsewindcan ");
   uint8_t len;
   int PGN;
@@ -319,37 +322,58 @@ void ParseWindCAN() {
   PGN = ((ID & 0x1FFFFFFF)>>8) & 0x3FFFF; // mask 00000000000000111111111111111111
   uint8_t SRC = ID & 0xFF;
   SID = cdata[0];
-#ifdef DEBUG
+//#define DEBUGCAN
+#ifdef DEBUGCAN
   Serial.printf("CAN PGN %d SRC %d SID %d len %d\n", PGN, SRC, SID, len);
 #endif
   switch (PGN) {
     case 130306: { 
-      if (windCANsrc == 0) { // this is our first wind packet, track the source
+      if (windCANsrc == -1) { // this is our first wind packet, track the source
         windCANsrc = SRC;
         logToAll("got first wind from CAN " + String(windCANsrc));
       }
       WindSensor::windSpeedMeters = ((cdata[2] << 8) | cdata[1]) / 100.0;
       WindSensor::windAngleRadians = ((cdata[4] << 8) | cdata[3]) / 10000.0;
-      wRef = (tN2kWindReference)cdata[5];
-#ifdef DEBUG
+      wRef = (tN2kWindReference)(cdata[5]&0x07);
+#ifdef DEBUGCAN
       Serial.printf("CAN parsed wind SID %d Speed %0.2f Angle %0.4f (%0.4f) ref %d (%x)\n", SID, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, WindSensor::windAngleRadians*(180/M_PI), wRef, cdata[5]);
+        for (int i=0; i<8; i++)
+          Serial.printf("%02X ", cdata[i]);
+        Serial.println();
 #endif
-      WindSpeed();
+      if (time_since_last_mastcomp_rx > 5000) {
+        // if mast messages timeout, send unchanged wind PGN
+        SetN2kPGN130306(correctN2kMsg, 0xFF, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, N2kWind_Apparent); 
+        if (n2kMain->SendMsg(correctN2kMsg)) {
+          //Serial.printf("sent n2k wind %0.2f", rotateout);
+        } else {
+          Serial.println("Failed to send wind from parseWindCAN()");  
+        }
+      } else 
+        WindSpeed();
       break;
     } 
     case 127250: {
+      mastCompCounter(); // for timeout if it gets disconnected
       float mastCompassRad = ((cdata[2] << 8) | cdata[1]) / 10000.0;
-      mastCompassDeg = mastCompassRad * RADTODEG;
-      // deviation 4|3
-      // variation 6|5
+      // deviation 4|3, variation 6|5
       hRef = (tN2kHeadingReference)(cdata[7]&0x03);
+      if (hRef == N2khr_Unavailable) { // expected from mast IMU
+            mastCompassDeg = mastCompassRad * RADTODEG;
+      }
       // hack! if hRef == N2khr_true that means mast IMU is aligned with Hall sensor
       if (hRef == N2khr_true) {
+        mastCompassDeg = mastCompassRad * RADTODEG;
         logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
         mastOrientation = 0;
         mastOrientation = mastDelta = readCompassDelta();
       }
-#ifdef DEBUG
+      if (hRef == N2khr_magnetic) {
+        // do NOT set mastCompassDeg for magnetic heading since this will be referenced to mag north
+        float mastCompassDegMag = mastCompassRad * RADTODEG + BoatData.Variation;
+        //logToAll("got compass heading, mast: " + String(mastCompassDegMag) + " boat: " + String(BoatData.TrueHeading) + String(compassDifference(mastCompassDegMag, BoatData.TrueHeading)));
+      }
+#ifdef DEBUGXXX
       Serial.printf("CAN parsed heading SID %d heading %0.4f ref %d (%x)\n", SID, mastCompassDeg, hRef, cdata[5]);
 #endif
       break;  // don't forward heading
@@ -367,6 +391,27 @@ void ParseWindCAN() {
         logToAll("new wind PGN " + String(PGN));
         otherPGN[otherPGNindex++] = PGN;
       }
+      // pass through everything that's not covered above (wind and heading)
+      correctN2kMsg.SetPGN(PGN);
+      correctN2kMsg.Priority=2;
+      correctN2kMsg.AddByte(SID);
+      for (int i=1; i<len; i++) {
+        correctN2kMsg.AddByte(cdata[i]);
+      }
+      if (n2kMain->SendMsg(correctN2kMsg)) {
+        num_wind_other_ok++;
+        //Serial.printf("forward N2k OK %d\n", PGN);
+      } else {
+        num_wind_other_fail++;
+        if (num_wind_other_fail % 100 == 1)
+          logToAll("Failed to pass through from wind to main PGN: " + String(PGN));  
+      }
+      break;
+    }
+  }
+}
+
+#if 0
       // everything that's not from wind source, pass through to main bus
       // done for Paul because he has depth transducer on same branch as wind
       if (SRC != windCANsrc) {
@@ -401,11 +446,8 @@ void ParseWindCAN() {
           //else Serial.printf("failed to parse heading PGN %d that we created\n", PGN);
         }
 #endif
-      }
-      break;
-    }
-  }
-}
+#endif
+
 #endif
 
 // process boat speed to update STW for true wind calc

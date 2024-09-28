@@ -140,6 +140,9 @@ unsigned long avg_time_since_last_wind = 0.0;
 elapsedMillis time_since_last_mastcomp_rx = 0;
 unsigned long total_time_since_last_mastcomp = 0.0;
 unsigned long avg_time_since_last_mastcomp = 0.0;
+// Define NTP Client to get time
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
 
 // defs for wifi
 void initWebSocket();
@@ -235,6 +238,8 @@ int headingErrCount;
 bool displayOnToggle=true, compassOnToggle=false, honeywellOnToggle=false, demoModeToggle=false;
 extern bool teleplot;
 
+File consLog;
+
 void WebSerialonMessage(uint8_t *data, size_t len);
 void logToAll(String s);
 void logToAlln(String s);
@@ -251,7 +256,7 @@ void ToggleLed() {
 }
 
 #ifdef RS485CAN
-void ParseWindCAN();
+void parseWindCAN();
 #else
 void ParseWindN2K(const tN2kMsg &N2kMsg);
 void ParseCompassN2K(const tN2kMsg &N2kMsg);
@@ -325,7 +330,7 @@ void windCounter() {
 
 //#define MASTCOMPDIAG
 
-void mastcompCounter() {
+void mastCompCounter() {
   num_mastcomp_messages++;
   total_time_since_last_mastcomp += time_since_last_mastcomp_rx;
   avg_time_since_last_mastcomp = total_time_since_last_mastcomp / num_mastcomp_messages;
@@ -423,9 +428,9 @@ void OLEDdataWindDebug() {
   display->setCursor(0, 5);
   //display->printf("CAN: %s ", can_state.c_str());
   unsigned long uptime = millis() / 1000;
-  display->printf("Up: %lu Wifi: ", uptime % 10000); // just print last 3 digits
+  display->printf("Up:%lu Wifi:", uptime % 10000); // just print last 3 digits
   if (WiFi.status() == WL_CONNECTED)
-    display->printf("%s\n", WiFi.SSID());
+    display->printf("%s\n", WiFi.SSID().substring(0,6));
   else display->printf("----\n");
   if (uptime % 60 == 0)  
     logToAll("uptime: " + String(uptime) + " heap: " + String(ESP.getFreeHeap()));
@@ -453,7 +458,7 @@ void OLEDdataWindDebug() {
 void setup() {
   Serial.begin(115200);
   delay(100);
-  Serial.println("starting wind correction");
+  logToAll("starting wind correction");
 
   esp_log_level_set("*", ESP_LOG_VERBOSE);  // Set global log level
 
@@ -465,18 +470,18 @@ void setup() {
 
 #if 0
   if (Wire1.begin(W1SDA, W1SCL))
-    Serial.println("Wire1 OK");
+    logToAll("Wire1 OK");
   else
-    Serial.println("Wire1 FAIL");
+    logToAll("Wire1 FAIL");
   Wire1.setClock(400000); // Set to 400 kHz 
 #endif
 
 #ifdef DIYMORE
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
   if(!display->begin(SSD1306_EXTERNALVCC, 0, true))
-    Serial.println(F("SSD1306 SPI allocation failed"));
+    logToAll(F("SSD1306 SPI allocation failed"));
   else
-    Serial.println(F("SSD1306 SPI allocation success"));
+    logToAll(F("SSD1306 SPI allocation success"));
 #endif
 #ifdef OGDISPLAY
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
@@ -490,18 +495,30 @@ void setup() {
   i2c->begin(SDA_PIN, SCL_PIN);
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
   if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
-    Serial.println(F("SSD1306 I2C allocation failed"));
+    logToAll(F("SSD1306 I2C allocation failed"));
   else
-    Serial.println(F("SSD1306 I2C allocation success"));
+    logToAll(F("SSD1306 I2C allocation success"));
 #endif
+#ifdef DISPLAYON
+  logToAll("OLED started");
+  display->clearDisplay();
+  display->setTextSize(1);             
+  display->setTextColor(SSD1306_WHITE);
+  display->setRotation(2);
+  display->setCursor(10,10);
+  display->println(F("\nESP32 Mast\nRotation\nCorrection"));
+  display->display();
+  logToAll("display init");
+#endif
+
   // toggle the LED pin at rate of 1 Hz
   pinMode(LED_BUILTIN, OUTPUT);
   app.onRepeatMicros(1e6 / 1, []() { ToggleLed(); });
   if (!(adsInit = ads.begin())) {  // start ADS1015 ADC default 0x4A
-    Serial.println("ads sensor not found");
+    logToAll("ads sensor not found");
     honeywellOnToggle = false;
   } else {
-    Serial.println("init ADS");
+    logToAll("init ADS");
     honeywellSensor.begin();    // Instantiates the moving average object
   }
   pBD=&BoatData; // need this even if we're not using 0183
@@ -515,9 +532,9 @@ void setup() {
   NMEA0183_3.SetMessageStream(&NMEA0183serial);
   NMEA0183_3.Open();
   if (!NMEA0183serial) 
-    Serial.println("failed to open NMEA0183 serial port");
+    logToAll("failed to open NMEA0183 serial port");
   else
-    Serial.println("opened NMEA0183 serial port");
+    logToAll("opened NMEA0183 serial port");
 #endif
 #ifdef N2K
   // instantiate the NMEA2000 object for the main bus
@@ -544,13 +561,13 @@ void setup() {
   n2kMain->SetMode(tNMEA2000::N2km_ListenAndSend);
   n2kMain->SetForwardType(tNMEA2000::fwdt_Text); // Show bus data in clear
   //n2kMain->EnableForward(false);
-  n2kMain->SetForwardOwnMessages(true);
+  n2kMain->SetForwardOwnMessages(false);
   n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
   n2kMain->ExtendTransmitMessages(TransmitMessages);
   if (n2kMain->Open()) {
-    Serial.println("opening n2kMain");
+    logToAll("opening n2kMain");
   } else {
-    Serial.println("failed to open n2kMain");
+    logToAll("failed to open n2kMain");
   }
 #endif
 #if defined(PICAN) 
@@ -566,9 +583,9 @@ void setup() {
   n2kWind->SetForwardOwnMessages(true);
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   if (n2kWind->Open()) {
-    Serial.println("opening n2kWind");
+    logToAll("opening n2kWind");
   } else {
-    Serial.println("failed to open n2kWind");
+    logToAll("failed to open n2kWind");
   }
 #elif defined(RS485CAN)
   // Initialize the CAN port
@@ -576,19 +593,39 @@ void setup() {
     //int cRetCode;
     //if ((n2kWind.setBitrate(CAN_250KBPS, MCP_16MHZ) == CAN_OK) && (cRetCode = n2kWind.setListenOnlyMode() == CAN_OK))
   if (n2kWind.begin(CAN_250KBPS, MCP_12MHz) == CAN_OK)
-        Serial.println("CAN0 (wind) Initialized.");
+        logToAll("CAN0 (wind) Initialized.");
     else {
-        Serial.println("CAN0 (wind) Initialization Error.");
+        logToAll("CAN0 (wind) Initialization Error.");
     }
 #endif
  
   if (!SPIFFS.begin())
-    Serial.println("An error has occurred while mounting SPIFFS");
+    logToAll("An error has occurred while mounting SPIFFS");
   else
-    Serial.println("SPIFFS mounted successfully");
+    logToAll("SPIFFS mounted successfully");
 
-  Serial.print("ESP local MAC addr: ");
-  Serial.println(WiFi.macAddress());
+  // start a console.log file in case we crash before Webserial starts
+  if (SPIFFS.exists("/console.log")) {
+    SPIFFS.remove("/console.log");
+  }
+  consLog = SPIFFS.open("/console.log", "w", true);
+  if (!consLog) {
+    logToAll("failed to open console log");
+  }
+  if (consLog.println("ESP compass console log.")) {
+    logToAll("console log written");
+  } else {
+    logToAll("console log write failed");
+  }
+
+  if (initWiFi()) {
+    startWebServer();
+  } else {
+    startAP();
+  }
+  serverStarted=true;
+  
+  logToAll("ESP local MAC addr: " + WiFi.macAddress());
  
   // imuReady means we have a local boat compass in the controller
 #ifdef ICM209
@@ -604,10 +641,10 @@ void setup() {
       &compassTask,        // Task handle
       0
     );
-    Serial.println("ICM20948 found.\n");
+    logToAll("ICM20948 found.");
     avgYaw.begin();
   } else {
-    Serial.printf("Failed to find ICM20948\n");
+    logToAll("Failed to find ICM20948");
     i2cScan(Wire1);
   }
 #endif
@@ -623,9 +660,9 @@ void setup() {
       &compassTask,        // Task handle
       0
     );
-    Serial.println("IMU ISM330 detected.");  
+    logToAll("IMU ISM330 detected.");  
   } else {
-    Serial.printf("Failed to find IMU ISM330 @ 0x%x\n", ISM330);
+    logToAll("Failed to find IMU ISM330 @ 0x" + String(ISM330,HEX));
     i2cScan(Wire);
   }
 #endif
@@ -639,7 +676,7 @@ void setup() {
     }
     setReports(reportType);
   } else {
-    Serial.println("BNO08x not found");
+    logToAll("BNO08x not found");
     i2cScan(Wire);
   }
 #endif
@@ -654,33 +691,27 @@ void setup() {
     }
     setReports(reportType, compassFrequency);
   } else {
-    Serial.println("SF BNO08x not found");
+    logToAll("SF BNO08x not found");
     i2cScan(Wire);
   }
 #endif
   mastCompDelta.begin();
-#ifdef DISPLAYON
-  Serial.println("OLED started");
-  display->clearDisplay();
-  display->setTextSize(1);             
-  display->setTextColor(SSD1306_WHITE);
-  display->setRotation(2);
-  display->setCursor(10,10);
-  display->println(F("\nESP32 Mast\nRotation\nCorrection"));
-  display->display();
-  Serial.println("display init");
-#endif
-  if (initWiFi()) {
-    startWebServer();
-  } else {
-    startAP();
-  }
-  serverStarted=true;
+
   //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
 
-  Serial.printf("ESP flash size 0x%x\n", ESP.getFlashChipSize()); // 4194304
+  // Update the time
+  #define RETRIES 10
+  int count=0;
+  while(!timeClient.update() && count++ < RETRIES) {
+      timeClient.forceUpdate();
+  }
+  logToAll(timeClient.getFormattedDate());
+
+  logToAll("ESP flash size 0x" + String(ESP.getFlashChipSize(),HEX)); // 4194304
+
+  consLog.flush();
 
 #ifdef N2K
   // No need to parse the messages at every single loop iteration; 1 ms will do
@@ -688,7 +719,7 @@ void setup() {
     PollCANStatus();
     n2kMain->ParseMessages();
 #if defined(RS485CAN)
-    ParseWindCAN();
+    parseWindCAN();
 #endif
 #if defined(PICAN)
     n2kWind->ParseMessages();
@@ -713,11 +744,15 @@ void setup() {
 
   // update web page
   app.onRepeat(WebTimerDelay, []() {
-    //Serial.println("transmit sensor readings");
+    static int counter;
+    //logToAll("transmit sensor readings");
     // Send Events to the client with the Sensor Readings Every x seconds
     //events.send("ping",NULL,millis());
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
 //    mastCompassDeg = getMastHeading();
+    if (counter++ % 600 == 0)
+      logToAll(timeClient.getFormattedDate());
+    consLog.flush();
   });
 
   app.onRepeat(10, []() {
@@ -731,7 +766,7 @@ void setup() {
     //num_n2k_messages = 0;
     //num_wind_messages = 0;  
     if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi not connected");
+      logToAll("WiFi not connected");
       initWiFi();
       if (WiFi.status() == WL_CONNECTED) {
         startWebServer();
@@ -740,20 +775,12 @@ void setup() {
     }
     // check for connected clients
     int numClients = WiFi.softAPgetStationNum();
-    Serial.print("Number of connected clients: ");
-    Serial.println(numClients);
+    logToAll("Number of connected clients: " + String(numClients));
     wifi_sta_list_t stationList;
     esp_wifi_ap_get_sta_list(&stationList);
     for (int i = 0; i < stationList.num; i++) {
       wifi_sta_info_t station = stationList.sta[i];
-      Serial.print("Client ");
-      Serial.print(i + 1);
-      Serial.print(" MAC: ");
-      for (int j = 0; j < 6; j++) {
-        Serial.printf("%02X", station.mac[j]);
-        if (j < 5) Serial.print(":");
-      }
-      Serial.println();
+      logToAll("Client " + String(i+1) + " MAC: " + String(station.mac[0],HEX) + ":" + String(station.mac[1],HEX)+ ":" + String(station.mac[2],HEX)+ ":" + String(station.mac[3],HEX)+ ":" + String(station.mac[4],HEX)+ ":" + String(station.mac[5],HEX));
     }
 });
 
@@ -817,7 +844,7 @@ void setup() {
       if (n2kMain->SendMsg(correctN2kMsg)) {
         //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
       } else {
-        Serial.println("Failed to send heading from compass reaction");
+        logToAll("Failed to send heading from compass reaction");
       }
     }
 #endif

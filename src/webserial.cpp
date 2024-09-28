@@ -58,12 +58,15 @@ extern unsigned long otherPGN[MAXPGN];
 extern int otherPGNindex;
 
 void mastHeading();
+float readCompassDelta();
 extern int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
 bool teleplot=false;
+
+extern elapsedMillis time_since_last_mastcomp_rx;
 
 #ifdef RS485CAN
 void WindSpeed();
@@ -78,10 +81,12 @@ extern Adafruit_BNO08x bno08x;
 #endif
 extern Preferences preferences;
 
+extern File consLog;
+
 void logToAll(String s) {
   if (s.endsWith("\n")) s.remove(s.length() - 1);
   Serial.println(s);
-  //consLog.println(s);
+  consLog.println(s);
   if (serverStarted) {
     WebSerial.println(s);
     WebSerial.flush();
@@ -149,7 +154,7 @@ void i2cScan(TwoWire Wire) {
 }
 
 String commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-   "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi"};
+   "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "hall"};
 #define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 String words[10]; // Assuming a maximum of 10 words
 
@@ -227,6 +232,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logToAll("       n2k wind fwd: " + String(num_wind_other));
       logToAll("  n2k wind fwd fail: " + String(num_wind_other_fail));
       logToAll("    n2k wind fwd ok: " + String(num_wind_other_ok));
+      logToAll("      last mast rcv: " + String(time_since_last_mastcomp_rx));
       if (otherPGNindex > 0) {
         logToAll("n2k other PGNs: ");
         for (int i=0; i<otherPGNindex; i++) {
@@ -343,6 +349,14 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       return;
     }  
+    if (words[i].equals("hall")) {
+      logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
+      mastOrientation = 0;
+      mastOrientation = mastDelta = readCompassDelta(); 
+      logToAll("new orientation: " + String(mastDelta));
+    return;
+    }
+
 #if 0 // BNO  
     if (words[i].equals("rtype")) {
       if (!words[++i].isEmpty()) {

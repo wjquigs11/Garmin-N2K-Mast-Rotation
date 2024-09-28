@@ -38,6 +38,7 @@ if (!!window.EventSource) {
         var gaugeCanvas = document.getElementById("gauge-magrot");
         if (gaugeCanvas) {
             if (myObj.compass) {
+                console.log("showing compass: ", myObj.compass);
                 gaugeCanvas.removeAttribute("hidden");
                 gaugeCanvas.style.display = "";
                 gaugeMagRot.value = myObj.mastDelta
