@@ -65,6 +65,7 @@ extern int mastAngle[2]; // array for both sensors
 
 extern bool displayOnToggle, compassOnToggle, honeywellOnToggle;
 bool teleplot=false;
+extern int numReports[], totalReports;
 
 extern elapsedMillis time_since_last_mastcomp_rx;
 
@@ -356,7 +357,51 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logToAll("new orientation: " + String(mastDelta));
     return;
     }
-
+#if 0
+    if (words[i].startsWith("freq")) {
+      int frequency = compassParams.frequency;
+      if (!words[++i].isEmpty()) {
+        frequency = atoi(words[i].c_str());
+        if (frequency < BNOREADRATE) frequency = BNOREADRATE;
+        preferences.putInt("frequency", frequency);
+        compassParams.frequency = frequency;
+      }
+      WebSerial.printf("frequency %d\n", frequency);
+      return;
+    }
+    if (words[i].startsWith("orient")) {
+      if (!words[++i].isEmpty()) {
+        int orientation = atoi(words[i].c_str());
+        if (words[i].startsWith("+")) {
+          words[i].remove(0, 1);
+          orientation = compassParams.orientation + atoi(words[i].c_str());
+        } else if (words[i].startsWith("-")) {
+          words[i].remove(0, 1);
+          orientation = compassParams.orientation - atoi(words[i].c_str());
+        } else // no + or - so set orientation absolute
+          compassParams.orientation = orientation;
+        if (orientation < 0) orientation = 0;
+        if (orientation > 359) orientation = 359;
+        compassParams.orientation = orientation;
+        preferences.putInt("orientation", orientation);
+      } 
+      WebSerial.printf("compass orientation %d\n",compassParams.orientation);
+      return;
+    }
+#endif
+    if (words[i].startsWith("report")) {
+      for (int i=0; i<SH2_MAX_SENSOR_ID; i++) {
+        if (numReports[i] > 0)
+          WebSerial.printf("report 0x%x/%d: %d\n", i, i, numReports[i]);
+      }
+      WebSerial.printf("total reports %d\n", totalReports);
+      return;
+    }
+    if (words[i].equals("teleplot")) {
+      teleplot = !teleplot;
+      WebSerial.printf("teleplot %s\n", teleplot ? "on" : "off");
+      return;
+    }
 #if 0 // BNO  
     if (words[i].equals("rtype")) {
       if (!words[++i].isEmpty()) {

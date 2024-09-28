@@ -113,7 +113,7 @@ bool readWiFi() {
 bool initWiFi() {
 
   int num_tries = 0;
-  const int MAX_TRIES = 5;
+  const int MAX_TRIES = 8;
 
   if (!readWiFi()) {
     Serial.println("Failed to read WiFi credentials");
