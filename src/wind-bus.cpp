@@ -58,6 +58,9 @@ bool n2kWindOpen = false;
 #define SCL_PIN 17
 Adafruit_SSD1306 *display;
 #endif
+#define SEALEVELPRESSURE_HPA (1013.25)
+Adafruit_BME280 bme;
+bool bmeFound;
 #endif
 
 #ifdef RS485CAN
@@ -428,24 +431,24 @@ void OLEDdataWindDebug() {
   display->setCursor(0, 5);
   //display->printf("CAN: %s ", can_state.c_str());
   unsigned long uptime = millis() / 1000;
-  display->printf("Up:%lu Wifi:", uptime % 10000); // just print last 3 digits
+  display->printf("Up:%*lu Wifi:", 3, uptime % 10000); // just print last 3 digits
   if (WiFi.status() == WL_CONNECTED)
-    display->printf("%s\n", WiFi.SSID().substring(0,6));
+    display->printf("%s\n", WiFi.SSID().substring(0,7));
   else display->printf("----\n");
   if (uptime % 60 == 0)  
     logToAll("uptime: " + String(uptime) + " heap: " + String(ESP.getFreeHeap()));
-  display->printf("N2K: %d ", num_n2k_messages % 10000);
-  display->printf("Wind: %d\n", num_wind_messages % 10000);
+  display->printf("N2K:%d ", num_n2k_messages % 10000);
+  display->printf("Wind:%d\n", num_wind_messages % 10000);
   display->printf("S/A/R:%2.1f/%2.0f/%2.0f\n", windSpeedKnots, windAngleDegrees,rotateout);
   //display->printf("Rot:%d\n", mastRotate);
   if (honeywellOnToggle) {
-    display->printf("Sensor: %d/%d/%d\n", PotLo, PotValue, PotHi);
-    display->printf("Angle: %2.1f\n", mastAngle[0]);
+    display->printf("Sensor:%d/%d/%d\n", PotLo, PotValue, PotHi);
+    display->printf("Angle:%2.1f\n", mastAngle[0]);
   }
   if (compassOnToggle) {
     #ifdef MASTCOMPASS
-    display->printf("M:%.1f B:%.1f\n", mastCompassDeg, boatCompassDeg);
-    display->printf("Delta: %2d\n", mastAngle[1]);
+    display->printf("M:%.1f B:%.1f T:%0.1f\n", mastCompassDeg, boatCompassDeg, BoatData.TrueHeading);
+    display->printf("Delta:%2d\n", mastAngle[1]);
     #else
     display->printf("Heading: %.1f\n", boatCompassDeg);
     #endif
@@ -489,6 +492,10 @@ void setup() {
   delay(500);
   digitalWrite(OLED_RESET, HIGH);
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+  if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true))
+    Serial.println(F("SSD1306 allocation failed"));
+  else
+    Serial.println(F("SSD1306 allocation success"));
 #endif
 #ifdef SH_ESP32
   i2c = new TwoWire(0);
@@ -587,6 +594,11 @@ void setup() {
   } else {
     logToAll("failed to open n2kWind");
   }
+  // PICAN has BME280 environmental sensor
+  if (bmeFound = bme.begin(0x77,&Wire))
+    Serial.println("BME280 found");
+  else
+    Serial.println("Could not find a valid BME280 sensor, check wiring!");
 #elif defined(RS485CAN)
   // Initialize the CAN port
     //n2kWind.reset();
@@ -674,7 +686,7 @@ void setup() {
       String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
       logToAll(logString);
     }
-    setReports(reportType);
+    //setReports(reportType);
   } else {
     logToAll("BNO08x not found");
     i2cScan(Wire);
@@ -750,8 +762,15 @@ void setup() {
     //events.send("ping",NULL,millis());
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
 //    mastCompassDeg = getMastHeading();
-    if (counter++ % 600 == 0)
+    if (counter++ % 600 == 0) {
       logToAll(timeClient.getFormattedDate());
+      if (bmeFound) {
+        logToAll("Temperature = " + String(1.8 * bme.readTemperature() + 32));
+        logToAll("Pressure = " + String(bme.readPressure() / 100.0F) + " hPa");
+        logToAll("Altitude = " + String(bme.readAltitude(SEALEVELPRESSURE_HPA)*3.28084));
+        logToAll("Humidity = " + String(bme.readHumidity()) + " %");
+      }
+    }
     consLog.flush();
   });
 

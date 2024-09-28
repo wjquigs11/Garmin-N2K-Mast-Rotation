@@ -34,6 +34,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <NTPClient.h>
+#ifdef PICAN
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#endif
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21

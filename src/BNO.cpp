@@ -125,6 +125,7 @@ static float heading;
 #include <Adafruit_BNO08x.h>
 Adafruit_BNO08x bno08x(RESET);
 sh2_SensorValue_t sensorValue;
+int numReports[SH2_MAX_SENSOR_ID], totalReports;
 
 // enabling whatever report the user requested, plus SH2_GEOMAGNETIC_ROTATION_VECTOR for heading
 void setReports(int reportType) {
@@ -157,6 +158,8 @@ float getBNO085(int correction) {
   float quatRadianAccuracy, yaw;
   int sensAccuracy;
 
+  totalReports++;
+  numReports[sensorValue.sensorId]++;
   switch (sensorValue.sensorId) {
   case SH2_GAME_ROTATION_VECTOR:
   case SH2_GEOMAGNETIC_ROTATION_VECTOR:
