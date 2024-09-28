@@ -33,6 +33,7 @@
 #include <Preferences.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <NTPClient.h>
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21
@@ -76,13 +77,13 @@ typedef struct {
 } tNMEA2000Handler;
 
 void ParseWindN2K(const tN2kMsg &N2kMsg);
-void ParseWindCAN();
+void parseWindCAN();
 void WindSpeed();
 
 extern tNMEA2000Handler NMEA2000Handlers[];
 
 float readAnalogRotationValue();
-void ParseWindCAN();
+void parseWindCAN();
 double ReadWindAngle(int);
 double ReadWindSpeed();
 int readWindAngleInput();

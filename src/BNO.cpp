@@ -128,14 +128,17 @@ sh2_SensorValue_t sensorValue;
 
 // enabling whatever report the user requested, plus SH2_GEOMAGNETIC_ROTATION_VECTOR for heading
 void setReports(int reportType) {
-  logToAll("Setting compass report to: 0x" + String(reportType,HEX));
-  if (!bno08x.enableReport((sh2_SensorId_t)reportType))
+  bool retval;
+  logToAll("Setting compass report to: 0x" + String(reportType,HEX) + " frequency: " + String(compassFrequency));
+  retval = bno08x.enableReport((sh2_SensorId_t)reportType, compassFrequency*1000);
+  if (!retval) {
     logToAll("could not set report type: " + String(reportType,HEX));  
-#if 0 // doesn't look practical to enable two report types at once
-  if (!bno08x.enableReport(SH2_GEOMAGNETIC_ROTATION_VECTOR))
+  }
+  // also enabling magnetic for north but only 1/10th as frequent (arg2 is time interval in us)
+  retval = bno08x.enableReport(SH2_GEOMAGNETIC_ROTATION_VECTOR, compassFrequency*10000);
+  if (!retval) {
     logToAll("could not set report type: SH2_GEOMAGNETIC_ROTATION_VECTOR");
-  else logToAll("enabled SH2_GEOMAGNETIC_ROTATION_VECTOR");
-#endif
+  } else logToAll("enabled SH2_GEOMAGNETIC_ROTATION_VECTOR");
 }
 
 float getBNO085(int correction) {
@@ -159,14 +162,13 @@ float getBNO085(int correction) {
   case SH2_GEOMAGNETIC_ROTATION_VECTOR:
     boatAccuracy = sensorValue.un.rotationVector.accuracy;
     boatCalStatus = sensorValue.status;
-    //logToAll("heading: " + String(heading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus + " size: " + String(sizeof(sensorValue)));
     // if we get this report we're going to set boat true but not change boatCompassDeg
-    BoatData.TrueHeading = BoatData.Variation + calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);      
-;
+    BoatData.TrueHeading = BoatData.Variation + calculateHeading(sensorValue.un.rotationVector.real, sensorValue.un.rotationVector.i, sensorValue.un.rotationVector.j, sensorValue.un.rotationVector.k, correction);
     if (BoatData.TrueHeading > 359) BoatData.TrueHeading -= 360;
     if (BoatData.TrueHeading < 0) BoatData.TrueHeading += 360;
-    //return heading;
-    //break;
+    //logToAll("heading: " + String(BoatData.TrueHeading) + " accuracy: " + String(boatAccuracy) + " cal status: " + boatCalStatus + " size: " + String(sizeof(sensorValue)));
+    return heading; // returning the last heading found by SH2_ARVR_STABILIZED_GRV
+    break;
   case SH2_ARVR_STABILIZED_GRV:
     //boatCalStatus = sensorValue.status;
     heading = calculateHeading(sensorValue.un.arvrStabilizedGRV.real, sensorValue.un.arvrStabilizedGRV.i, sensorValue.un.arvrStabilizedGRV.j, sensorValue.un.arvrStabilizedGRV.k, correction);      
@@ -184,7 +186,7 @@ float getBNO085(int correction) {
     //Serial.println(sensorValue.un.gyroscope.z);
     */
     ////Serial.printf("1 heading %0.2f\n", heading);
-    //return heading;
+    return heading;
     break;
   case SH2_MAGNETIC_FIELD_CALIBRATED:
     logToAll("magnetic field calibrated");
@@ -197,7 +199,7 @@ float getBNO085(int correction) {
     */
     ////Serial.printf("2 heading %0.2f\n", heading);
     //boatCalStatus = sensorValue.status;
-    //return heading;
+    return heading;
     break;
   default:
     logToAll("getBNO085() got unknown sensor id: 0x" + String(sensorValue.sensorId, HEX));
@@ -317,7 +319,7 @@ int convertMagHeading(const tN2kMsg &N2kMsg) {
     //Serial.print(" headingRef: "); //Serial.print(headingRef);
     //Serial.println();
     #endif
-    if (headingRef == N2khr_magnetic && heading > 0) {  // need to check heading because it could be null
+    if (headingRef == N2khr_unavailable && heading > 0) {  // need to check heading because it could be null
       ////Serial.print("\tcompass heading: ");
       mastCompassDeg = heading * (180/M_PI);
       //readings["heading"] = String(mastCompassDeg);

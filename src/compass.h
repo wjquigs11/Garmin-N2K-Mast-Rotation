@@ -1,3 +1,24 @@
+#include <Arduino.h>
+#include <Arduino_JSON.h>
+#include <Wire.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiMulti.h>
+#include <ESPmDNS.h>
+#include <Preferences.h>
+#include <SPIFFS.h>
+#include <Adafruit_BNO08x.h>
+#include <math.h>
+#include <esp_wifi.h>
+#include <ESPAsyncWebServer.h>
+#include <WebSerial.h>
+#include <ReactESP.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include "elapsedMillis.h"
+#include <NMEA2000_esp32.h>
+#include <NTPClient.h>
+
 typedef struct compass_s {
     int id; // report type
     float heading;
@@ -28,3 +49,4 @@ extern compass_s compassParams;
 // default I2C address = 0x69
 
 #define RESET -1
+#define MAX_NETS 4

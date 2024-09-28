@@ -48,7 +48,7 @@ int compassDifference(int angle1, int angle2);
 
 // Get Sensor Readings and return JSON object
 String getSensorReadings() {
-  readings["rotateout"] = rotateout;
+  readings["rotateout"] = String(rotateout,0);
   readings["mastHeading"] = "";
   readings["mastDelta"] = "";
   if (honeywellOnToggle) {
@@ -63,8 +63,8 @@ String getSensorReadings() {
     readings["boatHeading"] = String(boatCompassDeg,2);
     readings["boatTrue"] = String(BoatData.TrueHeading,0);
     readings["boatCalStatus"] = String(boatCalStatus);
-    if (!honeywellOnToggle) // honeywell takes precedence if both are present
-      readings["rotateout"] = String(rotateout,0);
+    //if (!honeywellOnToggle) // honeywell takes precedence if both are present
+    //  readings["rotateout"] = String(rotateout,0);
   }
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
   readings["windAngle"] = String(WindSensor::windAngleDegrees,0);
@@ -475,7 +475,8 @@ void startWebServer() {
         }
       } // isPost
     } // for params
-    request->send(SPIFFS, "/index.html", "text/html");
+    //request->send(SPIFFS, "/index.html", "text/html");
+    request->redirect("/");  // Redirect to root/index
   });
 
   server.onNotFound([](AsyncWebServerRequest * request) {
