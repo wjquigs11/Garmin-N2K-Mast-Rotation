@@ -10,16 +10,11 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #include "compass.h"
 #include "windparse.h"
 #include "BoatData.h"
-<<<<<<< HEAD
 
 // object-oriented classes
 #include "BNO085Compass.h"
 #include "logto.h"
 
-=======
-#include <Adafruit_ADS1X15.h>
-
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #ifdef PICAN
 #include <N2kMsg.h>
 #include <NMEA2000.h>
@@ -132,11 +127,7 @@ extern tN2kMsg correctN2kMsg;
 #ifdef HONEY
 // Honeywell sensor
 extern movingAvg honeywellSensor;                // define the moving average object
-<<<<<<< HEAD
 extern float mastRotate;
-=======
-extern float mastRotate, rotateout;
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 extern int PotValue, PotLo, PotHi;
 extern Adafruit_ADS1015 ads;
 extern int adsInit;
@@ -231,10 +222,7 @@ bool setupISM330(TwoWire &wirePort, uint8_t deviceAddress);
 #endif
 
 #ifdef BNO08X
-<<<<<<< HEAD
 /*
-=======
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #include <Adafruit_BNO08x.h>
 float getBNO085(int correction);
 void setReports(int reportType);
@@ -242,14 +230,10 @@ extern int reportType;
 extern float boatAccuracy;
 extern int boatCalStatus; 
 extern Adafruit_BNO08x bno08x;
-<<<<<<< HEAD
 */
 #endif
 #include "BNO085Compass.h"
 BNO085Compass compass;
-=======
-#endif
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 
 #ifdef SFBNO
 #include "SparkFun_BNO08x_Arduino_Library.h"  
@@ -264,24 +248,14 @@ int headingErrCount;
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
 
-<<<<<<< HEAD
 bool displayOnToggle=true, honeywellOnToggle=false, demoModeToggle=false;
 //extern bool teleplot;
-=======
-bool displayOnToggle=true, compassOnToggle=false, honeywellOnToggle=false, demoModeToggle=false;
-extern bool teleplot;
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 
 File consLog;
 
 void WebSerialonMessage(uint8_t *data, size_t len);
-<<<<<<< HEAD
 //void logTo::logTo::logToAll(String s);
 //void logToAlln(String s);
-=======
-void logToAll(String s);
-void logToAlln(String s);
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 void i2cScan(TwoWire Wire);
 void demoIncr();
 float readCompassDelta();
@@ -472,29 +446,18 @@ void OLEDdataWindDebug() {
     display->printf("%s\n", WiFi.SSID().substring(0,7));
   else display->printf("----\n");
   if (uptime % 60 == 0)  
-<<<<<<< HEAD
     logTo::logToAll("uptime: " + String(uptime) + " heap: " + String(ESP.getFreeHeap()));
-=======
-    logToAll("uptime: " + String(uptime) + " heap: " + String(ESP.getFreeHeap()));
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   display->printf("N2K:%d ", num_n2k_messages % 10000);
   display->printf("Wind:%d\n", num_wind_messages % 10000);
   display->printf("S/A/R:%2.1f/%2.0f/%2.0f\n", windSpeedKnots, windAngleDegrees,rotateout);
   //display->printf("Rot:%d\n", mastRotate);
-<<<<<<< HEAD
 #ifdef HONEY
-=======
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   if (honeywellOnToggle) {
     display->printf("Sensor:%d/%d/%d\n", PotLo, PotValue, PotHi);
     display->printf("Angle:%2.1f\n", mastAngle[0]);
   }
-<<<<<<< HEAD
 #endif
   if (compass.OnToggle) {
-=======
-  if (compassOnToggle) {
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     #ifdef MASTCOMPASS
     display->printf("M:%.1f B:%.1f T:%0.1f\n", mastCompassDeg, boatCompassDeg, BoatData.TrueHeading);
     display->printf("Delta:%2d\n", mastAngle[1]);
@@ -510,11 +473,7 @@ void OLEDdataWindDebug() {
 void setup() {
   Serial.begin(115200);
   delay(100);
-<<<<<<< HEAD
   logTo::logToAll("starting wind correction");
-=======
-  logToAll("starting wind correction");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 
   esp_log_level_set("*", ESP_LOG_VERBOSE);  // Set global log level
 
@@ -526,30 +485,18 @@ void setup() {
 
 #if 0
   if (Wire1.begin(W1SDA, W1SCL))
-<<<<<<< HEAD
     logTo::logToAll("Wire1 OK");
   else
     logTo::logToAll("Wire1 FAIL");
-=======
-    logToAll("Wire1 OK");
-  else
-    logToAll("Wire1 FAIL");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   Wire1.setClock(400000); // Set to 400 kHz 
 #endif
 
 #ifdef DIYMORE
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
   if(!display->begin(SSD1306_EXTERNALVCC, 0, true))
-<<<<<<< HEAD
     logTo::logToAll(F("SSD1306 SPI allocation failed"));
   else
     logTo::logToAll(F("SSD1306 SPI allocation success"));
-=======
-    logToAll(F("SSD1306 SPI allocation failed"));
-  else
-    logToAll(F("SSD1306 SPI allocation success"));
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #endif
 #ifdef OGDISPLAY
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
@@ -567,21 +514,12 @@ void setup() {
   i2c->begin(SDA_PIN, SCL_PIN);
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
   if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
-<<<<<<< HEAD
     logTo::logToAll(F("SSD1306 I2C allocation failed"));
   else
     logTo::logToAll(F("SSD1306 I2C allocation success"));
 #endif
 #ifdef DISPLAYON
   logTo::logToAll("OLED started");
-=======
-    logToAll(F("SSD1306 I2C allocation failed"));
-  else
-    logToAll(F("SSD1306 I2C allocation success"));
-#endif
-#ifdef DISPLAYON
-  logToAll("OLED started");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   display->clearDisplay();
   display->setTextSize(1);             
   display->setTextColor(SSD1306_WHITE);
@@ -589,17 +527,12 @@ void setup() {
   display->setCursor(10,10);
   display->println(F("\nESP32 Mast\nRotation\nCorrection"));
   display->display();
-<<<<<<< HEAD
   logTo::logToAll("display init");
-=======
-  logToAll("display init");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #endif
 
   // toggle the LED pin at rate of 1 Hz
   pinMode(LED_BUILTIN, OUTPUT);
   app.onRepeatMicros(1e6 / 1, []() { ToggleLed(); });
-<<<<<<< HEAD
 #ifdef HONEY
   if (!(adsInit = ads.begin())) {  // start ADS1015 ADC default 0x4A
     logTo::logToAll("ads sensor not found");
@@ -609,15 +542,6 @@ void setup() {
     honeywellSensor.begin();    // Instantiates the moving average object
   }
 #endif
-=======
-  if (!(adsInit = ads.begin())) {  // start ADS1015 ADC default 0x4A
-    logToAll("ads sensor not found");
-    honeywellOnToggle = false;
-  } else {
-    logToAll("init ADS");
-    honeywellSensor.begin();    // Instantiates the moving average object
-  }
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   pBD=&BoatData; // need this even if we're not using 0183
   // Set up NMEA0183 ports and handlers
 #if defined(PICAN) && defined(NMEA0183)
@@ -629,15 +553,9 @@ void setup() {
   NMEA0183_3.SetMessageStream(&NMEA0183serial);
   NMEA0183_3.Open();
   if (!NMEA0183serial) 
-<<<<<<< HEAD
     logTo::logToAll("failed to open NMEA0183 serial port");
   else
     logTo::logToAll("opened NMEA0183 serial port");
-=======
-    logToAll("failed to open NMEA0183 serial port");
-  else
-    logToAll("opened NMEA0183 serial port");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #endif
 #ifdef N2K
   // instantiate the NMEA2000 object for the main bus
@@ -668,15 +586,9 @@ void setup() {
   n2kMain->SetMsgHandler(HandleNMEA2000MsgMain); 
   n2kMain->ExtendTransmitMessages(TransmitMessages);
   if (n2kMain->Open()) {
-<<<<<<< HEAD
     logTo::logToAll("opening n2kMain");
   } else {
     logTo::logToAll("failed to open n2kMain");
-=======
-    logToAll("opening n2kMain");
-  } else {
-    logToAll("failed to open n2kMain");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   }
 #endif
 #if defined(PICAN) 
@@ -692,15 +604,9 @@ void setup() {
   n2kWind->SetForwardOwnMessages(true);
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   if (n2kWind->Open()) {
-<<<<<<< HEAD
     logTo::logToAll("opening n2kWind");
   } else {
     logTo::logToAll("failed to open n2kWind");
-=======
-    logToAll("opening n2kWind");
-  } else {
-    logToAll("failed to open n2kWind");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   }
   // PICAN has BME280 environmental sensor
   if (bmeFound = bme.begin(0x77,&Wire))
@@ -713,28 +619,16 @@ void setup() {
     //int cRetCode;
     //if ((n2kWind.setBitrate(CAN_250KBPS, MCP_16MHZ) == CAN_OK) && (cRetCode = n2kWind.setListenOnlyMode() == CAN_OK))
   if (n2kWind.begin(CAN_250KBPS, MCP_12MHz) == CAN_OK)
-<<<<<<< HEAD
         logTo::logToAll("CAN0 (wind) Initialized.");
     else {
         logTo::logToAll("CAN0 (wind) Initialization Error.");
-=======
-        logToAll("CAN0 (wind) Initialized.");
-    else {
-        logToAll("CAN0 (wind) Initialization Error.");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     }
 #endif
  
   if (!SPIFFS.begin())
-<<<<<<< HEAD
     logTo::logToAll("An error has occurred while mounting SPIFFS");
   else
     logTo::logToAll("SPIFFS mounted successfully");
-=======
-    logToAll("An error has occurred while mounting SPIFFS");
-  else
-    logToAll("SPIFFS mounted successfully");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 
   // start a console.log file in case we crash before Webserial starts
   if (SPIFFS.exists("/console.log")) {
@@ -742,21 +636,12 @@ void setup() {
   }
   consLog = SPIFFS.open("/console.log", "w", true);
   if (!consLog) {
-<<<<<<< HEAD
     logTo::logToAll("failed to open console log");
   }
   if (consLog.println("ESP compass console log.")) {
     logTo::logToAll("console log written");
   } else {
     logTo::logToAll("console log write failed");
-=======
-    logToAll("failed to open console log");
-  }
-  if (consLog.println("ESP compass console log.")) {
-    logToAll("console log written");
-  } else {
-    logToAll("console log write failed");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   }
 
   if (initWiFi()) {
@@ -766,11 +651,7 @@ void setup() {
   }
   serverStarted=true;
   
-<<<<<<< HEAD
   logTo::logToAll("ESP local MAC addr: " + WiFi.macAddress());
-=======
-  logToAll("ESP local MAC addr: " + WiFi.macAddress());
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
  
   // imuReady means we have a local boat compass in the controller
 #ifdef ICM209
@@ -786,17 +667,10 @@ void setup() {
       &compassTask,        // Task handle
       0
     );
-<<<<<<< HEAD
     logTo::logToAll("ICM20948 found.");
     avgYaw.begin();
   } else {
     logTo::logToAll("Failed to find ICM20948");
-=======
-    logToAll("ICM20948 found.");
-    avgYaw.begin();
-  } else {
-    logToAll("Failed to find ICM20948");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     i2cScan(Wire1);
   }
 #endif
@@ -812,20 +686,13 @@ void setup() {
       &compassTask,        // Task handle
       0
     );
-<<<<<<< HEAD
     logTo::logToAll("IMU ISM330 detected.");  
   } else {
     logTo::logToAll("Failed to find IMU ISM330 @ 0x" + String(ISM330,HEX));
-=======
-    logToAll("IMU ISM330 detected.");  
-  } else {
-    logToAll("Failed to find IMU ISM330 @ 0x" + String(ISM330,HEX));
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     i2cScan(Wire);
   }
 #endif
 #ifdef BNO08X
-<<<<<<< HEAD
   compass.IMUready = compass.begin();
 #endif
 #ifdef SFBNO
@@ -840,38 +707,10 @@ void setup() {
     setReports(reportType, compassFrequency);
   } else {
     logTo::logToAll("SF BNO08x not found");
-=======
-  imuReady = bno08x.begin_I2C(BNO08X,&Wire);
-  if (imuReady) {
-    logToAll("BNO08x Found\n");
-    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
-      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
-      logToAll(logString);
-    }
-    //setReports(reportType);
-  } else {
-    logToAll("BNO08x not found");
-    i2cScan(Wire);
-  }
-#endif
-#ifdef SFBNO
-  logToAll("SFBNO");
-  imuReady = bno08x.begin(SFBNO);
-  if (imuReady) {
-    logToAll("SF BNO08x Found\n");
-    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
-      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
-      logToAll(logString);
-    }
-    setReports(reportType, compassFrequency);
-  } else {
-    logToAll("SF BNO08x not found");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     i2cScan(Wire);
   }
 #endif
   mastCompDelta.begin();
-<<<<<<< HEAD
 #ifdef DISPLAYON
   Serial.println("OLED started");
   display->clearDisplay();
@@ -889,9 +728,6 @@ void setup() {
     startAP();
   }
   serverStarted=true;
-=======
-
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
@@ -902,15 +738,9 @@ void setup() {
   while(!timeClient.update() && count++ < RETRIES) {
       timeClient.forceUpdate();
   }
-<<<<<<< HEAD
   logTo::logToAll(timeClient.getFormattedDate());
 
   logTo::logToAll("ESP flash size 0x" + String(ESP.getFlashChipSize(),HEX)); // 4194304
-=======
-  logToAll(timeClient.getFormattedDate());
-
-  logToAll("ESP flash size 0x" + String(ESP.getFlashChipSize(),HEX)); // 4194304
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 
   consLog.flush();
 
@@ -946,17 +776,12 @@ void setup() {
   // update web page
   app.onRepeat(WebTimerDelay, []() {
     static int counter;
-<<<<<<< HEAD
     //logTo::logToAll("transmit sensor readings");
-=======
-    //logToAll("transmit sensor readings");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     // Send Events to the client with the Sensor Readings Every x seconds
     //events.send("ping",NULL,millis());
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
 //    mastCompassDeg = getMastHeading();
     if (counter++ % 600 == 0) {
-<<<<<<< HEAD
       logTo::logToAll(timeClient.getFormattedDate());
 #ifdef PICAN
       if (bmeFound) {
@@ -966,15 +791,6 @@ void setup() {
         logTo::logToAll("Humidity = " + String(bme.readHumidity()) + " %");
       }
 #endif
-=======
-      logToAll(timeClient.getFormattedDate());
-      if (bmeFound) {
-        logToAll("Temperature = " + String(1.8 * bme.readTemperature() + 32));
-        logToAll("Pressure = " + String(bme.readPressure() / 100.0F) + " hPa");
-        logToAll("Altitude = " + String(bme.readAltitude(SEALEVELPRESSURE_HPA)*3.28084));
-        logToAll("Humidity = " + String(bme.readHumidity()) + " %");
-      }
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     }
     consLog.flush();
   });
@@ -990,11 +806,7 @@ void setup() {
     //num_n2k_messages = 0;
     //num_wind_messages = 0;  
     if (WiFi.status() != WL_CONNECTED) {
-<<<<<<< HEAD
       logTo::logToAll("WiFi not connected");
-=======
-      logToAll("WiFi not connected");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
       initWiFi();
       if (WiFi.status() == WL_CONNECTED) {
         startWebServer();
@@ -1003,20 +815,12 @@ void setup() {
     }
     // check for connected clients
     int numClients = WiFi.softAPgetStationNum();
-<<<<<<< HEAD
     logTo::logToAll("Number of connected clients: " + String(numClients));
-=======
-    logToAll("Number of connected clients: " + String(numClients));
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     wifi_sta_list_t stationList;
     esp_wifi_ap_get_sta_list(&stationList);
     for (int i = 0; i < stationList.num; i++) {
       wifi_sta_info_t station = stationList.sta[i];
-<<<<<<< HEAD
       logTo::logToAll("Client " + String(i+1) + " MAC: " + String(station.mac[0],HEX) + ":" + String(station.mac[1],HEX)+ ":" + String(station.mac[2],HEX)+ ":" + String(station.mac[3],HEX)+ ":" + String(station.mac[4],HEX)+ ":" + String(station.mac[5],HEX));
-=======
-      logToAll("Client " + String(i+1) + " MAC: " + String(station.mac[0],HEX) + ":" + String(station.mac[1],HEX)+ ":" + String(station.mac[2],HEX)+ ":" + String(station.mac[3],HEX)+ ":" + String(station.mac[4],HEX)+ ":" + String(station.mac[5],HEX));
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     }
 });
 
@@ -1024,11 +828,7 @@ void setup() {
   app.onRepeat(compassFrequency, []() {  // compassFrequency?
     float heading;
     if (imuReady) {
-<<<<<<< HEAD
       heading = compass.getHeading(boatOrientation);
-=======
-      heading = getBNO085(boatOrientation);
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
       if (heading >=0 ) boatCompassDeg = heading;
         else
           headingErrCount++;
@@ -1059,15 +859,9 @@ void setup() {
     // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
     //boatCompassDeg = getICMheading(0); moved to task
     //mastCompassDeg = getCompass(0);
-<<<<<<< HEAD
     //logTo::logTo::logToAll("mastCompassDeg: " + String(mastCompassDeg));
     mastDelta = readCompassDelta();
     if (compass.teleplot) {
-=======
-    //logToAll("mastCompassDeg: " + String(mastCompassDeg));
-    mastDelta = readCompassDelta();
-    if (teleplot) {
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
         Serial.print(">mast:");
         float corrMastComp = mastCompassDeg+mastOrientation;
         if (corrMastComp > 359) corrMastComp -= 360;
@@ -1079,13 +873,8 @@ void setup() {
         Serial.println(mastDelta);  
 #ifdef BNO08X
         Serial.printf(">true:%0.2f\n",BoatData.TrueHeading); 
-<<<<<<< HEAD
         Serial.printf(">calstat:%d\n", compass.boatCalStatus);
         Serial.printf(">acc:%0.2f\n", compass.boatAccuracy*RADTODEG);
-=======
-        Serial.printf(">calstat:%d\n", boatCalStatus);
-        Serial.printf(">acc:%0.2f\n", boatAccuracy*RADTODEG);
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #endif
     }
 #if defined(N2K) && defined(NOTDEF)  // do not xmit heading at this time since not using magnetic reference
@@ -1095,20 +884,12 @@ void setup() {
       if (n2kMain->SendMsg(correctN2kMsg)) {
         //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
       } else {
-<<<<<<< HEAD
         logTo::logToAll("Failed to send heading from compass reaction");
-=======
-        logToAll("Failed to send heading from compass reaction");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
       }
     }
 #endif
     });
-<<<<<<< HEAD
     else logTo::logTo::logToAll("compass not ready no heading reaction");
-=======
-    else logToAll("compass not ready no heading reaction");
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 
 #ifdef DISPLAYON
   // update results
@@ -1117,7 +898,6 @@ void setup() {
       OLEDdataWindDebug();
     if (honeywellOnToggle) {
       //sprintf(prbuf, "Sensor (L/C/H): %d/%d/%d (range: %d-%d) Angle: %0.2f rotateout %0.2f", PotLo, PotValue, PotHi, lowset, highset, mastAngle[0], rotateout);
-<<<<<<< HEAD
       //logTo::logTo::logToAll(prbuf);
     }
     if (compass.OnToggle) {
@@ -1125,15 +905,6 @@ void setup() {
       #else
       sprintf(prbuf, "Heading: %.1f", boatCompassDeg);
       logTo::logTo::logToAll(prbuf);
-=======
-      //logToAll(prbuf);
-    }
-    if (compassOnToggle) {
-      #ifdef MASTCOMPASS
-      #else
-      sprintf(prbuf, "Heading: %.1f", boatCompassDeg);
-      logToAll(prbuf);
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
       #endif
     }
     if (demoModeToggle) {
@@ -1154,13 +925,9 @@ void demoInit() {
   mastCompassDeg = 100;
   boatCompassDeg = 120;
   mastAngle[1] = mastAngle[0] = mastCompassDeg - boatCompassDeg;
-<<<<<<< HEAD
 #ifdef HONEY
   PotValue = 50;
 #endif
-=======
-  PotValue = 50;
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   BoatData.TrueHeading = 131;
 }
 
@@ -1178,13 +945,8 @@ void demoIncr() {
   BoatData.TrueHeading -= 10;
   if (BoatData.TrueHeading < 0) BoatData.TrueHeading = 231;
   mastAngle[0] = mastAngle[1] = mastCompassDeg - boatCompassDeg;
-<<<<<<< HEAD
 #ifdef HONEY
   PotValue -= 5;
   if (PotValue < 0) PotValue = 100;
 #endif
-=======
-  PotValue -= 5;
-  if (PotValue < 0) PotValue = 100;
->>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 }
