@@ -1,3 +1,5 @@
+<<<<<<< HEAD
+=======
 #include <Arduino.h>
 #include <Arduino_JSON.h>
 #include <Wire.h>
@@ -19,6 +21,7 @@
 #include <NMEA2000_esp32.h>
 #include <NTPClient.h>
 
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 typedef struct compass_s {
     int id; // report type
     float heading;
@@ -48,5 +51,9 @@ extern compass_s compassParams;
 #define AD0_VAL 1      // value of the last bit of the I2C address.
 // default I2C address = 0x69
 
+<<<<<<< HEAD
+#define RESET -1
+=======
 #define RESET -1
 #define MAX_NETS 4
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f

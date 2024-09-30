@@ -35,6 +35,10 @@
 #include "freertos/task.h"
 #include <NTPClient.h>
 #ifdef PICAN
+<<<<<<< HEAD
+#include <Adafruit_ADS1X15.h>
+=======
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #endif
@@ -43,6 +47,8 @@
 #define CAN_INT_PIN 21
 #define MAX_DATA_SIZE 8
 
+<<<<<<< HEAD
+=======
 void IRAM_ATTR NewDataReadyISR();
 
 //#define RS485CAN
@@ -53,6 +59,7 @@ void IRAM_ATTR NewDataReadyISR();
 //#define Adafruit_BNO08x bno08x
 #define MASTCOMPASS
 
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #ifdef SH_ESP32
 #define POT_PIN 36 // SH_ESP32
 #endif
