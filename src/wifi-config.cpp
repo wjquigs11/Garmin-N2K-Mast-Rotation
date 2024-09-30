@@ -1,5 +1,11 @@
 #include "windparse.h"
 
+<<<<<<< HEAD
+// object-oriented classes
+#include "logto.h"
+
+=======
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 #define HTTP_PORT 80
 extern AsyncWebServer server;
 const long interval = 10000;  // interval to wait for Wi-Fi connection (milliseconds)
@@ -36,7 +42,11 @@ IPAddress localGateway;
 //IPAddress localGateway(192, 168, 1, 1); //hardcoded
 IPAddress subnet(255, 255, 0, 0);
 
+<<<<<<< HEAD
+//void logTo::logTo::logToAll(String S);
+=======
 void logToAll(String S);
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 
 String readFile(fs::FS &fs, const char * path){
   Serial.printf("Reading file: %s\r\n", path);
@@ -90,7 +100,11 @@ void writeFile(fs::FS &fs, const char * path, const char * message){
 bool readWiFi() {
   File file = SPIFFS.open(wifiPath);
   if(!file || file.isDirectory()) {
+<<<<<<< HEAD
+    logTo::logToAll("failed to open wifi file for reading");
+=======
     logToAll("failed to open wifi file for reading");
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     return false;
   }
   int i=0;
@@ -99,6 +113,16 @@ bool readWiFi() {
     pass[i] = file.readStringUntil(':');
     ip[i] = file.readStringUntil(':');
     gateway[i] = file.readStringUntil('\n');
+<<<<<<< HEAD
+    logTo::logToAll("SSID " + ssid[i]);
+    logTo::logToAll("passwd " + pass[i]);
+    logTo::logToAll("IP " + ip[i]);
+    logTo::logToAll("gateway " + gateway[i]);
+    i++;
+  }
+  num_nets=i;
+  logTo::logToAll("found " + String(num_nets) + " networks");
+=======
     logToAll("SSID " + ssid[i]);
     logToAll("passwd " + pass[i]);
     logToAll("IP " + ip[i]);
@@ -107,6 +131,7 @@ bool readWiFi() {
   }
   num_nets=i;
   logToAll("found " + String(num_nets) + " networks");
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
   return true;
 }
 
@@ -160,12 +185,20 @@ bool initWiFi() {
 
 void startAP() {
     // Connect to Wi-Fi network with SSID and password
+<<<<<<< HEAD
+    logTo::logTo::logToAll("Setting AP (Access Point)");
+=======
     logToAll("Setting AP (Access Point)");
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
     // NULL sets an open Access Point
     WiFi.softAP("ESP-WIFI-MANAGER", NULL);
 
     IPAddress IP = WiFi.softAPIP();
+<<<<<<< HEAD
+    logTo::logTo::logToAll("AP IP address: " + IP.toString());
+=======
     logToAll("AP IP address: " + IP.toString());
+>>>>>>> 6b69be646e028764cc6b07b27ebd843c0deca33f
 
     // Web Server Root URL
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
