@@ -1,3 +1,0 @@
-Small multihulls frequently employ a rotating mast which improves airflow over the mainsail. But marine wind instruments typically cannot correct for mast rotation. Since 99.9% of sailboats have a fixed mast, a wind transducer can "assume" that it's pointed in the same direction as the boat is headed, so apparent wind is relative to the bow. As soon as the mast rotates, apparent wind readings from the masthead are invalid.
-I will cover a range of solutions to this problem from off-the-shelf to DIY.
-The first integrated solution is from LJ Capteurs https://lcjcapteurs.com/en/. They build an ultrasonic wind sensor that uses a Honeywell position sensor to compensate for rotation.

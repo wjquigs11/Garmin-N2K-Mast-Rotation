@@ -1,27 +1,26 @@
-
+#ifdef WINDBUS
 #include "windparse.h"
 #include "BoatData.h"
+#include "wind-bus.h"
 
 // object-oriented classes
+#ifdef BNO08X
 #include "BNO085Compass.h"
+#endif
 #include "logto.h"
+#ifdef N2K
+#include "n2k.h"
+extern tNMEA2000 *n2kMain;
+#endif
+
+extern Preferences preferences;
+char prbuf[PRBUF];
+extern File consLog;
 
 extern tBoatData *pBD;
 extern tBoatData BoatData;
-// TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
 
 extern Stream *forward_stream;
-
-extern tNMEA2000 *n2kMain;
-
-#ifdef HONEY
-// Honeywell sensor
-extern movingAvg honeywellSensor;                // define the moving average object
-extern int mastRotate, rotateout;
-extern int PotValue, PotLo, PotHi;
-extern Adafruit_ADS1015 ads;
-extern int adsInit;
-#endif
 
 // defs for wifi
 void initWebSocket();
@@ -31,76 +30,42 @@ extern bool serverStarted;
 extern char *hostname;
 extern int WebTimerDelay;
 extern AsyncEventSource events;
-extern JSONVar readings;
+//extern JSONVar readings;
+extern JsonDocument readings;
 extern void setupWifi();
 //extern String host;
 extern void loopWifi();
 void startWebServer();
 void writeWiFi(int priority, String ssidNew, String passwdNew);
 
-// mast compass
-int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
-float parseMastHeading(const tN2kMsg &N2kMsg);  // mast heading
-float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external source
-float getCompass(int correction);      // boat heading from internal ESP32 CMPS14
 void httpInit(const char* serverName);
 extern const char* serverName;
-extern int mastOrientation;   // delta between mast compass and boat compass
-extern float boatCompassDeg; // magnetic heading not corrected for variation
-extern float mastCompassDeg;
-#ifdef CMPS14
-extern byte calibrationStatus[];
-#endif
-extern float mastDelta;
 
-extern int num_n2k_messages;
-extern int num_wind_messages;
-extern int num_wind_other;
-extern int headingErrCount;
-extern int num_wind_fail;
-extern int num_wind_other_fail;
-extern int num_wind_other_ok;
-extern unsigned long otherPGN[MAXPGN];
-extern int otherPGNindex;
+extern float mastDelta;
 
 void mastHeading();
 float readCompassDelta();
-extern int mastAngle[2]; // array for both sensors
-// 0 = honeywell
-// 1 = compass
+extern int mastAngle;
 
-
-extern bool displayOnToggle, honeywellOnToggle;
+extern bool displayOnToggle;
 /* bool teleplot=false;
 extern int numReports[], totalReports;
 */
 
-extern elapsedMillis time_since_last_mastcomp_rx;
+//extern elapsedMillis time_since_last_mastcomp_rx;
 
-#ifdef RS485CAN
-void WindSpeed();
-#else
-void WindSpeed(const tN2kMsg &N2kMsg);
-#endif
-void BoatSpeed(const tN2kMsg &N2kMsg);
-
-#ifdef BNO08X
-#include <Adafruit_BNO08x.h>
-extern Adafruit_BNO08x bno08x;
-#endif
-extern Preferences preferences;
-
-extern File consLog;
+bool logTo::logToSerial = true;
 
 void logTo::logToAll(String s) {
   if (s.endsWith("\n")) s.remove(s.length() - 1);
-  Serial.println(s);
+  if (logToSerial) Serial.println(s);
   //consLog.println(s);
-  if (serverStarted)
-    WebSerial.println(s);
+  //if (serverStarted)
+    //WebSerial.println(s);
   s = String();
 }
 
+#if 0
 String logTo::commandList[logTo::ASIZE] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
   "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi"};
 String words[10];
@@ -202,50 +167,27 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
     if (words[i].equals("status")) {
       WebSerial.println("             uptime: " + String(millis() / 1000));
-      WebSerial.println("           AWS (in): " + String(WindSensor::windSpeedKnots));
-      WebSerial.println("           AWA (in): " + String(WindSensor::windAngleDegrees));
-#ifdef HONEY
-      WebSerial.println(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
-      WebSerial.println("       Sensor angle: " + String(mastRotate));
-      WebSerial.println("        Correct AWA: " + String(rotateout));
+#ifdef N2K
+      WebSerial.println("           AWS (in): " + String(n2k::windSpeedKnots));
+      WebSerial.println("           AWA (in): " + String(n2k::windAngleDegrees));
+      WebSerial.println("       Mast Compass: " + String(n2k::mastIMUdeg));
+      WebSerial.println("         Mast angle: " + String(n2k::mastDelta));
 #endif
-      WebSerial.println("       Mast Compass: " + String(mastCompassDeg));
-      WebSerial.println("         Mast angle: " + String(mastDelta));
       WebSerial.flush();
-    }
-    if (words[i].equals("compass")) {
-      WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
-      WebSerial.println("      heading err count: " + String(headingErrCount));
-      WebSerial.println("           Mast Compass: " + String(mastCompassDeg));
-#ifdef BNO08XXXXX
-      WebSerial.println("           Cal Status: " + String()
-#endif
-#ifdef CMPS14
-      logTo::logToAll("            [Calibration]: ");
-      String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
-      WebSerial.println("mag: " + String(calibrationStatus[0]) + String(calibrationStatus[1]) + " " + CV);
-      CV = String((calibrationStatus[2] << 8) | calibrationStatus[3]);
-      WebSerial.println("acc: " + String(calibrationStatus[2]) + String(calibrationStatus[3]) + " " + CV);
-      // gyro cal is "currently broken"
-      CV = String((calibrationStatus[6] << 8) | calibrationStatus[7]);
-      WebSerial.println("sys: " + String(calibrationStatus[6]) + String(calibrationStatus[7]) + " " + CV);
-      WebSerial.println();
-      CV = String();
-#endif
     }
     if (words[i].equals("n2k")) {
 #ifdef N2K
-      WebSerial.println("           n2k main: " + String(num_n2k_messages));
-      WebSerial.println("           n2k wind: " + String(num_wind_messages));
-      WebSerial.println("      n2k wind fail: " + String(num_wind_fail));
-      WebSerial.println("       n2k wind fwd: " + String(num_wind_other));
-      WebSerial.println("  n2k wind fwd fail: " + String(num_wind_other_fail));
-      WebSerial.println("    n2k wind fwd ok: " + String(num_wind_other_ok));
-      if (otherPGNindex > 0) {
+      WebSerial.println("           n2k main: " + String(n2k::num_n2k_messages));
+      WebSerial.println("           n2k wind: " + String(n2k::num_wind_messages));
+      WebSerial.println("      n2k wind fail: " + String(n2k::num_wind_fail));
+      WebSerial.println("       n2k wind fwd: " + String(n2k::num_wind_other));
+      WebSerial.println("  n2k wind fwd fail: " + String(n2k::num_wind_other_fail));
+      WebSerial.println("    n2k wind fwd ok: " + String(n2k::num_wind_other_ok));
+      if (n2k::otherPGNindex > 0) {
         WebSerial.print("n2k other PGNs: ");
-        for (int i=0; i<otherPGNindex; i++) {
-          WebSerial.print(otherPGN[i]);
-          if (i+1<otherPGNindex) WebSerial.print(", ");
+        for (int i=0; i<n2k::otherPGNindex; i++) {
+          WebSerial.print(n2k::otherPGN[i]);
+          if (i+1<n2k::otherPGNindex) WebSerial.print(", ");
         }
         WebSerial.println();
       }
@@ -274,11 +216,10 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       i2cScan(Wire);
     }
     if (words[i].equals("readings")) {
-      WebSerial.println(readings);
-    }
-    if (words[i].equals("mast")) {
-      //sendMastControl();
-      //WebSerial.println(readings);
+      String jsonString;
+      serializeJson(readings, jsonString);
+      WebSerial.println(jsonString);
+      jsonString = String();
     }
     if (words[i].equals("lsap")) {
       lsAPconn();
@@ -312,8 +253,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
     if (words[i].equals("toggle")) {
       WebSerial.println("Display: " + String(displayOnToggle));
+#ifdef BNO08X
       WebSerial.println("Compass: " + String(compass.OnToggle));
-      WebSerial.println("Honeywell: " + String(honeywellOnToggle));
+#endif
     }
 #ifdef NMEA0183
     if (words[i].equals("gps") && pBD) {
@@ -336,15 +278,19 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 
     }
     if (words[i].equals("windrx")) {
-      WebSerial.println("last wind time: " + String(time_since_last_wind_rx) + " avg wind time: " + String(avg_time_since_last_wind) + " ms");
-      if (time_since_last_wind_rx > 0.0)
-        WebSerial.println(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
+#ifdef N2K
+      WebSerial.println("last wind time: " + String(n2k::time_since_last_wind_rx) + " avg wind time: " + String(n2k::avg_time_since_last_wind) + " ms");
+      if (n2k::time_since_last_wind_rx > 0.0)
+        WebSerial.println(String(1000.0/n2k::avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
     }    
+#endif
+#ifdef BNO08X
     if (words[i].equals("teleplot")) {
       compass.teleplot = !compass.teleplot;
       logTo::logToAll("teleplot: " + String(compass.teleplot));
       return;
     }
+#endif
     if (words[i].equals("hostname")) {
       if (!words[++i].isEmpty()) {
         host = words[i];
@@ -358,75 +304,17 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;
     }  
     if (words[i].equals("hall")) {
-      logTo::logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
-      mastOrientation = 0;
-      mastOrientation = mastDelta = readCompassDelta(); 
-      logTo::logToAll("new orientation: " + String(mastDelta));
+#ifdef N2K
+      logTo::logToAll("got true heading trigger, setting orientation mast: " + String(n2k::mastIMUdeg) + " boat: " + String(n2k::boatIMUdeg) + " delta: " + String(n2k::mastDelta));
+      n2k::mastOrientation = 0;
+      n2k::mastOrientation = n2k::mastDelta = readCompassDelta(); 
+      logTo::logToAll("new orientation: " + String(n2k::mastDelta));
     return;
-    }
-#if 0
-    if (words[i].startsWith("freq")) {
-      int frequency = compassParams.frequency;
-      if (!words[++i].isEmpty()) {
-        frequency = atoi(words[i].c_str());
-        if (frequency < BNOREADRATE) frequency = BNOREADRATE;
-        preferences.putInt("frequency", frequency);
-        compassParams.frequency = frequency;
-      }
-      logTo::logToAll("frequency %d\n", frequency);
-      return;
-    }
-    if (words[i].startsWith("orient")) {
-      if (!words[++i].isEmpty()) {
-        int orientation = atoi(words[i].c_str());
-        if (words[i].startsWith("+")) {
-          words[i].remove(0, 1);
-          orientation = compassParams.orientation + atoi(words[i].c_str());
-        } else if (words[i].startsWith("-")) {
-          words[i].remove(0, 1);
-          orientation = compassParams.orientation - atoi(words[i].c_str());
-        } else // no + or - so set orientation absolute
-          compassParams.orientation = orientation;
-        if (orientation < 0) orientation = 0;
-        if (orientation > 359) orientation = 359;
-        compassParams.orientation = orientation;
-        preferences.putInt("orientation", orientation);
-      } 
-      logTo::logToAll("compass orientation %d\n",compassParams.orientation);
-      return;
-    }
 #endif
-    if (words[i].startsWith("report")) {
-      for (int i=0; i<SH2_MAX_SENSOR_ID; i++) {
-        if (compass.numReports[i] > 0)
-          logTo::logToAll("report 0x" + String(i,HEX) + "/" + String(i) + ": " + String(compass.numReports[i]));
-      }
-      logTo::logToAll("total reports " + String(compass.totalReports));
-      return;
     }
-    if (words[i].equals("teleplot")) {
-      compass.teleplot = !compass.teleplot;
-      logTo::logToAll("teleplot " + String(compass.teleplot));
-      return;
-    }  
-#if 0 // BNO  
-    if (words[i].equals("rtype")) {
-      if (!words[++i].isEmpty()) {
-        reportType = (int)strtol(words[i].c_str(), NULL, 16);
-        preferences.putInt("rtype", reportType);
-        logTo::logToAll("compass report type set to 0x%x\n", reportType);
-#ifdef BNO08X
-        if (!bno08x.enableReport(reportType)) 
-                logTo::logToAll("Could not enable local report 0x%x\n",reportType);
-#endif
-      } else {
-        logTo::logToAll("compass report type is 0x%x\n",reportType);
-      }
-      return;
-    }
-#endif
-  }
   for (int i=0; i<wordCount; i++) words[i] = String();
   dataS = String();
 }
-
+}
+#endif
+#endif

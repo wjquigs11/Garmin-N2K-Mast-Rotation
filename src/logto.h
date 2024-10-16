@@ -4,8 +4,9 @@
 
 class logTo {
 public:
+    static bool logToSerial;
     static void logToAll(String s);
-    logTo() {}
+    //logTo() {}
     static const int ASIZE = 20;
     static String commandList[ASIZE];
 };

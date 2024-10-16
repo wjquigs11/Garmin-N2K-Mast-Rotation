@@ -1,4 +1,6 @@
+#ifdef WINDBUS
 #include "windparse.h"
+#include "wind-bus.h"
 
 // object-oriented classes
 #include "logto.h"
@@ -9,7 +11,8 @@ const long interval = 10000;  // interval to wait for Wi-Fi connection (millisec
 extern AsyncEventSource events;
 extern void startWebServer();
 extern String host;
-extern JSONVar readings;
+//extern JSONVar readings;
+extern JsonDocument readings;
 extern void check_status();
 
 // timing
@@ -42,11 +45,11 @@ IPAddress subnet(255, 255, 0, 0);
 //void logTo::logTo::logToAll(String S);
 
 String readFile(fs::FS &fs, const char * path){
-  Serial.printf("Reading file: %s\r\n", path);
+  //Serial.printf("Reading file: %s\r\n", path);
 
   File file = fs.open(path);
   if(!file || file.isDirectory()){
-    Serial.println("- failed to open file for reading");
+    logTo::logToAll("Failed to open file for reading: " + String(path));
     return String();
   }
   
@@ -62,7 +65,7 @@ void writeWiFi(int priority, String ssidNew, String passwdNew) {
   ssid[priority] = ssidNew;
   File wifiFile = SPIFFS.open(wifiPath, FILE_WRITE);
   if(!wifiFile) {
-    Serial.println("- failed to open file for writing");
+    logTo::logToAll("Failed to open file for writing: " + String(wifiPath));
     return;
   }
   for (int i=0; i<MAX_NETS; i++) {  
@@ -76,17 +79,17 @@ void writeWiFi(int priority, String ssidNew, String passwdNew) {
 }
 
 void writeFile(fs::FS &fs, const char * path, const char * message){
-  Serial.printf("Writing file: %s\r\n", path);
+  //Serial.printf("Writing file: %s\r\n", path);
 
   File file = fs.open(path, FILE_WRITE);
   if(!file){
-    Serial.println("- failed to open file for writing");
+    logTo::logToAll("Failed to open file for writing: " + String(path));
     return;
   }
   if(file.print(message)){
-    Serial.println("- file written");
+    //Serial.println("- file written");
   } else {
-    Serial.println("- write failed");
+    //Serial.println("- write failed");
   }
 }
 
@@ -119,23 +122,23 @@ bool initWiFi() {
   const int MAX_TRIES = 8;
 
   if (!readWiFi()) {
-    Serial.println("Failed to read WiFi credentials");
+    logTo::logToAll("Failed to read WiFi credentials");
     return false;
   }
   WiFi.mode(WIFI_STA);
   for (int i=0; i<num_nets; i++) {
-    Serial.printf("Found SSID %d: %s\n", i, ssid[i].c_str());
+    logTo::logToAll("Found SSID: " + String(i) + " " + ssid[i]);
     if(ssid[i]=="") {
-      Serial.println("Undefined SSID.");
+      logTo::logToAll("Undefined SSID.");
       return false;
     }
     localIP.fromString(ip[i].c_str());
     localGateway.fromString(gateway[i].c_str());
     if (!WiFi.config(localIP, localGateway, subnet)) {
-      Serial.println("STA Failed to configure");
+      logTo::logToAll("STA Failed to configure");
       return false;
     }
-    Serial.printf("Connecting to WiFi %s with pass %s\n", ssid[i].c_str(), pass[i].c_str());
+    logTo::logToAll("Connecting to WiFi " + ssid[i]);
     WiFi.begin(ssid[i].c_str(), pass[i].c_str());
 
     unsigned long currentMillis = millis();
@@ -143,18 +146,16 @@ bool initWiFi() {
 
     while(WiFi.status() != WL_CONNECTED && num_tries++ < MAX_TRIES) {
       delay(1000);
-      Serial.print(".");
+      //Serial.print(".");
       currentMillis = millis();
       if (currentMillis - previousMillis >= interval) {
-        Serial.println("Failed to connect.");
+        logTo::logToAll("Failed to connect.");
         //return false;
       }
     }
     num_tries = 0;
     if (WiFi.status() == WL_CONNECTED) {
-      Serial.print(" connected: ");
-      Serial.println(WiFi.localIP());
-      
+      logTo::logToAll("connected: " + WiFi.localIP().toString());      
       return true;
     }
   }
@@ -182,7 +183,7 @@ void startAP() {
       for(int i=0;i<params;i++){
         const AsyncWebParameter* p = request->getParam(i);
         if(p->isPost()) {
-          Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
+          //Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
 #if 0
           // HTTP POST ssid value
           if (p->name() == P_INPUT_1) {
@@ -226,3 +227,4 @@ void startAP() {
     });
     server.begin();
 }
+#endif

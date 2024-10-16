@@ -4,12 +4,14 @@
 struct tBoatData {
   unsigned long DaysSince1970;   // Days since 1970-01-01
   
-  double TrueHeading,SOG,COG,Variation,
+  float TrueHeading,SOG,COG,Variation,
          STW, // meters/sec
          GPSTime,// Secs since midnight,
          Latitude, Longitude, Altitude, HDOP, GeoidalSeparation, DGPSAge;
   int GPSQualityIndicator, SatelliteCount, DGPSReferenceStationID;
   bool MOBActivated;
+  float magHeading;
+  float mastIMU, boatIMU;
 
 public:
   tBoatData() {
@@ -26,8 +28,11 @@ public:
     MOBActivated=false; 
     SatelliteCount=0; 
     DGPSReferenceStationID=0;
+    magHeading=0.0;
   };
 };
+
+extern tBoatData BoatData;
 
 #endif // _BoatData_H_
 
