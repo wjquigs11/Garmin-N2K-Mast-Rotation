@@ -88,7 +88,7 @@ float readCompassDelta() {
   if (imuReady) {
     float mastDelta = compassDifference(n2k::boatIMUdeg, n2k::mastIMUdeg+n2k::mastOrientation);
     //logTo::logToAll("mastDelta: " + String(mastDelta));
-    mastAngle[1] = mastDelta;
+    mastAngle = mastDelta;
     //mastCompDelta.reading((int)(mastDelta*100)); // moving average
     return mastDelta;
   }

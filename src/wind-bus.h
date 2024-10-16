@@ -6,7 +6,7 @@
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
 #include <ESPAsyncWebServer.h>
-//#include <WebSerial.h>
+#include <WebSerial.h>
 //#include <HTTPClient.h>
 #include <ESPmDNS.h>
 #include <NTPClient.h>

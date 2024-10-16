@@ -60,12 +60,11 @@ void logTo::logToAll(String s) {
   if (s.endsWith("\n")) s.remove(s.length() - 1);
   if (logToSerial) Serial.println(s);
   //consLog.println(s);
-  //if (serverStarted)
-    //WebSerial.println(s);
+  if (serverStarted)
+    WebSerial.println(s);
   s = String();
 }
 
-#if 0
 String logTo::commandList[logTo::ASIZE] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
   "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi"};
 String words[10];
@@ -175,8 +174,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 #endif
       WebSerial.flush();
     }
-    if (words[i].equals("n2k")) {
+
 #ifdef N2K
+    if (words[i].equals("n2k")) {
       WebSerial.println("           n2k main: " + String(n2k::num_n2k_messages));
       WebSerial.println("           n2k wind: " + String(n2k::num_wind_messages));
       WebSerial.println("      n2k wind fail: " + String(n2k::num_wind_fail));
@@ -191,16 +191,21 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         }
         WebSerial.println();
       }
-#endif
     }
+#endif
+
+#if 0
     if (words[i].equals("format")) {
       SPIFFS.format();
       WebSerial.println("SPIFFS formatted");
     }
+#endif
+
     if (words[i].equals("restart")) {
       WebSerial.println("Restarting...");
       ESP.restart();
     }
+
     if (words[i].equals("ls")) {
       File root = SPIFFS.open("/");
       File file = root.openNextFile();
@@ -212,18 +217,22 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       root.close();
       //WebSerial.println("done");
     }
+
     if (words[i].equals("scan")) {
       i2cScan(Wire);
     }
+
     if (words[i].equals("readings")) {
       String jsonString;
       serializeJson(readings, jsonString);
       WebSerial.println(jsonString);
       jsonString = String();
     }
+
     if (words[i].equals("lsap")) {
       lsAPconn();
     }
+
     if (words[i].equals("wifi")) {
       int priority;
       String ssid, passwd;
@@ -251,19 +260,11 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       return;      
     }
+
     if (words[i].equals("toggle")) {
       WebSerial.println("Display: " + String(displayOnToggle));
-#ifdef BNO08X
-      WebSerial.println("Compass: " + String(compass.OnToggle));
-#endif
     }
-#ifdef NMEA0183
-    if (words[i].equals("gps") && pBD) {
-      //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
-      WebSerial.println("Latitude: " + String(pBD->Latitude));
-      WebSerial.println("Longitude: " + String(pBD->Longitude));
-    }
-#endif
+
     if (words[i].equals("webserver")) {
       WebSerial.print("local IP: ");
       WebSerial.println(WiFi.localIP());
@@ -277,13 +278,15 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         }
 
     }
-    if (words[i].equals("windrx")) {
+
 #ifdef N2K
+    if (words[i].equals("windrx")) {
       WebSerial.println("last wind time: " + String(n2k::time_since_last_wind_rx) + " avg wind time: " + String(n2k::avg_time_since_last_wind) + " ms");
       if (n2k::time_since_last_wind_rx > 0.0)
         WebSerial.println(String(1000.0/n2k::avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
     }    
 #endif
+
 #ifdef BNO08X
     if (words[i].equals("teleplot")) {
       compass.teleplot = !compass.teleplot;
@@ -291,6 +294,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;
     }
 #endif
+
     if (words[i].equals("hostname")) {
       if (!words[++i].isEmpty()) {
         host = words[i];
@@ -303,18 +307,23 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       return;
     }  
-    if (words[i].equals("hall")) {
+
 #ifdef N2K
+    if (words[i].equals("hall")) {
       logTo::logToAll("got true heading trigger, setting orientation mast: " + String(n2k::mastIMUdeg) + " boat: " + String(n2k::boatIMUdeg) + " delta: " + String(n2k::mastDelta));
       n2k::mastOrientation = 0;
       n2k::mastOrientation = n2k::mastDelta = readCompassDelta(); 
       logTo::logToAll("new orientation: " + String(n2k::mastDelta));
     return;
-#endif
     }
+#endif
+
   for (int i=0; i<wordCount; i++) words[i] = String();
   dataS = String();
-}
+  }
 }
 #endif
+
+#if 0
+
 #endif

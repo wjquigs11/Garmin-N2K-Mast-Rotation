@@ -139,7 +139,7 @@ bool displayOnToggle=true, demoModeToggle=false;
 
 File consLog;
 
-//void WebSerialonMessage(uint8_t *data, size_t len);
+void WebSerialonMessage(uint8_t *data, size_t len);
 void i2cScan(TwoWire Wire);
 //void demoIncr();
 float readCompassDelta();
@@ -201,8 +201,8 @@ void setup() {
   // TBD: decide if you want wifi on MAINBUS for WebSerial console
   // or just send everything over UART link, since you will (probably) not be reading CAN from MAINBUS
   //ElegantOTA.begin(&server);
-  //WebSerial.begin(&server);
-  //WebSerial.onMessage(WebSerialonMessage);
+  WebSerial.begin(&server);
+  WebSerial.onMessage(WebSerialonMessage);
 
   // Update the time
   #define RETRIES 10
@@ -238,12 +238,11 @@ void setup() {
     consLog.flush();
   });
 
-#if 0
   app.onRepeat(10, []() {
     //ElegantOTA.loop();  
     WebSerial.loop();
   });
-#endif
+
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
 // if we get in range, it's simpler to reboot than to constantly check
   app.onRepeat(300000, []() {
@@ -296,7 +295,7 @@ void demoInit() {
   n2k::rotateout = 30;
   n2k::mastIMUdeg = 100;
   n2k::boatIMUdeg = 120;
-  mastAngle[1] = mastAngle[0] = n2k::mastIMUdeg - n2k::boatIMUdeg;
+  mastAngle = n2k::mastIMUdeg - n2k::boatIMUdeg;
   BoatData.TrueHeading = 131;
 }
 
@@ -313,7 +312,7 @@ void demoIncr() {
   if (n2k::boatIMUdeg < 0) n2k::boatIMUdeg = 220;
   BoatData.TrueHeading -= 10;
   if (BoatData.TrueHeading < 0) BoatData.TrueHeading = 231;
-  mastAngle[0] = mastAngle[1] = n2k::mastIMUdeg - n2k::boatIMUdeg;
+  mastAngle = n2k::mastIMUdeg - n2k::boatIMUdeg;
 }
 #endif
 #endif
