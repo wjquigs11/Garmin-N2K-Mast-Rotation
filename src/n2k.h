@@ -25,22 +25,25 @@ public:
     static tNMEA2000 *n2kWind;
     static bool n2kWindOpen;
     static float rotateout;
+    static int mastAngle;
 
     // timing/display
-    static int num_n2k_messages;
-    static int num_wind_messages;
+    static int num_n2k_recv;
+    static int num_n2k_xmit;
+    static int num_wind_recv;
+    static int num_wind_xmit;
     static int num_wind_fail;
     static int num_wind_other;
     static int num_wind_other_fail;
     static int num_wind_other_ok;
-    static int num_mastcomp_messages;
     static elapsedMillis time_since_last_can_rx;
     static elapsedMillis time_since_last_wind_rx;
     static unsigned long total_time_since_last_wind;
     static unsigned long avg_time_since_last_wind;
-    static elapsedMillis time_since_last_mastcomp_rx;
-    static unsigned long total_time_since_last_mastcomp;
-    static unsigned long avg_time_since_last_mastcomp;
+    static int num_mastIMU_messages;
+    static elapsedMillis time_since_last_mastIMU_rx;
+    static unsigned long total_time_since_last_mastIMU;
+    static unsigned long avg_time_since_last_mastIMU;
 
     static double windSpeedKnots;
     static double windSpeedMeters;
@@ -49,7 +52,7 @@ public:
 
     static int mastOrientation; // delta between mast compass and boat compass
     static int boatOrientation; // delta between boat compass and magnetic north
-    static float boatIMUdeg; // magnetic heading not corrected for variation
+    static float boatIMUdeg;
     static float boatCompassTrue;
     static float mastIMUdeg;
     static float mastDelta;
@@ -57,11 +60,11 @@ public:
     static unsigned long otherPGN[];
     static int otherPGNindex;
 
+    static String can_state;
+    
     static void ToggleLed();
-    static void ParseCompassN2K(const tN2kMsg &N2kMsg);
-    static void BoatSpeed(const tN2kMsg &N2kMsg);
     static void windCounter();
-    static void mastCompCounter();
+    static void mastIMUCounter();
     static void HandleNMEA2000MsgMain(const tN2kMsg &N2kMsg);
     static void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg);
     static void RecoverFromCANBusOff();

@@ -12,7 +12,6 @@ ESP2 (SH-ESP32) is connected to ESP1 via UART, receives correct wind data (Actis
 #include "windparse.h"
 #include "wind-bus.h"
 #include "BoatData.h"
-//#include <ElegantOTA.h>
 
 // object-oriented classes
 #include "logto.h"
@@ -52,6 +51,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 #include <TFT_eSPI.h>
 void setupLVGL(); 
 void LVGLdataWindDebug();
+void LVGLupdateNeedle();
 #endif
 
 using namespace reactesp;
@@ -70,22 +70,6 @@ tNMEA2000 *n2kMain;
 //bool n2kMainOpen = false;
 //extern tN2kMsg correctN2kMsg;
 
-/* timing/display
-int num_n2k_messages = 0;
-int num_wind_messages = 0;
-int num_wind_fail = 0;
-int num_wind_other = 0;
-int num_wind_other_fail = 0;
-int num_wind_other_ok = 0;
-int num_mastcomp_messages = 0;
-elapsedMillis time_since_last_can_rx = 0;
-elapsedMillis time_since_last_wind_rx = 0;
-unsigned long total_time_since_last_wind = 0.0;
-unsigned long avg_time_since_last_wind = 0.0;
-elapsedMillis time_since_last_mastcomp_rx = 0;
-unsigned long total_time_since_last_mastcomp = 0.0;
-unsigned long avg_time_since_last_mastcomp = 0.0;
-*/
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -110,19 +94,13 @@ String host = "ESPwind";
 
 void httpInit(const char* serverName);
 extern const char* serverName;
-//int mastOrientation; // delta between mast compass and boat compass
-//int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
-//int boatOrientation; // delta between boat compass and magnetic north
-//float boatIMUdeg; // magnetic heading not corrected for variation
-//float boatCompassTrue;
-//float mastIMUdeg;
-//float mastDelta;
-//movingAvg mastCompDelta(10);
+
 void mastHeading();
 extern int compassFrequency;
-int mastAngle;
 
-bool imuReady=false;
+// temporary! until split n2k bus
+bool imuReady=true;
+// TBD: set true as soon as we get a heading PGN on wind bus
 bool mastIMUready=false;
 
 #ifdef N2K
@@ -200,7 +178,7 @@ void setup() {
   logTo::logToAll("ESP local MAC addr: " + WiFi.macAddress());
   // TBD: decide if you want wifi on MAINBUS for WebSerial console
   // or just send everything over UART link, since you will (probably) not be reading CAN from MAINBUS
-  //ElegantOTA.begin(&server);
+  ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
 
@@ -239,7 +217,7 @@ void setup() {
   });
 
   app.onRepeat(10, []() {
-    //ElegantOTA.loop();  
+    ElegantOTA.loop();  
     WebSerial.loop();
   });
 
@@ -266,18 +244,30 @@ void setup() {
 });
 #ifdef CYD
   // update results
-  app.onRepeat(100, []() {
+  app.onRepeat(10, []() {
     if (displayOnToggle) {
       lv_task_handler();  // let the GUI do its work
-      lv_tick_inc(100);     // tell LVGL how much time has passed should match app.onRepeat
-      LVGLdataWindDebug();    
+      lv_tick_inc(10);     // tell LVGL how much time has passed should match app.onRepeat
     }
     //if (demoModeToggle) {
     //  demoIncr();
     //}
   });
+
+  app.onRepeat(1000, []() {
+    LVGLdataWindDebug();  
+  }); 
+
+  app.onRepeat(100, []() {
+    LVGLupdateNeedle();
+  }); 
 #endif
-}
+
+  app.onRepeat(10000, []() {
+    logTo::logToAll("heap:" + String(ESP.getFreeHeap()));
+  });
+
+} // setup
 
 void loop() { 
 #ifdef CYDXXX

@@ -23,32 +23,36 @@ bool n2k::n2kMainOpen = false;
 tNMEA2000* n2k::n2kWind = nullptr;
 bool n2k::n2kWindOpen = false;
 float n2k::rotateout = 0.0f;
-int n2k::num_n2k_messages = 0;
-int n2k::num_wind_messages = 0;
+int n2k::mastAngle = 0;
+int n2k::num_n2k_recv = 0;
+int n2k::num_n2k_xmit = 0;
+int n2k::num_wind_recv = 0;
+int n2k::num_wind_xmit = 0;
 int n2k::num_wind_fail=0;
 int n2k::num_wind_other=0;
 int n2k::num_wind_other_fail=0;
 int n2k::num_wind_other_ok=0;
-int n2k::num_mastcomp_messages=0;
+int n2k::num_mastIMU_messages=0;
 elapsedMillis n2k::time_since_last_can_rx=0;
 elapsedMillis n2k::time_since_last_wind_rx=0;
 unsigned long n2k::total_time_since_last_wind=0;
 unsigned long n2k::avg_time_since_last_wind=0;
-elapsedMillis n2k::time_since_last_mastcomp_rx=0;
-unsigned long n2k::total_time_since_last_mastcomp=0;
-unsigned long n2k::avg_time_since_last_mastcomp=0;
+elapsedMillis n2k::time_since_last_mastIMU_rx=0;
+unsigned long n2k::total_time_since_last_mastIMU=0;
+unsigned long n2k::avg_time_since_last_mastIMU=0;
 double n2k::windSpeedKnots=0;
 double n2k::windSpeedMeters=0;
 double n2k::windAngleDegrees=0;
 double n2k::windAngleRadians=0;
 int n2k::mastOrientation=0; // delta between mast compass and boat compass
 int n2k::boatOrientation=0; // delta between boat compass and magnetic north
-float n2k::boatIMUdeg=0; // magnetic heading not corrected for variation
 float n2k::boatCompassTrue=0;
 float n2k::mastIMUdeg=0;
+float n2k::boatIMUdeg=0;
 float n2k::mastDelta=0;
 unsigned long n2k::otherPGN[MAXPGN];
 int n2k::otherPGNindex=0;
+String n2k::can_state;
 
 // using namespace reactesp;
 // extern ReactESP app;
@@ -62,7 +66,6 @@ extern tBoatData BoatData;
 tN2kWindReference wRef;
 tN2kHeadingReference hRef;
 
-String can_state;
 
 void n2k::ToggleLed() {
   static bool led_state = false;

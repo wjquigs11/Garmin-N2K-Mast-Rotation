@@ -54,19 +54,20 @@ extern int numReports[], totalReports;
 
 //extern elapsedMillis time_since_last_mastcomp_rx;
 
-bool logTo::logToSerial = true;
+bool logTo::logToSerial = false;
 
 void logTo::logToAll(String s) {
   if (s.endsWith("\n")) s.remove(s.length() - 1);
-  if (logToSerial) Serial.println(s);
+  String t = "[" + String(millis() / 1000) + "]: ";
+  if (logToSerial) Serial.print(t + s);
   //consLog.println(s);
   if (serverStarted)
-    WebSerial.println(s);
-  s = String();
+    WebSerial.println(t + s);
+  s = t = String();
 }
 
 String logTo::commandList[logTo::ASIZE] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi"};
+  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "serial"};
 String words[10];
 
 void lsAPconn() {
@@ -177,8 +178,8 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 
 #ifdef N2K
     if (words[i].equals("n2k")) {
-      WebSerial.println("           n2k main: " + String(n2k::num_n2k_messages));
-      WebSerial.println("           n2k wind: " + String(n2k::num_wind_messages));
+      WebSerial.println("  n2k main xmit/rcv: " + String(n2k::num_n2k_xmit) + "/" + String(n2k::num_n2k_recv));
+      WebSerial.println("  n2k wind xmit/rcv: " + String(n2k::num_wind_xmit) + "/" + String(n2k::num_wind_recv));
       WebSerial.println("      n2k wind fail: " + String(n2k::num_wind_fail));
       WebSerial.println("       n2k wind fwd: " + String(n2k::num_wind_other));
       WebSerial.println("  n2k wind fwd fail: " + String(n2k::num_wind_other_fail));
@@ -222,7 +223,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       i2cScan(Wire);
     }
 
-    if (words[i].equals("readings")) {
+    if (words[i].startsWith("readi")) {
       String jsonString;
       serializeJson(readings, jsonString);
       WebSerial.println(jsonString);
@@ -261,11 +262,11 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;      
     }
 
-    if (words[i].equals("toggle")) {
+    if (words[i].startsWith("disp")) {
       WebSerial.println("Display: " + String(displayOnToggle));
     }
 
-    if (words[i].equals("webserver")) {
+    if (words[i].startsWith("webse")) {
       WebSerial.print("local IP: ");
       WebSerial.println(WiFi.localIP());
       WebSerial.print("AP IP address: ");
@@ -277,6 +278,10 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           WebSerial.println("No clients connected");
         }
 
+    if (words[i].startsWith("seri")) {
+      logTo::logToSerial = !logTo::logToSerial;
+      WebSerial.println("logToSerial: " + String(logTo::logToSerial));
+    }
     }
 
 #ifdef N2K
@@ -295,7 +300,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
 #endif
 
-    if (words[i].equals("hostname")) {
+    if (words[i].startsWith("hostn")) {
       if (!words[++i].isEmpty()) {
         host = words[i];
         preferences.putString("hostname", host);
@@ -316,14 +321,16 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logTo::logToAll("new orientation: " + String(n2k::mastDelta));
     return;
     }
+    if (words[i].equals("imu")) {
+      logTo::logToAll("mast IMU: " + String(n2k::mastIMUdeg));
+      logTo::logToAll("boatIMU: " + String(n2k::boatIMUdeg));
+      logTo::logToAll("mastAngle: " + String(n2k::mastAngle));
+    return;
+    }
 #endif
 
   for (int i=0; i<wordCount; i++) words[i] = String();
   dataS = String();
   }
 }
-#endif
-
-#if 0
-
 #endif

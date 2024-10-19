@@ -45,13 +45,15 @@ Stream *forward_stream = &Serial;
 tActisenseReader ActisenseReader;
 
 bool ParseWindN2K(const tN2kMsg &N2kMsg);
+void ParseMastIMU(const tN2kMsg &N2kMsg);
+void parseBoatSpeed(const tN2kMsg &N2kMsg);
 
 void n2k::windCounter() {
-    n2k::num_wind_messages++;
+    n2k::num_wind_recv++;
     total_time_since_last_wind += time_since_last_wind_rx;
-    avg_time_since_last_wind = total_time_since_last_wind / n2k::num_wind_messages;
+    avg_time_since_last_wind = total_time_since_last_wind / n2k::num_wind_recv;
 #ifdef WINDDIAG
-    if (num_wind_messages % 100 == 0)
+    if (num_wind_recv % 100 == 0)
     {
         Serial.printf("last wind time: %2.2ld avg wind time: %2.2ld ms", time_since_last_wind_rx, avg_time_since_last_wind);
         if (time_since_last_wind_rx > 0.0)
@@ -62,20 +64,20 @@ void n2k::windCounter() {
     time_since_last_wind_rx = 0;
 }
 
-void n2k::mastCompCounter() {
-    num_mastcomp_messages++;
-    total_time_since_last_mastcomp += time_since_last_mastcomp_rx;
-    avg_time_since_last_mastcomp = total_time_since_last_mastcomp / num_mastcomp_messages;
-#ifdef MASTCOMPDIAG
-    if (num_mastcomp_messages % 100 == 0)
+void n2k::mastIMUCounter() {
+    num_mastIMU_messages++;
+    total_time_since_last_mastIMU += time_since_last_mastIMU_rx;
+    avg_time_since_last_mastIMU = total_time_since_last_mastIMU / num_mastIMU_messages;
+#ifdef mastIMUDIAG
+    if (num_mastIMU_messages % 100 == 0)
     {
-        Serial.printf("last mastcomp time: %2.2ld (secs) avg mastcomp time: %2.2ld ms", time_since_last_mastcomp_rx, avg_time_since_last_mastcomp);
-        if (time_since_last_mastcomp_rx > 0.0)
-            Serial.printf(" %2.2ld Hz", 1000.0 / avg_time_since_last_mastcomp);
+        Serial.printf("last mastIMU time: %2.2ld (secs) avg mastIMU time: %2.2ld ms", time_since_last_mastIMU_rx, avg_time_since_last_mastIMU);
+        if (time_since_last_mastIMU_rx > 0.0)
+            Serial.printf(" %2.2ld Hz", 1000.0 / avg_time_since_last_mastIMU);
         Serial.println();
     }
 #endif
-    time_since_last_mastcomp_rx = 0;
+    time_since_last_mastIMU_rx = 0;
 }
 
 int compassDifference(int angle1, int angle2) {
@@ -87,16 +89,14 @@ int compassDifference(int angle1, int angle2) {
 float readCompassDelta() {
   if (imuReady) {
     float mastDelta = compassDifference(n2k::boatIMUdeg, n2k::mastIMUdeg+n2k::mastOrientation);
-    //logTo::logToAll("mastDelta: " + String(mastDelta));
-    mastAngle = mastDelta;
-    //mastCompDelta.reading((int)(mastDelta*100)); // moving average
+    //logTo::logToAll("boatIMU: " + String(n2k::boatIMUdeg) + " mastIMU: " + String(n2k::mastIMUdeg+n2k::mastOrientation) + " mastDelta: " + String(mastDelta));
+    n2k::mastAngle = mastDelta;
+    //mastIMUDelta.reading((int)(mastDelta*100)); // moving average
     return mastDelta;
   }
   //Serial.println("compass not ready");
   return -1;
 }
-
-//bool n2kWindOpen;
 
 // NMEA 2000 message handler for wind bus
 void n2k::HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
@@ -111,7 +111,7 @@ void n2k::HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     }
     ToggleLed();
     // problematic since mast compass can come back online
-    // if (time_since_last_mastcomp_rx > 5000) // 5 second timeout on mast compass
+    // if (time_since_last_mastIMU_rx > 5000) // 5 second timeout on mast compass
     //  mastIMUdeg = -1;
     switch (N2kMsg.PGN) {
     case 130306L: {
@@ -120,13 +120,15 @@ void n2k::HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
         break;
     }
     case 128259L: {
-        //n2k::BoatSpeed(N2kMsg);
+        parseBoatSpeed(N2kMsg);
         break;
     }
     case 127250L: {
-        // process heading (on wind bus so represents mast IMU)
+        // mast IMU
+        ParseMastIMU(N2kMsg);
         break;
     }
+    // TBD: decide what to do with other traffic on wind bus
     }
 }
 
@@ -174,7 +176,9 @@ void WindSpeed() {
     // and the AWA converted from rads to degrees, corrected, and converted back to rads
     SetN2kPGN130306(correctN2kMsg, 0xFF, n2k::windSpeedMeters, n2k::rotateout*DEGTORAD, N2kWind_Apparent);
     correctN2kMsg.SendInActisenseFormat(forward_stream);
-    logTo::logToAll("sending " + String(correctN2kMsg.PGN));
+    n2k::num_wind_xmit++;
+    //logTo::logToAll("sending " + String(correctN2kMsg.PGN));
+
 #if 0
     if (n2kMain->SendMsg(correctN2kMsg)) {
         ////Serial.printf("sent n2k wind %0.2f", rotateout);
@@ -197,31 +201,53 @@ void WindSpeed() {
 
 // parse compass reading on wind bus
 // this is a relative bearing from the mast
-void ParseCompassN2K(const tN2kMsg &N2kMsg) {
+void ParseMastIMU(const tN2kMsg &N2kMsg) {
   unsigned char SID;
   double heading;
   double deviation;
   double variation;
   tN2kHeadingReference headingRef;
-  //logTo::logToAll("parsecompassn2k");
   if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
-    // TBD get "reference" to confirm it's N2khr_Unavailable
-    n2k::mastIMUdeg = heading * RADTODEG;
-    readCompassDelta();
-    // NOTE we do NOT transmit boat heading on N2K here; only from reaction in wind-bus.cpp, to avoid flooding bus
-//#define XMITRUDDER
-#ifdef XMITRUDDER // send rudder angle (as rudder #1)
-    //SetN2kPGN127245(correctN2kMsg, heading, 1, N2kRDO_NoDirectionOrder, 0);
-    SetN2kPGN127250(correctN2kMsg, 0xFF, (double)heading, N2kDoubleNA, N2kDoubleNA, N2khr_Unavailable);
-    n2kMain->SendMsg(correctN2kMsg);
-    logTo::logToAll("sent rudder " + String(heading) + " rad " + String(heading*DEGTORAD));
-#endif
+    if (headingRef == N2khr_magnetic) {
+        // this will be common in testing when I have a single N2K bus
+        // for now, use it as boat heading
+        n2k::boatIMUdeg = heading * RADTODEG;
+        //logTo::logToAll("unexpected heading reference from mast IMU: "+ String(headingRef));
+        return;
+    // else N2khr_Unavailable means relative bearing from mast IMU
+    } else if (headingRef == N2khr_Unavailable) {
+        // logTo::logToAll("mast IMU: " + String(heading) + " rad " + String(heading*DEGTORAD));
+        n2k::mastIMUCounter();
+        n2k::mastIMUdeg = heading * RADTODEG;
+        readCompassDelta();
+    #ifdef XMITRUDDER // send rudder angle (as rudder #1)
+        //SetN2kPGN127245(correctN2kMsg, heading, 1, N2kRDO_NoDirectionOrder, 0);
+        SetN2kPGN127250(correctN2kMsg, 0xFF, (double)heading, N2kDoubleNA, N2kDoubleNA, N2khr_Unavailable);
+        n2kMain->SendMsg(correctN2kMsg);
+        logTo::logToAll("sent rudder " + String(heading) + " rad " + String(heading*DEGTORAD));
+    #endif
+    }
+  }
+}
+
+void parseBoatSpeed(const tN2kMsg &N2kMsg) {
+  unsigned char SID;
+  double WaterRef, GroundRef;
+  tN2kSpeedWaterReferenceType SWRT;
+  if (ParseN2kPGN128259(N2kMsg, SID, WaterRef, GroundRef, SWRT)) { 
+    pBD->STW = WaterRef;
+    pBD->SOG = GroundRef;
+    //logTo::logToAll("STW: " + String(pBD->STW*MPSTOKTS));
+    // sending boat speed to main bus in case transducer is on wind bus
+    N2kMsg.SendInActisenseFormat(forward_stream);
+    n2k::num_wind_xmit++;  
   }
 }
 
 // on wind bus we get all messages sent to SH-ESP32 on main bus to keep track and for display info
 void HandleStreamN2kMsg(const tN2kMsg &N2kMsg) {
   N2kMsg.Print(&Serial);
+  // no need to send main messages on wind bus
   //n2k::n2kWind->SendMsg(N2kMsg,-1);
 }
 

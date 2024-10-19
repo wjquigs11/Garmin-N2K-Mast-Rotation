@@ -18,3 +18,5 @@ extern compass_s compassParams;
 #define DEGTORAD 0.01745329252
 #define RADTODEG 57.2957795131
 #define VARIATION -15.2
+#define MPSTOKTS 1.94384
+#define KTSTOMPS 0.514444

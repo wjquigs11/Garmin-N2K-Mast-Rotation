@@ -7,7 +7,7 @@ public:
     static bool logToSerial;
     static void logToAll(String s);
     //logTo() {}
-    static const int ASIZE = 20;
+    static const int ASIZE = 21;
     static String commandList[ASIZE];
 };
 #endif

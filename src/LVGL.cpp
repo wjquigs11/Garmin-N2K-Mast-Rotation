@@ -60,13 +60,16 @@ lv_coord_t radius = SCREEN_WIDTH * 3 / 10;  // Same as half of the scale width/h
 #define SCALE_BOT_OFFSET 30
 #define yellow 0xFFFF00
 
+float angle_rad;
+lv_coord_t end_x, end_y;
+lv_point_precise_t line_points[] = {{0, 0}, {0, 0}};
+
 void update_needle_position(int16_t value) {
     // Calculate the angle in radians
-    float angle_rad = (value + 180) * (M_PI / 180);  // Convert to radians
+    angle_rad = (value + 180) * (M_PI / 180);  // Convert to radians
     
-    lv_coord_t end_x = center_x - (lv_coord_t)(sin(angle_rad) * radius);
-    lv_coord_t end_y = center_y - (lv_coord_t)(cos(angle_rad) * radius);
-        static lv_point_precise_t line_points[] = {{0, 0}, {0, 0}};
+    end_x = center_x - (lv_coord_t)(sin(angle_rad) * radius);
+    end_y = center_y - (lv_coord_t)(cos(angle_rad) * radius);
     line_points[0].x = center_x;
     line_points[0].y = center_y;
     line_points[1].x = end_x;
@@ -78,20 +81,19 @@ void update_needle_position(int16_t value) {
 
 void lv_create_main_gui(void) {
   screen = lv_screen_active();
-  Serial.printf("create main gui 0x%x\n", screen);
   lv_obj_set_style_bg_color(screen, lv_color_black(), 0);
   lv_style_init(&style);
-  lv_style_set_text_color(&style, lv_color_hex(yellow)); // Yellow
+  lv_style_set_text_color(&style, lv_color_hex(yellow));
   lv_style_init(&style_large_font);
   lv_style_set_text_font(&style_large_font, &lv_font_montserrat_16);  
   //lv_style_set_text_font(&style_large_font, &lv_font_unscii_16);  
   data_label = lv_label_create(screen);
   lv_obj_add_style(data_label, &style, 0);
   lv_obj_add_style(data_label, &style_large_font, 0);
-  lv_label_set_long_mode(data_label, LV_LABEL_LONG_WRAP);    // Breaks the long lines
-  lv_obj_set_width(data_label, SCREEN_WIDTH);    // Set smaller width to make the lines wrap
+  lv_label_set_long_mode(data_label, LV_LABEL_LONG_WRAP);
+  lv_obj_set_width(data_label, SCREEN_WIDTH);
 
-  // create a "scale" which is library speak for gauge
+  // create a "scale""
   lv_obj_t *scale_line = lv_scale_create(lv_screen_active());
   lv_obj_set_size(scale_line, SCREEN_WIDTH*6/10, SCREEN_WIDTH*6/10);
   lv_scale_set_mode(scale_line, LV_SCALE_MODE_ROUND_OUTER);
@@ -100,7 +102,6 @@ void lv_create_main_gui(void) {
 
   lv_obj_set_style_arc_color(scale_line, lv_color_hex(yellow), LV_PART_MAIN);
   lv_obj_set_style_arc_width(scale_line, 4, LV_PART_MAIN);
-  // Set the tick color to yellow
   lv_obj_set_style_line_color(scale_line, lv_color_hex(yellow), LV_PART_MAIN);
   lv_obj_set_style_line_color(scale_line, lv_color_hex(yellow), LV_PART_ITEMS);
   lv_obj_set_style_text_color(scale_line, lv_color_hex(yellow), 0);
@@ -123,60 +124,71 @@ void lv_create_main_gui(void) {
 
   // create label for scale (rotation)
   rotation_label = lv_label_create(lv_screen_active());
-  lv_label_set_text(rotation_label, "0");  // Initial text
+  lv_label_set_text(rotation_label, "0");
   lv_obj_set_style_text_color(rotation_label, lv_color_hex(yellow), 0);
   lv_obj_align_to(rotation_label, scale_line, LV_ALIGN_BOTTOM_MID, -10, SCALE_BOT_OFFSET);  
 
   // Create the needle line
   needle_line = lv_line_create(scale_line);
   lv_obj_set_style_line_color(needle_line, lv_color_hex(yellow), LV_PART_MAIN);
-  lv_obj_set_style_line_width(needle_line, 3, LV_PART_MAIN);  // Thinner line
+  lv_obj_set_style_line_width(needle_line, 3, LV_PART_MAIN);  // thinner
   lv_obj_set_style_line_rounded(needle_line, true, LV_PART_MAIN);
 
-  // Position the needle at 0
   update_needle_position(0);
 }
 
-char bufB[512], bufS[128]; // Buffer for formatting text
+char bufB[128], bufS[64];
+unsigned long uptime;
+lv_mem_monitor_t mon;
+
+void mem_report(void) {
+    lv_mem_monitor(&mon);
+    Serial.printf("Total: %d free: %d max: %d used: %d%%\n", mon.total_size, mon.free_size, mon.max_used, mon.used_pct);
+}
 
 void LVGLdataWindDebug() {
-    unsigned long uptime = millis() / 1000;
-    //Serial.printf("LVGLdataWindDebug %lu\n", uptime);
-    //int rotateout = map((Needle++ % 180),0,180,-90,90);
+    uptime = millis() / 1000;
+    static int counter;
     sprintf(bufB, "Uptime: %lu\n", uptime % 10000);
     sprintf(bufS, "Wifi: %s\n", (WiFi.status() == WL_CONNECTED) ? WiFi.SSID().substring(0,7).c_str() : "----");
     strcat(bufB, bufS);
 #ifdef N2K
-    sprintf(bufS, "N2K: %d:%d\n", n2k::num_n2k_messages % 10000, 0);
+    sprintf(bufS, "N2K: %d:%d\n", n2k::num_n2k_xmit % 10000, n2k::num_n2k_recv % 10000);
     strcat(bufB, bufS);
-    sprintf(bufS, "Wind: %d:%d\n", n2k::num_wind_messages % 10000, 0);
+    sprintf(bufS, "Wind: %d:%d\n", n2k::num_wind_xmit % 10000, n2k::num_wind_recv % 10000);
     strcat(bufB, bufS);
     sprintf(bufS, "AWS:%2.1f\n", n2k::windSpeedKnots);
     strcat(bufB, bufS);
     sprintf(bufS, "AWA:%2.0f\n", n2k::windAngleDegrees);
     strcat(bufB, bufS);
+    sprintf(bufS, "STW:%2.1f\n", pBD->STW*MPSTOKTS);
+    strcat(bufB, bufS);
+    sprintf(bufS, "SOG:%2.1f\n", pBD->SOG*MPSTOKTS);
+    strcat(bufB, bufS);
 #endif
     lv_label_set_text(data_label, bufB);
-
-    // update label at bottom of gauge
-#ifdef N2K
-    snprintf(bufB, sizeof(bufB), "%0.2f", n2k::rotateout);
-    lv_label_set_text(rotation_label, bufB);
-    update_needle_position(n2k::rotateout);
-#endif
-    //if (uptime % 60 == 0) {
-    //    logTo::logToAll("uptime: " + String(uptime) + " heap: " + String(ESP.getFreeHeap()));
-    //}
-
-    // Trigger LVGL to update the display
-    lv_task_handler();
+    if (counter++ % 60 == 0)
+      mem_report();
 }
+
+#ifdef N2K
+void LVGLupdateNeedle() {
+    // update label at bottom of gauge
+    int mastAngle = (random() % 180) - 90;
+    //snprintf(bufS, sizeof(bufB), "%d", n2k::mastAngle);
+    snprintf(bufS, sizeof(bufB), "%d", mastAngle);
+    lv_label_set_text(rotation_label, bufS);
+    // not updating needle because of memory leak
+    //update_needle_position(n2k::mastAngle);
+    update_needle_position(mastAngle);
+}
+#endif
 
 void setupLVGL() {
   String LVGL_Arduino = String("LVGL Library Version: ") + lv_version_major() + "." + lv_version_minor() + "." + lv_version_patch();
   //Serial.begin(115200); delay(500);
   //Serial.println("Starting LVGL");
-  Serial.println(LVGL_Arduino);
+  logTo::logToAll(LVGL_Arduino);
   
   // Start LVGL
   lv_init();
@@ -196,10 +208,7 @@ void setupLVGL() {
   // Set the callback function to read Touchscreen input
   lv_indev_set_read_cb(indev, button_read);
 #endif
-  // Function to draw the GUI (text, buttons and sliders)
   lv_create_main_gui();
-  Serial.println("main gui online");
-  //LVGLdataWindDebug();
 }
 
 void loopLVGL() {

@@ -7,6 +7,7 @@
 #include <ESPmDNS.h>
 #include <ESPAsyncWebServer.h>
 #include <WebSerial.h>
+#include <ElegantOTA.h>
 //#include <HTTPClient.h>
 #include <ESPmDNS.h>
 #include <NTPClient.h>
