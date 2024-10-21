@@ -384,8 +384,8 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     case 128259L:
       BoatSpeed(N2kMsg);
       break; 
+    // TBD: add handler for mast compass
   } 
-  // TBD: pass-through everything that's not from the same source as the wind PGN (for Paul with depth transducer on wind bus)
 }
 #endif // PICAN
 
