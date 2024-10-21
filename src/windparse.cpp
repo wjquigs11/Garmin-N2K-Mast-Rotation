@@ -185,7 +185,20 @@ void WindSpeed() {
 #ifdef HONEY
   if (honeywellOnToggle) {
     mastRotate = readAnalogRotationValue();
-    ////Serial.printf("honeywell mastrotate = %d\n", (int)mastRotate);
+    // the only time this will trigger is if I get a Wind packet at the same moment as the mast is centered.
+    // might be better to poll the rotation sensor when I get a packet from the mast compass on the wind bus
+    // I could also "correct" mast compass based on Honeywell sensor, although that would invalidate the comparison between the two
+    if (abs(mastRotate) < 1) {
+      // mast is centered; reset delta between mast IMU and boat IMU
+      logTo::logToAll("WindSpeed: got center trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
+      mastOrientation = 0;
+      mastOrientation = mastDelta = readCompassDelta();
+    }
+#ifdef XMITRUDDER
+    // shift from -portRange..stbdRange to 0..x
+    SetN2kPGN127245(correctN2kMsg, (mastRotate+portRange)*DEGTORAD, 0, N2kRDO_NoDirectionOrder, 0);
+    n2kMain->SendMsg(correctN2kMsg);
+#endif
   }
 #endif
   if (compass.OnToggle) {
@@ -239,11 +252,6 @@ void WindSpeed() {
   //Serial.println(buf2);
   NMEA0183serial.println(n0183cksumbuf);
 #endif
-#ifdef XMITRUDDER
-  // for now (until you dive into SensESP), send rotation angle as rudder
-  SetN2kPGN127245(correctN2kMsg, (mastRotate+50)*DEGTORAD, 0, N2kRDO_NoDirectionOrder, 0);
-  n2kMain->SendMsg(correctN2kMsg);
-#endif
 #ifdef XMITTRUE
   // calculate TWS/TWA from boat speed and send another wind PGN
   calcTrueWind();
@@ -278,13 +286,6 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
     mastCompassDeg = heading * RADTODEG;
     readCompassDelta();
     // NOTE we do NOT transmit boat heading on N2K here; only from reaction in wind-bus.cpp, to avoid flooding bus
-//#define XMITRUDDER
-#ifdef XMITRUDDER // send rudder angle (as rudder #1)
-    //SetN2kPGN127245(correctN2kMsg, heading, 1, N2kRDO_NoDirectionOrder, 0);
-    SetN2kPGN127250(correctN2kMsg, 0xFF, (double)heading, N2kDoubleNA, N2kDoubleNA, N2khr_Unavailable);
-    n2kMain->SendMsg(correctN2kMsg);
-    logTo::logToAll("sent rudder " + String(heading) + " rad " + String(heading*DEGTORAD));
-#endif
   } else {
     // no boat compass, use external heading info
     //if (compass.OnToggle) {
