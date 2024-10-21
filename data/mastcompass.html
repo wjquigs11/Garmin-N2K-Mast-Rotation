@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Mast Rotation Sensor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="icon" type="image/png" href="favicon.ico">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <script src="gauge.min.js"></script>
+</head>
+
+<body>
+    <div class="topnav">
+        <!-- Simulate a smartphone / tablet -->
+        <div class="mobile-container">
+            <div class="topnav">
+                <a href="/" class="active">
+                    <h1>Mast Compass Alignment</h1>
+                </a>
+                <div id="myLinks">
+                    <a href="/settings">Settings</a>
+                    <a href="/calibrate">Calibrate</a>
+                    <a href="/mastcompass">Mast Compass</a>
+                    <a href="/compass">Compass</a>
+                    <a href="/update">Update</a>
+                    <a href="/host">Host info</a>
+                </div>
+                <a href="javascript:void(0);" class="icon" onclick="menuFun()">
+                    <i class="fa fa-bars"></i>
+                </a>
+            </div>
+            <div class="content">
+                <p>Center mast and press Confirm to align mast and boat compass.</p>
+                <form action="/mastcompass" method="get">
+                    <input type="hidden" name="confirm" value="aligned">
+                    <button type="submit" class="button">Confirm</button>
+                </form>
+                <form>
+                    <input type="hidden" name="cancel" value="cancel">
+                    <button type="submit" class="button">Cancel</button>
+                </form>
+                <canvas id="gauge-magrot"></canvas>
+            </div>
+        </div>
+    </div>
+    <script src="main-script.js"></script>
+    <script src="magrot-script.js"></script>
+</body>
+</html>
