@@ -199,49 +199,8 @@ float getMastHeading();
 bool imuReady=false;
 bool mastIMUready=false;
 
-#ifdef CMPS14
-const int CMPS14_ADDRESS = 0x60;
-// robotshop CMPS14 (boat compass)
-#endif
-
-#ifdef ICM209
-#include "ICM_20948.h"
-extern ICM_20948_I2C imu; // create an ICM_20948_I2C object imu;
-void getICMheading(void *parameter);
-extern movingAvg avgYaw;
-// ICM20948 needs its own thread
-TaskHandle_t compassTask;
-#endif
-
-#ifdef ISM330
-#include "SparkFun_ISM330DHCX.h"
-//extern SparkFun_ISM330DHCX ism330;
-TaskHandle_t compassTask;
-void getISMheading(void *parameter);
-bool setupISM330(TwoWire &wirePort, uint8_t deviceAddress);
-#endif
-
-#ifdef BNO08X
-/*
-#include <Adafruit_BNO08x.h>
-float getBNO085(int correction);
-void setReports(int reportType);
-extern int reportType;
-extern float boatAccuracy;
-extern int boatCalStatus; 
-extern Adafruit_BNO08x bno08x;
-*/
-#endif
 #include "BNO085Compass.h"
 BNO085Compass compass;
-
-#ifdef SFBNO
-#include "SparkFun_BNO08x_Arduino_Library.h"  
-extern BNO08x bno08x;
-extern int reportType;
-float getBNO(int correction);
-void setReports(int reportType, uint16_t timeBetweenReports);
-#endif
 
 int headingErrCount;
 
@@ -384,8 +343,10 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     case 128259L:
       BoatSpeed(N2kMsg);
       break; 
-    // TBD: add handler for mast compass
-  } 
+    case 127250L: 
+      ParseCompassN2K(N2kMsg); // wind bus == mast compass = relative bearing
+      break;  
+    } 
 }
 #endif // PICAN
 
@@ -454,18 +415,13 @@ void OLEDdataWindDebug() {
 #ifdef HONEY
   if (honeywellOnToggle) {
     display->printf("Sensor:%d/%d/%d\n", PotLo, PotValue, PotHi);
-    display->printf("Angle:%2.1f\n", mastAngle[0]);
+    display->printf("Angle:%d\n", mastAngle[0]);
   }
 #endif
   if (compass.OnToggle) {
-    #ifdef MASTCOMPASS
     display->printf("M:%.1f B:%.1f T:%0.1f\n", mastCompassDeg, boatCompassDeg, BoatData.TrueHeading);
     display->printf("Delta:%2d\n", mastAngle[1]);
-    #else
-    display->printf("Heading: %.1f\n", boatCompassDeg);
-    #endif
   }
-  //Serial.printf("Hon: %d, Mag: %d\n", mastAngle[0], mastAngle[1]);
   display->display();
 }
 #endif
@@ -693,20 +649,12 @@ void setup() {
   }
 #endif
 #ifdef BNO08X
-  compass.IMUready = compass.begin();
-#endif
-#ifdef SFBNO
-  logTo::logToAll("SFBNO");
-  imuReady = bno08x.begin(SFBNO);
+  logTo::logToAll("BNO08X");
+  imuReady = compass.IMUready = compass.begin();
   if (imuReady) {
-    logTo::logTo::logToAll("SF BNO08x Found\n");
-    for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
-      String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
-      logTo::logTo::logToAll(logString);
-    }
-    setReports(reportType, compassFrequency);
+    compass.setReports(compass.reportType);
   } else {
-    logTo::logToAll("SF BNO08x not found");
+    logTo::logToAll("BNO08x not found");
     i2cScan(Wire);
   }
 #endif
@@ -722,12 +670,7 @@ void setup() {
   display->display();
   Serial.println("display init");
 #endif
-  if (initWiFi()) {
-    startWebServer();
-  } else {
-    startAP();
-  }
-  serverStarted=true;
+
   //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
@@ -781,8 +724,9 @@ void setup() {
     //events.send("ping",NULL,millis());
     events.send(getSensorReadings().c_str(),"new_readings" ,millis());
 //    mastCompassDeg = getMastHeading();
-    if (counter++ % 600 == 0) {
-      logTo::logToAll(timeClient.getFormattedDate());
+    // NTP client appears to hang (synchronous)
+    //if (counter++ % 600 == 0) {
+    //  logTo::logToAll(timeClient.getFormattedDate());
 #ifdef PICAN
       if (bmeFound) {
         logTo::logToAll("Temperature = " + String(1.8 * bme.readTemperature() + 32));
@@ -791,7 +735,6 @@ void setup() {
         logTo::logToAll("Humidity = " + String(bme.readHumidity()) + " %");
       }
 #endif
-    }
     consLog.flush();
   });
 
@@ -835,19 +778,6 @@ void setup() {
     }
   });
 #endif
-#ifdef SFBNO
-  app.onRepeat(compassFrequency, []() {  // compassFrequency?
-    float heading;
-    if (imuReady) {
-      heading = getBNO(boatOrientation);
-      if (heading >=0 ) {
-        boatCompassDeg = heading;
-        //Serial.printf(">heading:%0.2f\n",heading);
-      } else
-          headingErrCount++;
-    }
-  });
-#endif
 
   // check in for new heading 100 msecs = 10Hz
   if (imuReady && !demoModeToggle)
@@ -860,7 +790,7 @@ void setup() {
     //boatCompassDeg = getICMheading(0); moved to task
     //mastCompassDeg = getCompass(0);
     //logTo::logTo::logToAll("mastCompassDeg: " + String(mastCompassDeg));
-    mastDelta = readCompassDelta();
+    //mastDelta = readCompassDelta();
     if (compass.teleplot) {
         Serial.print(">mast:");
         float corrMastComp = mastCompassDeg+mastOrientation;
@@ -893,20 +823,9 @@ void setup() {
 
 #ifdef DISPLAYON
   // update results
-  app.onRepeat(1000, []() {
+  app.onRepeat(800, []() {
     if (displayOnToggle)
       OLEDdataWindDebug();
-    if (honeywellOnToggle) {
-      //sprintf(prbuf, "Sensor (L/C/H): %d/%d/%d (range: %d-%d) Angle: %0.2f rotateout %0.2f", PotLo, PotValue, PotHi, lowset, highset, mastAngle[0], rotateout);
-      //logTo::logTo::logToAll(prbuf);
-    }
-    if (compass.OnToggle) {
-      #ifdef MASTCOMPASS
-      #else
-      sprintf(prbuf, "Heading: %.1f", boatCompassDeg);
-      logTo::logTo::logToAll(prbuf);
-      #endif
-    }
     if (demoModeToggle) {
       demoIncr();
     }

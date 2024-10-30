@@ -222,6 +222,8 @@ void startWebServer() {
   // Add service to MDNS-SD
   if (!MDNS.addService("http", "tcp", HTTP_PORT)) {
     logTo::logToAll("MDNS add service failed");
+    sprintf(prbuf, "Free: heap %u, block: %u, min: %u, pSRAM %u", ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getMinFreeHeap(), ESP.getFreePsram());
+    logTo::logToAll(prbuf);
   }
   
   // SERVER INIT

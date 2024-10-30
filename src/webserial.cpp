@@ -169,7 +169,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
   Serial.write(data, len);
   //Serial.println();
   ////Serial.printf("commandList size is: %d\n", ASIZE(commandList));
-  WebSerial.println("Received Data...");
+  logTo::logToAll("Received Data...");
   String dataS = String((char*)data);
   // Split the String into an array of Strings using spaces as delimiters
   int wordCount = 0;
@@ -185,100 +185,98 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
   }
   for (int i = 0; i < wordCount; i++) {   
-    WebSerial.println(words[i]); 
+    logTo::logToAll(words[i]); 
     int j;
     if (words[i].equals("?")) {
       for (j = 1; j < logTo::ASIZE; j++) {
-        WebSerial.println(String(j) + ":" + logTo::commandList[j]);
+        logTo::logToAll(String(j) + ":" + logTo::commandList[j]);
       }
     }
     if (words[i].toInt() > 0)
       for (j = 1; j < logTo::ASIZE; j++) {
-        //WebSerial.println("j: " + String(j) + " " + logTo::commandList[j]);
+        //logTo::logToAll("j: " + String(j) + " " + logTo::commandList[j]);
         if (words[i].toInt() == j) {
           //Serial.printf("match %d %s %d %s\n", i, words[i].c_str(), j, commandList[j].c_str());
           words[i] = logTo::commandList[j];
         }
       }
     if (words[i].equals("status")) {
-      WebSerial.println("             uptime: " + String(millis() / 1000));
-      WebSerial.println("           AWS (in): " + String(WindSensor::windSpeedKnots));
-      WebSerial.println("           AWA (in): " + String(WindSensor::windAngleDegrees));
+      logTo::logToAll("             uptime: " + String(millis() / 1000));
+      logTo::logToAll("           AWS (in): " + String(WindSensor::windSpeedKnots));
+      logTo::logToAll("           AWA (in): " + String(WindSensor::windAngleDegrees));
 #ifdef HONEY
-      WebSerial.println(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
-      WebSerial.println("       Sensor angle: " + String(mastRotate));
-      WebSerial.println("        Correct AWA: " + String(rotateout));
+      logTo::logToAll(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
+      logTo::logToAll("       Sensor angle: " + String(mastRotate));
+      logTo::logToAll("        Correct AWA: " + String(rotateout));
 #endif
-      WebSerial.println("       Mast Compass: " + String(mastCompassDeg));
-      WebSerial.println("         Mast angle: " + String(mastDelta));
+      logTo::logToAll("       Mast Compass: " + String(mastCompassDeg));
+      logTo::logToAll("         Mast angle: " + String(mastDelta));
       WebSerial.flush();
     }
     if (words[i].equals("compass")) {
-      WebSerial.println("           Boat Compass: " + String(boatCompassDeg));
-      WebSerial.println("      heading err count: " + String(headingErrCount));
-      WebSerial.println("           Mast Compass: " + String(mastCompassDeg));
+      logTo::logToAll("           Boat Compass: " + String(boatCompassDeg));
+      logTo::logToAll("      heading err count: " + String(headingErrCount));
+      logTo::logToAll("           Mast Compass: " + String(mastCompassDeg));
 #ifdef BNO08XXXXX
-      WebSerial.println("           Cal Status: " + String()
+      logTo::logToAll("           Cal Status: " + String()
 #endif
 #ifdef CMPS14
       logTo::logToAll("            [Calibration]: ");
       String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
-      WebSerial.println("mag: " + String(calibrationStatus[0]) + String(calibrationStatus[1]) + " " + CV);
+      logTo::logToAll("mag: " + String(calibrationStatus[0]) + String(calibrationStatus[1]) + " " + CV);
       CV = String((calibrationStatus[2] << 8) | calibrationStatus[3]);
-      WebSerial.println("acc: " + String(calibrationStatus[2]) + String(calibrationStatus[3]) + " " + CV);
+      logTo::logToAll("acc: " + String(calibrationStatus[2]) + String(calibrationStatus[3]) + " " + CV);
       // gyro cal is "currently broken"
       CV = String((calibrationStatus[6] << 8) | calibrationStatus[7]);
-      WebSerial.println("sys: " + String(calibrationStatus[6]) + String(calibrationStatus[7]) + " " + CV);
-      WebSerial.println();
+      logTo::logToAll("sys: " + String(calibrationStatus[6]) + String(calibrationStatus[7]) + " " + CV);
+      logTo::logToAll();
       CV = String();
 #endif
     }
     if (words[i].equals("n2k")) {
 #ifdef N2K
-      WebSerial.println("           n2k main: " + String(num_n2k_messages));
-      WebSerial.println("           n2k wind: " + String(num_wind_messages));
-      WebSerial.println("      n2k wind fail: " + String(num_wind_fail));
-      WebSerial.println("       n2k wind fwd: " + String(num_wind_other));
-      WebSerial.println("  n2k wind fwd fail: " + String(num_wind_other_fail));
-      WebSerial.println("    n2k wind fwd ok: " + String(num_wind_other_ok));
+      logTo::logToAll("           n2k main: " + String(num_n2k_messages));
+      logTo::logToAll("           n2k wind: " + String(num_wind_messages));
+      logTo::logToAll("      n2k wind fail: " + String(num_wind_fail));
+      logTo::logToAll("       n2k wind fwd: " + String(num_wind_other));
+      logTo::logToAll("  n2k wind fwd fail: " + String(num_wind_other_fail));
+      logTo::logToAll("    n2k wind fwd ok: " + String(num_wind_other_ok));
       if (otherPGNindex > 0) {
-        WebSerial.print("n2k other PGNs: ");
+        logTo::logToAll("n2k other PGNs: ");
         for (int i=0; i<otherPGNindex; i++) {
-          WebSerial.print(otherPGN[i]);
-          if (i+1<otherPGNindex) WebSerial.print(", ");
+          logTo::logToAll(String(otherPGN[i]));
         }
-        WebSerial.println();
       }
 #endif
     }
     if (words[i].equals("format")) {
       SPIFFS.format();
-      WebSerial.println("SPIFFS formatted");
+      logTo::logToAll("SPIFFS formatted");
     }
     if (words[i].equals("restart")) {
-      WebSerial.println("Restarting...");
+      logTo::logToAll("Restarting...");
       ESP.restart();
     }
     if (words[i].equals("ls")) {
       File root = SPIFFS.open("/");
       File file = root.openNextFile();
       while (file) {
-        WebSerial.println(file.name());
+        logTo::logToAll(file.name());
         file.close(); 
         file = root.openNextFile();
       }
       root.close();
-      //WebSerial.println("done");
+      //logTo::logToAll("done");
     }
     if (words[i].equals("scan")) {
       i2cScan(Wire);
     }
     if (words[i].equals("readings")) {
-      WebSerial.println(readings);
+      //logTo::logToAll(readings);
     }
     if (words[i].equals("mast")) {
       //sendMastControl();
-      //WebSerial.println(readings);
+      //logTo::logToAll(readings);
     }
     if (words[i].equals("lsap")) {
       lsAPconn();
@@ -311,34 +309,34 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;      
     }
     if (words[i].equals("toggle")) {
-      WebSerial.println("Display: " + String(displayOnToggle));
-      WebSerial.println("Compass: " + String(compass.OnToggle));
-      WebSerial.println("Honeywell: " + String(honeywellOnToggle));
+      logTo::logToAll("Display: " + String(displayOnToggle));
+      logTo::logToAll("Compass: " + String(compass.OnToggle));
+      logTo::logToAll("Honeywell: " + String(honeywellOnToggle));
     }
 #ifdef NMEA0183
     if (words[i].equals("gps") && pBD) {
       //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
-      WebSerial.println("Latitude: " + String(pBD->Latitude));
-      WebSerial.println("Longitude: " + String(pBD->Longitude));
+      logTo::logToAll("Latitude: " + String(pBD->Latitude));
+      logTo::logToAll("Longitude: " + String(pBD->Longitude));
     }
 #endif
     if (words[i].equals("webserver")) {
-      WebSerial.print("local IP: ");
-      WebSerial.println(WiFi.localIP());
-      WebSerial.print("AP IP address: ");
-      WebSerial.println(WiFi.softAPIP());
+      logTo::logToAll("local IP: ");
+      logTo::logToAll(WiFi.localIP().toString());
+      logTo::logToAll("AP IP address: ");
+      logTo::logToAll(WiFi.softAPIP().toString());
         int clientCount = WiFi.softAPgetStationNum();
         if (clientCount > 0) {
           logTo::logToAll("Clients connected: " + clientCount);
         } else {
-          WebSerial.println("No clients connected");
+          logTo::logToAll("No clients connected");
         }
 
     }
     if (words[i].equals("windrx")) {
-      WebSerial.println("last wind time: " + String(time_since_last_wind_rx) + " avg wind time: " + String(avg_time_since_last_wind) + " ms");
+      logTo::logToAll("last wind time: " + String(time_since_last_wind_rx) + " avg wind time: " + String(avg_time_since_last_wind) + " ms");
       if (time_since_last_wind_rx > 0.0)
-        WebSerial.println(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
+        logTo::logToAll(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
     }    
     if (words[i].equals("teleplot")) {
       compass.teleplot = !compass.teleplot;
@@ -404,23 +402,17 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logTo::logToAll("total reports " + String(compass.totalReports));
       return;
     }
-    if (words[i].equals("teleplot")) {
-      compass.teleplot = !compass.teleplot;
-      logTo::logToAll("teleplot " + String(compass.teleplot));
-      return;
-    }  
-#if 0 // BNO  
+#ifdef BNO08X
     if (words[i].equals("rtype")) {
+      int reportType;
       if (!words[++i].isEmpty()) {
         reportType = (int)strtol(words[i].c_str(), NULL, 16);
         preferences.putInt("rtype", reportType);
-        logTo::logToAll("compass report type set to 0x%x\n", reportType);
-#ifdef BNO08X
-        if (!bno08x.enableReport(reportType)) 
-                logTo::logToAll("Could not enable local report 0x%x\n",reportType);
-#endif
+        logTo::logToAll("compass report type set to 0x" + String(reportType,HEX));
+        if (!compass.setReports(reportType)) 
+                logTo::logToAll("Could not enable local report 0x" + String(reportType,HEX));
       } else {
-        logTo::logToAll("compass report type is 0x%x\n",reportType);
+        logTo::logToAll("compass report type is 0x" + String(reportType,HEX));
       }
       return;
     }

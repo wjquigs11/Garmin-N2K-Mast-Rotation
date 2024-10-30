@@ -61,7 +61,7 @@ double TWS; // meters/sec
 int TWA; // radians
 
 #ifdef HONEY
-movingAvg honeywellSensor(10);
+movingAvg honeywellSensor(5);
 Adafruit_ADS1015 ads;
 int adsInit;
 #endif
@@ -124,28 +124,24 @@ float readAnalogRotationValue() {
   RotationSensor::oldValue = oldValue;
 
   // map 10 bit number to degrees of rotation
-  //sprintf(prbuf,"map: %d %d %d %d %d = %0.2f\n", oldValue, lowset, highset, -portRange, stbdRange, mastAngle[0]);
+  mastAngle[0] = map(oldValue, lowset, highset, -portRange, stbdRange)+sensOrientation;
+  //sprintf(prbuf,"map: %d %d %d %d %d = %ld\n", oldValue, lowset, highset, -portRange, stbdRange, mastAngle[0]);
   //logTo::logToAll(prbuf);
-  mastAngle[0] = map(oldValue, lowset, highset, -portRange, stbdRange)+sensOrientation;    
-  #ifdef DEBUG2
-  sprintf(prbuf, "%d %d %d %d", oldValue, lowset, highset, mastRot);
-  //Serial.println(prbuf);
-  #endif
   return mastAngle[0]; 
 }
 #endif
 
-// TBD move to IMU.cpp
 int compassDifference(int angle1, int angle2) {
-    int diff = (angle1 - angle2 + 360) % 360;
-    //Serial.print("compdiff: "); Serial.println(diff);
-    return (diff > 180) ? (diff - 360) : diff;
+//    int diff = (angle1 - angle2 + 360) % 360;
+//    return (diff > 180) ? (diff - 360) : diff;
+  int diff = ((angle2 - angle1 + 180) % 360) - 180;
+  return diff;
 }
 
 float readCompassDelta() {
   if (imuReady) {
     float mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
-    //logTo::logToAll("mastDelta: " + String(mastDelta));
+    //logTo::logToAll("readCompassDelta m: " + String(mastCompassDeg+mastOrientation) + " b: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
     mastCompDelta.reading((int)(mastDelta*100)); // moving average
     return mastDelta;
@@ -273,16 +269,14 @@ void ParseWindN2K(const tN2kMsg &N2kMsg) {
 // TBD: decide if we're on wind bus or main bus, because heading from wind bus is mast compass 
 // and heading from main bus is external compass
 // for now we're just assuming we're on the wind bus and it's the mast compass
-// also reusing rudder angle (AGAIN) to transmit mast compass heading on N2K (NO)
 void ParseCompassN2K(const tN2kMsg &N2kMsg) {
   unsigned char SID;
   double heading;
   double deviation;
   double variation;
   tN2kHeadingReference headingRef;
-  //logTo::logToAll("parsecompassn2k");
   if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
-    // TBD get "reference" to confirm it's N2khr_Unavailable
+    //logTo::logToAll("wind heading ref " + String(headingRef));
     mastCompassDeg = heading * RADTODEG;
     readCompassDelta();
     // NOTE we do NOT transmit boat heading on N2K here; only from reaction in wind-bus.cpp, to avoid flooding bus

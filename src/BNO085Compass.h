@@ -23,7 +23,7 @@ public:
     int numReports[SH2_MAX_SENSOR_ID], totalReports;
 
     bool begin();
-    void setReports(int reportType);
+    bool setReports(int reportType);
     float calculateHeading(float r, float i, float j, float k, int correction);
     void setReportType(int type);
     float getHeading(int correction);

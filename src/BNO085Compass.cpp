@@ -25,14 +25,11 @@
         return true;
     }
 
-    void BNO085Compass::setReports(int reportType) {
+    bool BNO085Compass::setReports(int reportType) {
         if (!bno08x.enableReport((sh2_SensorId_t)reportType)) {
-            // Handle error (e.g., log or throw an exception)
+            return false;
         }
-    }
-    void BNO085Compass::setReportType(int type) {
-        reportType = type;
-        setReports(reportType);
+        else return true;
     }
 
     void BNO085Compass::logPart() {
