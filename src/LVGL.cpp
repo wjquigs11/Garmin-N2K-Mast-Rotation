@@ -171,16 +171,17 @@ void LVGLdataWindDebug() {
       mem_report();
 }
 
+char intBuf[4];
 #ifdef N2K
 void LVGLupdateNeedle() {
     // update label at bottom of gauge
-    int mastAngle = (random() % 180) - 90;
-    //snprintf(bufS, sizeof(bufB), "%d", n2k::mastAngle);
-    snprintf(bufS, sizeof(bufB), "%d", mastAngle);
-    lv_label_set_text(rotation_label, bufS);
+    //int mastAngle = (random() % 180) - 90;
+    sprintf(intBuf, "%d", n2k::mastAngle);
+    //snprintf(bufS, sizeof(bufB), "%d", mastAngle);
+    lv_label_set_text(rotation_label, intBuf);
     // not updating needle because of memory leak
-    //update_needle_position(n2k::mastAngle);
-    update_needle_position(mastAngle);
+    update_needle_position(n2k::mastAngle);
+    //update_needle_position(mastAngle);
 }
 #endif
 

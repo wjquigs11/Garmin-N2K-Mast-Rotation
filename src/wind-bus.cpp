@@ -1,11 +1,12 @@
 /* 
 wind-bus.cpp
 Dual-ESP mast rotation solution
-ESP1 (CYD) is connected to 2 IMUs (one on mast, one in controller box), and a Hall-effect sensor
+ESP1 (CYD) reads wind sensor (CAN), Honeywell (GPIO35) and/or boat orientation (UART) + mast orientation (CAN)
 ESP1 is connected to an isolated wind N2K bus to keep uncorrected wind data from Garmin displays
 ESP1 corrects incoming wind data for rotation and forwards in Actisense format on UART
 TBD: ESP1 stores AWA, AWS, and STW on SD card for polars
 ESP2 (SH-ESP32) is connected to ESP1 via UART, receives correct wind data (Actisense), and transmits on main N2K bus
+ESP2 is connected to BNO08X and forwards (relative) orientation on UART
 */
 #ifdef WINDBUS
 #include "compass.h"

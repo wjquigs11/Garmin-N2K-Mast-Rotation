@@ -54,7 +54,7 @@ extern int numReports[], totalReports;
 
 //extern elapsedMillis time_since_last_mastcomp_rx;
 
-bool logTo::logToSerial = false;
+bool logTo::logToSerial = true;
 
 void logTo::logToAll(String s) {
   if (s.endsWith("\n")) s.remove(s.length() - 1);

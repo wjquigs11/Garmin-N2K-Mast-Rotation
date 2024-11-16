@@ -1,12 +1,12 @@
 /*
 n2k-wind.cpp
 Here we will define part of the class that work only on the wind bus
-
 Dual-ESP mast rotation solution
 ESP1 (CYD) is either connected to 2 IMUs (one on mast, one in controller box), and a Hall-effect sensor
 or connected to a Honeywell rotation sensor
 ESP1 is connected to an isolated wind N2K bus to keep uncorrected wind data from Garmin displays
 ESP1 corrects incoming wind data for rotation and forwards in Actisense format on UART
+ESP1 displays N2K data and mast rotation
 TBD: ESP1 stores AWA, AWS, and STW on SD card for polars
 ESP2 (SH-ESP32) is connected to ESP1 via UART, receives correct wind data (Actisense), and transmits on main N2K bus
 */
@@ -116,7 +116,10 @@ void n2k::HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     switch (N2kMsg.PGN) {
     case 130306L: {
         if (ParseWindN2K(N2kMsg))
+            // in demo mode we only record wind speed for display
+#ifndef DEMOMODE
             WindSpeed();
+#endif
         break;
     }
     case 128259L: {
@@ -126,6 +129,19 @@ void n2k::HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
     case 127250L: {
         // mast IMU
         ParseMastIMU(N2kMsg);
+        break;
+    }
+    case 127245L: {
+        // rudder angle: set mast angle
+        double mastPosition, angOrder;
+        tN2kRudderDirectionOrder dirOrder;
+        static int counter;
+        unsigned char Instance;
+        if (ParseN2kPGN127245(N2kMsg, mastPosition, Instance, dirOrder, angOrder)) {
+            n2k::mastAngle = -((mastPosition*RADTODEG)-50);
+            // check to see where this ends up on display
+            if (counter++ % 10 == 0) logTo::logToAll("mast from rudder PGN: " + String(n2k::mastAngle));
+        }
         break;
     }
     // TBD: decide what to do with other traffic on wind bus
@@ -236,10 +252,10 @@ void parseBoatSpeed(const tN2kMsg &N2kMsg) {
   tN2kSpeedWaterReferenceType SWRT;
   if (ParseN2kPGN128259(N2kMsg, SID, WaterRef, GroundRef, SWRT)) { 
     pBD->STW = WaterRef;
-    pBD->SOG = GroundRef;
-    //logTo::logToAll("STW: " + String(pBD->STW*MPSTOKTS));
+    pBD->SOG = 0.0; //GroundRef not showing up correctly as zero;
+    logTo::logToAll("STW: " + String(pBD->STW*MPSTOKTS) + " " + String(pBD->SOG*MPSTOKTS));
     // sending boat speed to main bus in case transducer is on wind bus
-    N2kMsg.SendInActisenseFormat(forward_stream);
+    //N2kMsg.SendInActisenseFormat(forward_stream);
     n2k::num_wind_xmit++;  
   }
 }
