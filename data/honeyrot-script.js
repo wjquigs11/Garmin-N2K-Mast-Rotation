@@ -44,5 +44,5 @@ var gaugehoneyrot = new RadialGauge({
   needleCircleInner: false,
   animationDuration: 10,
   animationRule: "linear",
-  title: "Mast Compass"
+  title: "Honeywell"
 }).draw();
