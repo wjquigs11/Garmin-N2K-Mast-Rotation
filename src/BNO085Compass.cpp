@@ -25,45 +25,61 @@
         return true;
     }
 
-    bool BNO085Compass::setReports(int reportType) {
-        if (!bno08x.enableReport((sh2_SensorId_t)reportType)) {
+    // we ALWAYS enable SH2_ARVR_STABILIZED_GRV, as well as another report set by the user, 
+    // usually SH2_GEOMAGNETIC_ROTATION_VECTOR (0x09) to get a compass heading
+    // note that GRV is requested 10x the rate of the other (compass) report
+    bool BNO085Compass::setReports() {
+        logTo::logToAll("Setting compass report to: 0x" + String(reportType,HEX));
+        if (!bno08x.enableReport(reportType, frequency*10000)) {
+            logTo::logToAll("could not set report type: " + String(reportType,HEX));  
+            return false;
+        }
+        if (!bno08x.enableReport(SH2_ARVR_STABILIZED_GRV, frequency*1000)) {
+            logTo::logToAll("could not set report type (2): " + String(SH2_ARVR_STABILIZED_GRV,HEX));
+            return false;
+        } else logTo::logToAll("enabled " + String(SH2_ARVR_STABILIZED_GRV,HEX));
+        return true;
+    }
+/*        if (!bno08x.enableReport((sh2_SensorId_t)reportType)) {
             return false;
         }
         else return true;
-    }
+*/
 
     void BNO085Compass::logPart() {
         logTo::logTo::logToAll("test");
     }
 
-    float BNO085Compass::getHeading(int correction) {
+    int BNO085Compass::getHeading(int correction) {
         if (bno08x.wasReset()) {
-            setReports(reportType);
+            setReports();
         }
 
         if (!bno08x.getSensorEvent(&sensorValue)) {
-            return -3.0;
+            return -3;
         }
 
+        numReports[sensorValue.sensorId]++;
         switch (sensorValue.sensorId) {
             case SH2_GAME_ROTATION_VECTOR:
             case SH2_GEOMAGNETIC_ROTATION_VECTOR:
                 boatAccuracy = sensorValue.un.rotationVector.accuracy;
                 boatCalStatus = sensorValue.status;
-                return calculateHeading(sensorValue.un.rotationVector.real, 
+                boatHeading = calculateHeading(sensorValue.un.rotationVector.real, 
                                         sensorValue.un.rotationVector.i, 
                                         sensorValue.un.rotationVector.j, 
                                         sensorValue.un.rotationVector.k, 
                                         correction);
+                return 1;
             case SH2_ARVR_STABILIZED_GRV:
-                heading = calculateHeading(sensorValue.un.arvrStabilizedGRV.real, 
+                boatIMU = calculateHeading(sensorValue.un.arvrStabilizedGRV.real, 
                                            sensorValue.un.arvrStabilizedGRV.i, 
                                            sensorValue.un.arvrStabilizedGRV.j, 
                                            sensorValue.un.arvrStabilizedGRV.k, 
                                            correction);
-                return heading;
+                return 1;
             default:
-                return -4.0;
+                return -4;
         }
     }
 

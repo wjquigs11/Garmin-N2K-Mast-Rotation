@@ -46,7 +46,6 @@ float getCompass(int correction);      // boat heading from internal ESP32 CMPS1
 void httpInit(const char* serverName);
 extern const char* serverName;
 extern int mastOrientation;   // delta between mast compass and boat compass
-extern float boatCompassDeg; // magnetic heading not corrected for variation
 extern float mastCompassDeg;
 #ifdef CMPS14
 extern byte calibrationStatus[];
@@ -62,6 +61,10 @@ extern int num_wind_other_fail;
 extern int num_wind_other_ok;
 extern unsigned long otherPGN[MAXPGN];
 extern int otherPGNindex;
+
+extern int num_0183_messages;
+extern int num_0183_fail;
+extern int num_0183_ok;
 
 void mastHeading();
 float readCompassDelta();
@@ -191,6 +194,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       for (j = 1; j < logTo::ASIZE; j++) {
         logTo::logToAll(String(j) + ":" + logTo::commandList[j]);
       }
+      return;
     }
     if (words[i].toInt() > 0)
       for (j = 1; j < logTo::ASIZE; j++) {
@@ -209,12 +213,11 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logTo::logToAll("       Sensor angle: " + String(mastRotate));
       logTo::logToAll("        Correct AWA: " + String(rotateout));
 #endif
-      logTo::logToAll("       Mast Compass: " + String(mastCompassDeg));
-      logTo::logToAll("         Mast angle: " + String(mastDelta));
       WebSerial.flush();
     }
     if (words[i].equals("compass")) {
-      logTo::logToAll("           Boat Compass: " + String(boatCompassDeg));
+      logTo::logToAll("               Boat IMU: " + String(compass.boatIMU));
+      logTo::logToAll("           Boat Compass: " + String(compass.boatHeading));
       logTo::logToAll("      heading err count: " + String(headingErrCount));
       logTo::logToAll("           Mast Compass: " + String(mastCompassDeg));
 #ifdef BNO08XXXXX
@@ -308,16 +311,40 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       return;      
     }
-    if (words[i].equals("toggle")) {
-      logTo::logToAll("Display: " + String(displayOnToggle));
-      logTo::logToAll("Compass: " + String(compass.OnToggle));
-      logTo::logToAll("Honeywell: " + String(honeywellOnToggle));
+    if (words[i].startsWith("tog")) {
+      if (!words[++i].isEmpty()) {
+        if (words[i].startsWith("disp")) {
+          displayOnToggle = !displayOnToggle;
+          logTo::logToAll("Display: " + String(displayOnToggle));
+          return;
+        }
+        if (words[i].startsWith("comp")) {
+          compass.OnToggle = !compass.OnToggle;
+          logTo::logToAll("Compass: " + String(compass.OnToggle));
+          return;
+        }        
+        if (words[i].startsWith("honey")) {
+          honeywellOnToggle = !honeywellOnToggle;
+          logTo::logToAll("Honeywell: " + String(honeywellOnToggle));
+          return;
+        }
+
+      } else {
+        logTo::logToAll("Display: " + String(displayOnToggle));
+        logTo::logToAll("Compass: " + String(compass.OnToggle));
+        logTo::logToAll("Honeywell: " + String(honeywellOnToggle));
+      }
+      return;
     }
 #ifdef NMEA0183
     if (words[i].equals("gps") && pBD) {
       //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
       logTo::logToAll("Latitude: " + String(pBD->Latitude));
       logTo::logToAll("Longitude: " + String(pBD->Longitude));
+      logTo::logToAll("Variation: " + String(pBD->Variation));
+      logTo::logToAll("0183: " + String(num_0183_messages));
+      logTo::logToAll("0183 fail: " + String(num_0183_fail));
+      logTo::logToAll("0183 ok: " + String(num_0183_ok));
     }
 #endif
     if (words[i].equals("webserver")) {
@@ -356,7 +383,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;
     }  
     if (words[i].equals("hall")) {
-      logTo::logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
+      logTo::logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
       mastOrientation = 0;
       mastOrientation = mastDelta = readCompassDelta(); 
       logTo::logToAll("new orientation: " + String(mastDelta));
@@ -408,8 +435,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       if (!words[++i].isEmpty()) {
         reportType = (int)strtol(words[i].c_str(), NULL, 16);
         preferences.putInt("rtype", reportType);
+        compass.reportType = reportType;
         logTo::logToAll("compass report type set to 0x" + String(reportType,HEX));
-        if (!compass.setReports(reportType)) 
+        if (!compass.setReports()) 
                 logTo::logToAll("Could not enable local report 0x" + String(reportType,HEX));
       } else {
         logTo::logToAll("compass report type is 0x" + String(reportType,HEX));

@@ -22,10 +22,9 @@ extern int mastOrientation; // mast compass position relative to boat compass po
 extern int sensOrientation; // Honeywell orientation relative to centerline
 extern int boatOrientation; // boat compass position relative to centerline
 extern int mastAngle[];
-int compassFrequency;
 extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
-extern float mastCompassDeg, boatCompassDeg;
+extern float mastCompassDeg;
 extern tBoatData BoatData;
 extern int boatCalStatus;
 
@@ -63,13 +62,14 @@ String getSensorReadings() {
 #endif
   if (compass.OnToggle) {
     if (mastCompassDeg >= 0) { // set to -1 if mast compass times out
-      readings["mastHeading"] = String(mastCompassDeg+mastOrientation,2);
+      readings["mastHeading"] = String(mastCompassDeg+mastOrientation,1);
       readings["mastDelta"] = mastAngle[1];
+      readings["boatIMU"] = String(compass.boatIMU,1);
     }
-    readings["boatHeading"] = String(boatCompassDeg,2);
+    readings["boatHeading"] = String(compass.boatHeading,0);
     readings["boatTrue"] = String(BoatData.TrueHeading,0);
     //readings["boatCalStatus"] = String(boatCalStatus);
-    if (!honeywellOnToggle) // honeywell takes precedence if both are present
+    if (!honeywellOnToggle) // honeywell takes precedence if both are enabled
       readings["rotateout"] = String(rotateout,0);
   }
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
@@ -104,7 +104,7 @@ String settings_processor(const String& var) {
   if (var == "orientation") return (settingsString = String(mastOrientation));
   if (var == "sensorient") return (settingsString = String(sensOrientation));
   if (var == "boatorient") return (settingsString = String(boatOrientation));
-  if (var == "frequency") return (settingsString = String(compassFrequency));
+  if (var == "frequency") return (settingsString = String(compass.frequency));
   if (var == "controlMAC") return (settingsString = String(WiFi.macAddress()));
   if (var == "variation") return (settingsString = String(BoatData.Variation));
   return (settingsString = String("settings processor: placeholder not found " + var));
@@ -210,8 +210,10 @@ void startWebServer() {
   //mastOrientation = preferences.getInt("mastOrientation", 0);
   sensOrientation = preferences.getInt("sensOrientation", 0);
   boatOrientation = preferences.getInt("boatOrientation", 0);
-  compassFrequency = preferences.getInt("compassFreq", 50);
-  logTo::logToAll("compassFrequency = " + String(compassFrequency));
+  compass.frequency = preferences.getInt("compassFreq", 50);
+  logTo::logToAll("compassFrequency = " + String(compass.frequency));
+  compass.reportType = preferences.getInt("rtype", 0);
+  logTo::logToAll("reportType = " + String(compass.reportType));
   BoatData.Variation = preferences.getFloat("variation", VARIATION);
 
   if (!MDNS.begin(host.c_str()) ) {
@@ -301,7 +303,7 @@ void startWebServer() {
     if (request->hasParam("confirm")) {
       inputMessage1 = request->getParam("confirm")->value();
       logTo::logToAll("/mastcompass: " + inputMessage1);
-      mastOrientation = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
+      mastOrientation = compassDifference(compass.boatIMU, mastCompassDeg+mastOrientation);
     }
     if (request->hasParam("cancel")) {
       inputMessage1 = request->getParam("cancel")->value();
@@ -473,8 +475,8 @@ void startWebServer() {
           preferences.putInt("mastOrientation", mastOrientation);
         }
         if (p->name() == "frequency") {
-          compassFrequency = atoi(p->value().c_str());
-          preferences.putInt("compassFreq", compassFrequency);
+          compass.frequency = atoi(p->value().c_str());
+          preferences.putInt("compassFreq", compass.frequency);
         }
         if (p->name() == "variation") {
           BoatData.Variation = atof(p->value().c_str());

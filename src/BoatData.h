@@ -1,11 +1,15 @@
 #ifndef _BoatData_H_
 #define _BoatData_H_
 
+#define MTOKTS 1.943844
+
 struct tBoatData {
   unsigned long DaysSince1970;   // Days since 1970-01-01
   
   double TrueHeading,SOG,COG,Variation,
          STW, // meters/sec
+         TWS, TWA, // meters/sec
+         maxTWS,
          GPSTime,// Secs since midnight,
          Latitude, Longitude, Altitude, HDOP, GeoidalSeparation, DGPSAge;
   int GPSQualityIndicator, SatelliteCount, DGPSReferenceStationID;
@@ -17,7 +21,9 @@ public:
     SOG=0;
     COG=0; 
     Variation=0.0;
-    STW=0.0,
+    STW=0.0;
+    TWS=0.0; TWA=0.0;
+    maxTWS=0.0;
     GPSTime=0;
     Altitude=0;
     HDOP=100000;

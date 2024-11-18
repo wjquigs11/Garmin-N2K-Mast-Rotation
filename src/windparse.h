@@ -16,6 +16,7 @@
 #include <movingAvg.h>
 #include "elapsedMillis.h"
 #include <Arduino.h>
+#include <Adafruit_ADS1X15.h>
 #include <N2kMessages.h>
 #include <WiFi.h>
 #include "esp_wifi.h"

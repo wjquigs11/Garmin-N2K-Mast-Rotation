@@ -11,9 +11,14 @@ tBoatData *pBD=0;
 #include <N2kMessages.h>
 #include <NMEA0183Messages.h>
 
+extern int num_0183_messages;
+extern int num_0183_fail;
+extern int num_0183_ok;
+
 struct tNMEA0183Handler {
   const char *Code;
   void (*Handler)(const tNMEA0183Msg &NMEA0183Msg); 
+  int numMessages;
 };
 
 // IC-M330 output:
@@ -41,7 +46,7 @@ struct tGSV SatInfo[4];
 //struct tSatelliteInfo[8];
 
 tNMEA0183Handler NMEA0183Handlers[]={
-  {"RMC",&HandleRMC}, // Position, Velocity, and Time
+  {"RMC",&HandleRMC, 0}, // Position, Velocity, and Time
   //{"GSA",&HandleGSA}, // GPS DOP and active satellites // not doing this one yet because no parser
   //{"GSV",&HandleGSV}, // Number of SVs in view, PRN, elevation, azimuth, and SNR
   {0,0}
@@ -61,11 +66,12 @@ tN2kGNSSmethod GNSMethofNMEA0183ToN2k(int Method) {
 }
 
 void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg) {
+  num_0183_messages++;
   int iHandler;
-  ////Serial.println(NMEA0183Msg.MessageCode());
   // Find handler
   for (iHandler=0; NMEA0183Handlers[iHandler].Code!=0 && !NMEA0183Msg.IsMessageCode(NMEA0183Handlers[iHandler].Code); iHandler++);
   if (NMEA0183Handlers[iHandler].Code!=0) {
+    NMEA0183Handlers[iHandler].numMessages++;
     NMEA0183Handlers[iHandler].Handler(NMEA0183Msg); 
   }
 }
@@ -82,17 +88,17 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
       tN2kMsg N2kMsg;
       // COGSOGRapid
       SetN2kPGN129026(N2kMsg, 255, N2khr_true, pBD->COG, pBD->SOG);
-      n2kMain->SendMsg(N2kMsg); 
+      if (!n2kMain->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
       // GNSSPosition
       SetN2kPGN129029(N2kMsg,255,pBD->DaysSince1970,pBD->GPSTime,
                   pBD->Latitude,pBD->Longitude,pBD->Altitude,
                   N2kGNSSt_GPS,N2kGNSSm_GNSSfix,
                   pBD->SatelliteCount,pBD->HDOP,0,0,
                   0,N2kGNSSt_GPS,0,0);
-      n2kMain->SendMsg(N2kMsg); 
+      if (!n2kMain->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
       // LatLonRapid
       SetN2kPGN129025(N2kMsg, pBD->Latitude, pBD->Longitude);
-      n2kMain->SendMsg(N2kMsg); 
+      if (!n2kMain->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
       // Variation - taking out since it doesn't seem to be parsing correctly
       //SetN2kPGN127258(N2kMsg, 255, N2kmagvar_Calc, pBD->DaysSince1970, pBD->Variation);
       //n2kMain->SendMsg(N2kMsg);

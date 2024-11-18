@@ -36,7 +36,7 @@ int PotLo=9999;
 int PotHi=0;
 extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
 extern bool honeywellOnToggle;
-extern float mastCompassDeg, boatCompassDeg, mastDelta;
+extern float mastCompassDeg, mastDelta;
 extern movingAvg mastCompDelta;
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern int sensOrientation;
@@ -56,9 +56,9 @@ double WindSensor::windSpeedMeters{0.0};
 double WindSensor::windAngleRadians{0.0};
 tN2kWindReference wRef;
 tN2kHeadingReference hRef;
-double SpeedThruWater; // meters/sec
-double TWS; // meters/sec
-int TWA; // radians
+//double SpeedThruWater; // meters/sec
+//double TWS; // meters/sec
+//int TWA; // radians
 
 #ifdef HONEY
 movingAvg honeywellSensor(5);
@@ -140,8 +140,8 @@ int compassDifference(int angle1, int angle2) {
 
 float readCompassDelta() {
   if (imuReady) {
-    float mastDelta = compassDifference(boatCompassDeg, mastCompassDeg+mastOrientation);
-    //logTo::logToAll("readCompassDelta m: " + String(mastCompassDeg+mastOrientation) + " b: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
+    float mastDelta = compassDifference(compass.boatIMU, mastCompassDeg+mastOrientation);
+    //logTo::logToAll("readCompassDelta m: " + String(mastCompassDeg+mastOrientation) + " b: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
     mastCompDelta.reading((int)(mastDelta*100)); // moving average
     return mastDelta;
@@ -186,9 +186,10 @@ void WindSpeed() {
     // I could also "correct" mast compass based on Honeywell sensor, although that would invalidate the comparison between the two
     if (abs(mastRotate) < 1) {
       // mast is centered; reset delta between mast IMU and boat IMU
-      logTo::logToAll("WindSpeed: got center trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
+      logTo::logToAll("WindSpeed: got center trigger, prev orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
       mastOrientation = 0;
       mastOrientation = mastDelta = readCompassDelta();
+      logTo::logToAll("new orientation" + String(mastDelta));
     }
 #ifdef XMITRUDDER
     // shift from -portRange..stbdRange to 0..x
@@ -228,7 +229,8 @@ void WindSpeed() {
   if (n2kMain->SendMsg(correctN2kMsg)) {
     ////Serial.printf("sent n2k wind %0.2f", rotateout);
   } else {
-    Serial.println("Failed to send wind");  
+    //Serial.println("Failed to send wind");  
+    num_wind_other_fail++;
   }
 #ifdef NMEA0183
   // send on NMEA0183 serial (to Tiller Pilot)
@@ -248,9 +250,9 @@ void WindSpeed() {
   //Serial.println(buf2);
   NMEA0183serial.println(n0183cksumbuf);
 #endif
+  //calcTrueWind();
 #ifdef XMITTRUE
   // calculate TWS/TWA from boat speed and send another wind PGN
-  calcTrueWind();
   SetN2kPGN130306(correctN2kMsg, 0xFF, TWS, TWA, N2kWind_True_water);
   n2kMain->SendMsg(correctN2kMsg);
 #endif
@@ -349,7 +351,8 @@ void parseWindCAN() {
         if (n2kMain->SendMsg(correctN2kMsg)) {
           //Serial.printf("sent n2k wind %0.2f", rotateout);
         } else {
-          Serial.println("Failed to send wind from parseWindCAN()");  
+          //Serial.println("Failed to send wind from parseWindCAN()");  
+          num_wind_other_fail++;
         }
       } else 
       WindSpeed();
@@ -366,7 +369,7 @@ void parseWindCAN() {
       // hack! if hRef == N2khr_true that means mast IMU is aligned with Hall sensor
       if (hRef == N2khr_true) {
         mastCompassDeg = mastCompassRad * RADTODEG;
-        logTo::logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(boatCompassDeg) + " delta: " + String(mastDelta));
+        logTo::logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
         mastOrientation = 0;
         mastOrientation = mastDelta = readCompassDelta();
       }
@@ -459,8 +462,7 @@ void BoatSpeed(const tN2kMsg &N2kMsg) {
   double SpeedGroundMeters; // don't really care about ground speed here; TWS and TWA should refer to boat speed thru water
   tN2kSpeedWaterReferenceType SWRT;
   if (ParseN2kPGN128259(N2kMsg, SID, SpeedWaterMeters, SpeedGroundMeters, SWRT)) {
-    SpeedThruWater = SpeedWaterMeters; // KEEP METERS * 1.943844; // convert m/s to kts
-    BoatData.STW = SpeedThruWater;
+    BoatData.STW = SpeedWaterMeters; // KEEP METERS * 1.943844; // convert m/s to kts
   }
 }
 
@@ -469,12 +471,13 @@ void calcTrueWind() {
   ////Serial.printf("WS(m): %2.2f WA(r): %2.2f cos: %2.2f\n", WindSensor::windSpeedMeters, WindSensor::windAngleRadians, cos(WindSensor::windAngleRadians));
   double AWS = WindSensor::windSpeedMeters;
   double AWA = WindSensor::windAngleRadians;
-  double STW = SpeedThruWater;
-  TWS = sqrt(STW*STW + AWS*AWS - 2 * STW * AWS * cos(WindSensor::windAngleRadians));
+  double STW = BoatData.STW;
+  BoatData.TWS = sqrt(STW*STW + AWS*AWS - 2 * STW * AWS * cos(WindSensor::windAngleRadians));
+  if (BoatData.TWS > BoatData.maxTWS) BoatData.maxTWS = BoatData.TWS;
   // Calculate the component of AWS in the direction of the vessel's motion
   double AWS_parallel = AWS * sin(AWA);
   // Calculate the angle between the true wind direction and the vessel's heading
-  TWA = acos((STW * cos(AWA) - AWS_parallel) / TWS);
+  BoatData.TWA = acos((STW * cos(AWA) - AWS_parallel) / BoatData.TWS);
 //#define DEBUG
 #ifdef DEBUG
   //Serial.printf("STW(k): %2.2f TWS(k): %2.2f TWA(d): %2.2f\n", STW*1.943844, TWS*1.943844, TWA*(180/M_PI));

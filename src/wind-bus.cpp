@@ -53,14 +53,13 @@ tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
 // display
 // v1 uses Wire for I2C at standard pins, no defs needed?
-#define OGDISPLAY   // original controller is the only one with I2C display
-#ifdef OGDISPLAY  
+//#define OGDISPLAY   // original controller is the only one with I2C display
+//#ifdef OGDISPLAY  
 #define OLED_RESET 4
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 #define SDA_PIN 16
 #define SCL_PIN 17
 Adafruit_SSD1306 *display;
-#endif
 #define SEALEVELPRESSURE_HPA (1013.25)
 Adafruit_BME280 bme;
 bool bmeFound;
@@ -93,7 +92,8 @@ const int CAN0_INT = 25;    // RPi Pin 12 -- IO25#endif
 #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 // RPI pin 24 = CP0/GPIO8 = IO5
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+Adafruit_SSD1306 *display;
 #endif // SH_ESP32
 
 using namespace reactesp;
@@ -149,6 +149,11 @@ unsigned long avg_time_since_last_wind = 0.0;
 elapsedMillis time_since_last_mastcomp_rx = 0;
 unsigned long total_time_since_last_mastcomp = 0.0;
 unsigned long avg_time_since_last_mastcomp = 0.0;
+
+int num_0183_messages = 0;
+int num_0183_fail = 0;
+int num_0183_ok = 0;
+
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -180,14 +185,12 @@ extern const char* serverName;
 int mastOrientation; // delta between mast compass and boat compass
 int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
 int boatOrientation; // delta between boat compass and magnetic north
-float boatCompassDeg; // magnetic heading not corrected for variation
 float boatCompassTrue;
 float mastCompassDeg;
 float mastDelta;
 extern tN2kWindReference wRef;
 movingAvg mastCompDelta(10);
 void mastHeading();
-extern int compassFrequency;
 int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
@@ -218,8 +221,9 @@ void WebSerialonMessage(uint8_t *data, size_t len);
 void i2cScan(TwoWire Wire);
 void demoIncr();
 float readCompassDelta();
-
 int compassDifference(int angle1, int angle2);
+
+void calcTrueWind();
 
 void ToggleLed() {
   static bool led_state = false;
@@ -419,7 +423,8 @@ void OLEDdataWindDebug() {
   }
 #endif
   if (compass.OnToggle) {
-    display->printf("M:%.1f B:%.1f T:%0.1f\n", mastCompassDeg, boatCompassDeg, BoatData.TrueHeading);
+    //display->printf("M:%.1f B:%.1f T:%0.1f\n", mastCompassDeg, compass.boatIMU, BoatData.TrueHeading);
+    display->printf("M:%.1f B:%.1f H:%.0f\n", mastCompassDeg, compass.boatIMU, compass.boatHeading);
     display->printf("Delta:%2d\n", mastAngle[1]);
   }
   display->display();
@@ -436,7 +441,9 @@ void setup() {
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
 
+  Serial.printf("SDA %d SCL %d\n", SDA, SCL);
   Wire.begin();
+  // slow down i2c to handle more devices
   Wire.setClock(100000);
 
 #if 0
@@ -447,7 +454,7 @@ void setup() {
   Wire1.setClock(400000); // Set to 400 kHz 
 #endif
 
-#ifdef DIYMORE
+#ifdef DIYMORE  // on SPI
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
   if(!display->begin(SSD1306_EXTERNALVCC, 0, true))
     logTo::logToAll(F("SSD1306 SPI allocation failed"));
@@ -455,24 +462,27 @@ void setup() {
     logTo::logToAll(F("SSD1306 SPI allocation success"));
 #endif
 #ifdef OGDISPLAY
+  Serial.println("reset OLED");
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
   digitalWrite(OLED_RESET, LOW);
   delay(500);
   digitalWrite(OLED_RESET, HIGH);
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-  if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true))
+  if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true, false))
     Serial.println(F("SSD1306 allocation failed"));
   else
     Serial.println(F("SSD1306 allocation success"));
 #endif
-#ifdef SH_ESP32
+#if defined(SH_ESP32) && defined (DISPLAYON)
+  Serial.println("SH_ESP32 display");
   i2c = new TwoWire(0);
-  i2c->begin(SDA_PIN, SCL_PIN);
-  display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
-  if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
-    logTo::logToAll(F("SSD1306 I2C allocation failed"));
-  else
-    logTo::logToAll(F("SSD1306 I2C allocation success"));
+  if (i2c->begin(SDA_PIN, SCL_PIN)) {
+    display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, i2c, -1);
+    if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+      logTo::logToAll(F("SSD1306 I2C allocation failed"));
+    else
+      logTo::logToAll(F("SSD1306 I2C allocation success"));
+  }
 #endif
 #ifdef DISPLAYON
   logTo::logToAll("OLED started");
@@ -493,6 +503,7 @@ void setup() {
   if (!(adsInit = ads.begin())) {  // start ADS1015 ADC default 0x4A
     logTo::logToAll("ads sensor not found");
     honeywellOnToggle = false;
+    i2cScan(Wire);
   } else {
     logTo::logToAll("init ADS");
     honeywellSensor.begin();    // Instantiates the moving average object
@@ -609,7 +620,6 @@ void setup() {
   
   logTo::logToAll("ESP local MAC addr: " + WiFi.macAddress());
  
-  // imuReady means we have a local boat compass in the controller
 #ifdef ICM209
   imu.begin(Wire1, ICM209);
   imuReady = (imu.status == ICM_20948_Stat_Ok);
@@ -652,36 +662,27 @@ void setup() {
   logTo::logToAll("BNO08X");
   imuReady = compass.IMUready = compass.begin();
   if (imuReady) {
-    compass.setReports(compass.reportType);
+    //compass.setReports();
   } else {
     logTo::logToAll("BNO08x not found");
     i2cScan(Wire);
   }
 #endif
   mastCompDelta.begin();
-#ifdef DISPLAYON
-  Serial.println("OLED started");
-  display->clearDisplay();
-  display->setTextSize(1);             
-  display->setTextColor(SSD1306_WHITE);
-  display->setRotation(2);
-  display->setCursor(10,10);
-  display->println(F("\nESP32 Mast\nRotation\nCorrection"));
-  display->display();
-  Serial.println("display init");
-#endif
 
   //ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
 
-  // Update the time
-  #define RETRIES 10
-  int count=0;
-  while(!timeClient.update() && count++ < RETRIES) {
-      timeClient.forceUpdate();
+  if (WiFi.status() == WL_CONNECTED) {
+    // Update the time
+    #define RETRIES 10
+    int count=0;
+    while(!timeClient.update() && count++ < RETRIES) {
+        timeClient.forceUpdate();
+    }
+    logTo::logToAll(timeClient.getFormattedDate());
   }
-  logTo::logToAll(timeClient.getFormattedDate());
 
   logTo::logToAll("ESP flash size 0x" + String(ESP.getFlashChipSize(),HEX)); // 4194304
 
@@ -744,6 +745,8 @@ void setup() {
   
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
 // if we get in range, it's simpler to reboot than to constantly check
+#if 0
+// connecting to wifi seems to be hanging output
   app.onRepeat(300000, []() {
     // we have to clear counters sometime because otherwise they roll off screen
     //num_n2k_messages = 0;
@@ -766,31 +769,29 @@ void setup() {
       logTo::logToAll("Client " + String(i+1) + " MAC: " + String(station.mac[0],HEX) + ":" + String(station.mac[1],HEX)+ ":" + String(station.mac[2],HEX)+ ":" + String(station.mac[3],HEX)+ ":" + String(station.mac[4],HEX)+ ":" + String(station.mac[5],HEX));
     }
 });
+#endif
 
 #ifdef BNO08X
-  app.onRepeat(compassFrequency, []() {  // compassFrequency?
-    float heading;
-    if (imuReady) {
-      heading = compass.getHeading(boatOrientation);
-      if (heading >=0 ) boatCompassDeg = heading;
-        else
-          headingErrCount++;
-    }
-  });
+  if (imuReady) {
+    logTo::logToAll("checking heading at " + String(compass.frequency));
+    app.onRepeat(compass.frequency, []() {
+      float heading;
+      int err;
+      if ((err = compass.getHeading(boatOrientation)) < 0) {
+        headingErrCount++;
+        if (headingErrCount % 500 == 0)
+          logTo::logToAll("heading error count: " + String(headingErrCount) + "ret val: " + String(err));
+      }
+    });
+  }
 #endif
 
   // check in for new heading 100 msecs = 10Hz
   if (imuReady && !demoModeToggle)
-    app.onRepeat(compassFrequency, []() {
+    app.onRepeat(compass.frequency, []() {
       // TBD: delete reaction and recreate if frequency changes
       // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
       // TBD: set Variation if we get a Heading PGN on main bus that includes it
-      // the global boatCompassDeg will always contain the boat compass (magnetic)
-    // we get boatCompassDeg here but we also do it on schedule so the ship's compass is still valid even if we're not connected to mast compass
-    //boatCompassDeg = getICMheading(0); moved to task
-    //mastCompassDeg = getCompass(0);
-    //logTo::logTo::logToAll("mastCompassDeg: " + String(mastCompassDeg));
-    //mastDelta = readCompassDelta();
     if (compass.teleplot) {
         Serial.print(">mast:");
         float corrMastComp = mastCompassDeg+mastOrientation;
@@ -798,23 +799,29 @@ void setup() {
         if (corrMastComp < 0) corrMastComp += 360;
         Serial.println(corrMastComp);
         Serial.print(">boat:");
-        Serial.println(boatCompassDeg);
+        Serial.println(compass.boatIMU);
         Serial.print(">delta:");
         Serial.println(mastDelta);  
 #ifdef BNO08X
-        Serial.printf(">true:%0.2f\n",BoatData.TrueHeading); 
+        Serial.printf(">boat:%0.2f\n", compass.boatHeading);
+        //Serial.printf(">true:%0.2f\n",BoatData.TrueHeading); 
         Serial.printf(">calstat:%d\n", compass.boatCalStatus);
         Serial.printf(">acc:%0.2f\n", compass.boatAccuracy*RADTODEG);
 #endif
     }
-#if defined(N2K) && defined(NOTDEF)  // do not xmit heading at this time since not using magnetic reference
+#if defined(N2K)
     // transmit heading
     if (n2kMainOpen) {
-      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)boatCompassDeg*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
-      if (n2kMain->SendMsg(correctN2kMsg)) {
-        //Serial.printf("sent n2k heading %0.2f\n", boatCompassDeg);
-      } else {
-        logTo::logToAll("Failed to send heading from compass reaction");
+      pBD->TrueHeading = compass.boatHeading + VARIATION; // will suffice until I get it from GPS
+      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)compass.boatHeading*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
+      if (!n2kMain->SendMsg(correctN2kMsg)) {
+        //logTo::logToAll("Failed to send mag heading from compass reaction");
+        num_wind_other_fail++;
+      }
+      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)pBD->TrueHeading*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_true);
+      if (!n2kMain->SendMsg(correctN2kMsg)) {
+        //logTo::logToAll("Failed to send true heading from compass reaction");
+        num_wind_other_fail++;
       }
     }
 #endif
@@ -831,6 +838,15 @@ void setup() {
     }
   });
   #endif // DISPLAYON
+
+    app.onRepeat(2000, []() {
+      calcTrueWind();
+      logTo::logToAll("STW: " + String(pBD->STW*MTOKTS));
+      logTo::logToAll("AWS: " + String(WindSensor::windSpeedKnots) + " AWA: " + String(WindSensor::windAngleDegrees));
+      logTo::logToAll("TWS: " + String(pBD->TWS) + " TWA: " + String(pBD->TWA*RADTODEG));
+      logTo::logToAll("maxTWS: " + String(pBD->maxTWS*MTOKTS));
+    });
+
 }
 
 void loop() { 
@@ -842,8 +858,8 @@ void demoInit() {
   WindSensor::windAngleDegrees = 47;
   rotateout = 30;
   mastCompassDeg = 100;
-  boatCompassDeg = 120;
-  mastAngle[1] = mastAngle[0] = mastCompassDeg - boatCompassDeg;
+  compass.boatIMU = 120;
+  mastAngle[1] = mastAngle[0] = mastCompassDeg - compass.boatIMU;
 #ifdef HONEY
   PotValue = 50;
 #endif
@@ -859,11 +875,11 @@ void demoIncr() {
   if (rotateout < 0) rotateout = 45;
   mastCompassDeg -=10 ;
   if (mastCompassDeg < 0) mastCompassDeg = 200;
-  boatCompassDeg -= 9;
-  if (boatCompassDeg < 0) boatCompassDeg = 220;
+  compass.boatIMU -= 9;
+  if (compass.boatIMU < 0) compass.boatIMU = 220;
   BoatData.TrueHeading -= 10;
   if (BoatData.TrueHeading < 0) BoatData.TrueHeading = 231;
-  mastAngle[0] = mastAngle[1] = mastCompassDeg - boatCompassDeg;
+  mastAngle[0] = mastAngle[1] = mastCompassDeg - compass.boatIMU;
 #ifdef HONEY
   PotValue -= 5;
   if (PotValue < 0) PotValue = 100;

@@ -14,8 +14,11 @@ public:
     BNO085Compass(int8_t reset_pin = -1);
 
     int reportType;
-    float heading;
+    int frequency;
+    float heading; // heading relative to magnetic north
+    float boatHeading;
     float boatAccuracy;
+    float boatIMU; // heading relative to centerline (or wherever the gadget is when we start up)
     int boatCalStatus;
     bool IMUready;
     bool OnToggle;
@@ -23,10 +26,10 @@ public:
     int numReports[SH2_MAX_SENSOR_ID], totalReports;
 
     bool begin();
-    bool setReports(int reportType);
+    bool setReports();
     float calculateHeading(float r, float i, float j, float k, int correction);
     void setReportType(int type);
-    float getHeading(int correction);
+    int getHeading(int correction);
     float getBoatAccuracy() const;
     int getBoatCalStatus() const;
     void logPart();
