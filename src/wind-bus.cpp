@@ -33,7 +33,7 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 #define CAN_RX_PIN GPIO_NUM_16
 #endif
 
-#ifdef DIYMORE  // SPI display
+#if defined(RS485CAN) || defined(OGDISPLAY)  // on SPI
 #define OLED_MOSI  23 // RPI 19
 #define OLED_CLK   18 // RPI 23
 #define OLED_CS    14 // RPI pin 31
@@ -51,18 +51,20 @@ Adafruit_SSD1306 *display;
 #ifdef PICAN
 tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
+#define SEALEVELPRESSURE_HPA (1013.25)
+Adafruit_BME280 bme;
+bool bmeFound;
+#endif
+
 // display
 // v1 uses Wire for I2C at standard pins, no defs needed?
 //#define OGDISPLAY   // original controller is the only one with I2C display
-//#ifdef OGDISPLAY  
+#ifdef OGDISPLAYXXX  
 #define OLED_RESET 4
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 #define SDA_PIN 16
 #define SCL_PIN 17
 Adafruit_SSD1306 *display;
-#define SEALEVELPRESSURE_HPA (1013.25)
-Adafruit_BME280 bme;
-bool bmeFound;
 #endif
 
 #ifdef RS485CAN
@@ -167,6 +169,7 @@ extern char *hostname;
 extern int WebTimerDelay;
 extern AsyncEventSource events;
 extern JSONVar readings;
+void readPrefs();
 bool initWiFi();
 void startAP();
 void startWebServer();
@@ -196,8 +199,8 @@ int mastAngle[2]; // array for both sensors
 // 1 = compass
 float getMastHeading();
 
-#define W1SCL 33
-#define W1SDA 32
+#define W1SCL 25
+#define W1SDA 26
 
 bool imuReady=false;
 bool mastIMUready=false;
@@ -433,7 +436,7 @@ void OLEDdataWindDebug() {
 
 void setup() {
   Serial.begin(115200);
-  delay(100);
+  delay(300);
   logTo::logToAll("starting wind correction");
 
   esp_log_level_set("*", ESP_LOG_VERBOSE);  // Set global log level
@@ -441,7 +444,6 @@ void setup() {
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
 
-  Serial.printf("SDA %d SCL %d\n", SDA, SCL);
   Wire.begin();
   // slow down i2c to handle more devices
   Wire.setClock(100000);
@@ -454,26 +456,32 @@ void setup() {
   Wire1.setClock(400000); // Set to 400 kHz 
 #endif
 
-#ifdef DIYMORE  // on SPI
+#if defined(RS485CAN) || defined(OGDISPLAY)  // on SPI
+  Serial.println("reset OLED");
+  pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
+  digitalWrite(OLED_RESET, LOW);
+  delay(500);
+  digitalWrite(OLED_RESET, HIGH);
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &SPI, OLED_DC, OLED_RESET, OLED_CS);
   if(!display->begin(SSD1306_EXTERNALVCC, 0, true))
     logTo::logToAll(F("SSD1306 SPI allocation failed"));
   else
     logTo::logToAll(F("SSD1306 SPI allocation success"));
 #endif
-#ifdef OGDISPLAY
+#if 0 // original controller now uses SPI display
   Serial.println("reset OLED");
   pinMode(OLED_RESET, OUTPUT);  // RES Pin Display
   digitalWrite(OLED_RESET, LOW);
   delay(500);
   digitalWrite(OLED_RESET, HIGH);
-  display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-  if(!display->begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, true, false))
+  display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire1, OLED_RESET);  // wire1
+  // SSD1306_EXTERNALVCC for 5V from Pi/ESPberry header
+  if(!display->begin(SSD1306_EXTERNALVCC, SCREEN_ADDRESS, true, false))
     Serial.println(F("SSD1306 allocation failed"));
   else
     Serial.println(F("SSD1306 allocation success"));
 #endif
-#if defined(SH_ESP32) && defined (DISPLAYON)
+#if defined(SH_ESP32) && defined(DISPLAYON)
   Serial.println("SH_ESP32 display");
   i2c = new TwoWire(0);
   if (i2c->begin(SDA_PIN, SCL_PIN)) {
@@ -576,10 +584,12 @@ void setup() {
     logTo::logToAll("failed to open n2kWind");
   }
   // PICAN has BME280 environmental sensor
-  if (bmeFound = bme.begin(0x77,&Wire))
+  if (bmeFound = bme.begin(0x76)) {
     Serial.println("BME280 found");
-  else
-    Serial.println("Could not find a valid BME280 sensor, check wiring!");
+  } else {
+    Serial.println("Could not find a valid BME280 sensor.");
+    i2cScan(Wire);
+  }
 #elif defined(RS485CAN)
   // Initialize the CAN port
     //n2kWind.reset();
@@ -610,6 +620,8 @@ void setup() {
   } else {
     logTo::logToAll("console log write failed");
   }
+
+  readPrefs();
 
   if (initWiFi()) {
     startWebServer();
@@ -731,8 +743,9 @@ void setup() {
 #ifdef PICAN
       if (bmeFound) {
         logTo::logToAll("Temperature = " + String(1.8 * bme.readTemperature() + 32));
-        logTo::logToAll("Pressure = " + String(bme.readPressure() / 100.0F) + " hPa");
-        logTo::logToAll("Altitude = " + String(bme.readAltitude(SEALEVELPRESSURE_HPA)*3.28084));
+        int press = bme.readPressure();
+        logTo::logToAll("Pressure = " + String(press / 100.0F) + " hPa " + String(press * 0.0002953) + " inHg");
+        //logTo::logToAll("Altitude = " + String(bme.readAltitude(SEALEVELPRESSURE_HPA)*3.28084));
         logTo::logToAll("Humidity = " + String(bme.readHumidity()) + " %");
       }
 #endif
@@ -830,7 +843,7 @@ void setup() {
 
 #ifdef DISPLAYON
   // update results
-  app.onRepeat(800, []() {
+  app.onRepeat(500, []() {
     if (displayOnToggle)
       OLEDdataWindDebug();
     if (demoModeToggle) {
@@ -839,14 +852,15 @@ void setup() {
   });
   #endif // DISPLAYON
 
-    app.onRepeat(2000, []() {
-      calcTrueWind();
-      logTo::logToAll("STW: " + String(pBD->STW*MTOKTS));
-      logTo::logToAll("AWS: " + String(WindSensor::windSpeedKnots) + " AWA: " + String(WindSensor::windAngleDegrees));
-      logTo::logToAll("TWS: " + String(pBD->TWS) + " TWA: " + String(pBD->TWA*RADTODEG));
-      logTo::logToAll("maxTWS: " + String(pBD->maxTWS*MTOKTS));
-    });
-
+#if 0
+  app.onRepeat(2000, []() {
+    calcTrueWind();
+    logTo::logToAll("STW: " + String(pBD->STW*MTOKTS));
+    logTo::logToAll("AWS: " + String(WindSensor::windSpeedKnots) + " AWA: " + String(WindSensor::windAngleDegrees));
+    logTo::logToAll("TWS: " + String(pBD->TWS) + " TWA: " + String(pBD->TWA*RADTODEG));
+    logTo::logToAll("maxTWS: " + String(pBD->maxTWS*MTOKTS));
+  });
+#endif
 }
 
 void loop() { 

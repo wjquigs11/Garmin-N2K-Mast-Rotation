@@ -189,7 +189,7 @@ void WindSpeed() {
       logTo::logToAll("WindSpeed: got center trigger, prev orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
       mastOrientation = 0;
       mastOrientation = mastDelta = readCompassDelta();
-      logTo::logToAll("new orientation" + String(mastDelta));
+      logTo::logToAll("new orientation: " + String(mastDelta));
     }
 #ifdef XMITRUDDER
     // shift from -portRange..stbdRange to 0..x

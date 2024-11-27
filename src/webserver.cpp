@@ -39,7 +39,7 @@ JSONVar readings;
 
 // Timer variables
 unsigned long lastTime = 0;
-int WebTimerDelay = 500;
+int WebTimerDelay = 2000;
 
 extern bool displayOnToggle, honeywellOnToggle, demoModeToggle;
 //extern Adafruit_SSD1306 display;
@@ -193,17 +193,16 @@ void compassPing() {  // ping mast compass needs work for use case where mast co
     }
 #endif
 
-void startWebServer() {
-  logTo::logToAll("starting web server");
+void readPrefs() {
   preferences.begin("ESPwind", false);
   displayOnToggle = (preferences.getString("displayOnTog", "true") == "true") ? true : false;
   logTo::logToAll("display = " + String(displayOnToggle));
   compass.OnToggle = (preferences.getString("compass.OnTog", "false") == "true") ? true : false;
   logTo::logToAll("compass = " + String(compass.OnToggle));
-  readings["compass"] = (compass.OnToggle ? 1 : 0);
+  //readings["compass"] = (compass.OnToggle ? 1 : 0);
   honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
   logTo::logToAll("honeywell = " + String(honeywellOnToggle));
-  readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
+  //readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
   //demoModeToggle = (preferences.getString("demoModeTog", "false") == "true") ? true : false;
   logTo::logToAll("demo = " + String(demoModeToggle));
   WebTimerDelay = preferences.getInt("WebTimerDelay", 500);
@@ -215,6 +214,10 @@ void startWebServer() {
   compass.reportType = preferences.getInt("rtype", 0);
   logTo::logToAll("reportType = " + String(compass.reportType));
   BoatData.Variation = preferences.getFloat("variation", VARIATION);
+}
+
+void startWebServer() {
+  logTo::logToAll("starting web server");
 
   if (!MDNS.begin(host.c_str()) ) {
     logTo::logToAll("Error starting MDNS responder.");

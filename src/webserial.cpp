@@ -97,11 +97,12 @@ extern File consLog;
 
 void logTo::logToAll(String s) {
   if (s.endsWith("\n")) s.remove(s.length() - 1);
-  Serial.println(s);
+  String t = "[" + String(millis() / 1000) + "]: ";
+  Serial.println(t + s);
   //consLog.println(s);
   if (serverStarted)
-    WebSerial.println(s);
-  s = String();
+    WebSerial.println(t + s);
+  s = t = String();
 }
 
 String logTo::commandList[logTo::ASIZE] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
