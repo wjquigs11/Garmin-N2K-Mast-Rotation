@@ -7,6 +7,8 @@ ESP1 corrects incoming wind data for rotation and forwards in Actisense format o
 TBD: ESP1 stores AWA, AWS, and STW on SD card for polars
 ESP2 (SH-ESP32) is connected to ESP1 via UART, receives correct wind data (Actisense), and transmits on main N2K bus
 ESP2 is connected to BNO08X and forwards (relative) orientation on UART
+NB with new DIYMALL CYD I have the option of puttng more devices on ESP1 since it has more GPIOs, 
+  including the option to run the mast IMU from extended I2C (Qwiic) instead of in a separate device
 */
 #ifdef WINDBUS
 #include "compass.h"
@@ -164,7 +166,7 @@ void setup() {
   if (!consLog) {
     logTo::logToAll("failed to open console log");
   }
-  if (consLog.println("ESP compass console log.")) {
+  if (consLog.println("ESP console log.")) {
     logTo::logToAll("console log written");
   } else {
     logTo::logToAll("console log write failed");

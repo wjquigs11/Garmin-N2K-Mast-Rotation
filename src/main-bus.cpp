@@ -1,3 +1,5 @@
+#define N2K
+#define MAINBUS
 #if defined(N2K) && defined(MAINBUS)
 #include <Arduino.h>
 #include <N2kMsg.h>
@@ -13,6 +15,7 @@
 #include "BoatData.h"
 
 // object-oriented classes
+#include "BNO085Compass.h"
 #include "n2k.h"
 #include "logto.h"
 
@@ -22,6 +25,10 @@
 #define CAN_TX_PIN GPIO_NUM_32
 
 #include "elapsedMillis.h"
+
+extern tBoatData *pBD;
+tBoatData BoatData;
+// TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
 
 HardwareSerial SerialPort(2);
 #define RX 15
@@ -42,6 +49,53 @@ elapsedMillis time_since_last_can_rx = 0;
 using namespace reactesp;
 
 ReactESP app;
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+Adafruit_BME280 bme;
+bool bmeFound;
+
+#ifdef HONEY
+// Honeywell sensor
+extern movingAvg honeywellSensor;                // define the moving average object
+extern float mastRotate;
+extern int PotValue, PotLo, PotHi;
+extern Adafruit_ADS1015 ads;
+extern int adsInit;
+#endif
+extern float rotateout;
+
+// mast compass
+int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
+float parseMastHeading(const tN2kMsg &N2kMsg);  // mast heading
+float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external source
+//float getCompass(int correction);      // boat heading from internal ESP32 compass
+//void httpInit(const char* serverName);
+//extern const char* serverName;
+int mastOrientation; // delta between mast compass and boat compass
+int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
+int boatOrientation; // delta between boat compass and magnetic north
+float boatCompassTrue;
+float mastCompassDeg;
+float mastDelta;
+extern tN2kWindReference wRef;
+movingAvg mastCompDelta(10);
+void mastHeading();
+int mastAngle[2]; // array for both sensors
+// 0 = honeywell
+// 1 = compass
+float getMastHeading();
+
+#define W1SCL 33
+#define W1SDA 32
+
+bool imuReady=false;
+bool mastIMUready=false;
+
+BNO085Compass compass;
+
+int headingErrCount;
+
+bool displayOnToggle=true, honeywellOnToggle=false, demoModeToggle=false;
 
 void HandleStreamN2kMsg(const tN2kMsg &message) {
   num_n2k_messages++;

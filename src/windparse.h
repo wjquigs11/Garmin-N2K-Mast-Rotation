@@ -2,22 +2,45 @@
 #include <ActisenseReader.h>
 #include <N2kMessages.h>
 #include <NMEA2000_esp32.h>
+#ifdef NMEA0183
+#include <NMEA0183Msg.h>
+#include <NMEA0183Messages.h>
+#include "NMEA0183Handlers.h"
+#endif
 #include <ReactESP.h>
 #include <Wire.h>
 #include <esp_int_wdt.h>
 #include <esp_task_wdt.h>
 #include <movingAvg.h>
 #include "elapsedMillis.h"
+#include <Arduino.h>
+#include <Adafruit_ADS1X15.h>
+#include <N2kMessages.h>
+#include <WiFi.h>
+#include "esp_wifi.h"
+#include "SPIFFS.h"
+#include <ArduinoJson.h>
+#include <ESPmDNS.h>
 #include <SPI.h>
+#include <ESPAsyncWebServer.h>
+#include <WebSerial.h>
+#include <HTTPClient.h>
 #include "esp_system.h"
 #include "esp32-hal-log.h"
+#include <ESPmDNS.h>
 #include <Preferences.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <NTPClient.h>
+#ifdef PICAN
+#include <Adafruit_ADS1X15.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
+#endif
 
-//#define SPI_CS_PIN 5
-//#define CAN_INT_PIN 21
-//#define MAX_DATA_SIZE 8
+#define SPI_CS_PIN 5
+#define CAN_INT_PIN 21
+#define MAX_DATA_SIZE 8
 
 #ifdef SH_ESP32
 #define POT_PIN 36 // SH_ESP32
@@ -33,14 +56,22 @@ class RotationSensor {
     static int oldValue;
 };
 
+class WindSensor {
+  public:
+    static double windSpeedKnots;
+    static double windSpeedMeters;
+    static double windAngleDegrees;
+    static double windAngleRadians;
+};
+
 typedef struct {
   unsigned long PGN;
   void (*Handler)(const tN2kMsg &N2kMsg); 
 } tNMEA2000Handler;
 
-//void ParseWindN2K(const tN2kMsg &N2kMsg);
-//void parseWindCAN();
-//void WindSpeed();
+void ParseWindN2K(const tN2kMsg &N2kMsg);
+void parseWindCAN();
+void WindSpeed();
 
 extern tNMEA2000Handler NMEA2000Handlers[];
 
@@ -71,18 +102,10 @@ extern Adafruit_SSD1306 *display;
 #define PRBUF 256
 extern char prbuf[PRBUF];
 
-extern float mastRotate, rotateout;
-
 // Honeywell observed range
 #define lowset 56
 #define highset 311
-extern int mastAngle;
+extern int mastAngle[];
 
 #define MAXPGN 64
 #define MAX_NETS 4
-
-//#include "BNO085Compass.h"
-//extern BNO085Compass compass;
-
-#define BAUD 115200
-
