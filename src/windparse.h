@@ -19,21 +19,21 @@
 #include <Adafruit_ADS1X15.h>
 #include <N2kMessages.h>
 #include <WiFi.h>
-#include "esp_wifi.h"
-#include "SPIFFS.h"
+#include <esp_wifi.h>
+#include <SPIFFS.h>
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 #include <SPI.h>
 #include <ESPAsyncWebServer.h>
-#include <WebSerial.h>
+//#include <WebSerial.h>
+#include <WebSerialPro.h>
+#include <ElegantOTA.h>
 #include <HTTPClient.h>
 #include "esp_system.h"
 #include "esp32-hal-log.h"
 #include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include <NTPClient.h>
 #ifdef PICAN
 #include <Adafruit_ADS1X15.h>
@@ -112,3 +112,7 @@ extern int mastAngle[];
 
 #define MAXPGN 64
 #define MAX_NETS 4
+
+#define SEALEVELPRESSURE_HPA (1013.25)
+extern Adafruit_BME280 bme;
+extern bool bmeFound;

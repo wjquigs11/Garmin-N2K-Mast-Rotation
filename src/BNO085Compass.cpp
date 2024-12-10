@@ -12,7 +12,7 @@
     bool IMUready;
 
     bool BNO085Compass::begin() {
-        if (!bno08x.begin_I2C()) {
+        if (!bno08x.begin_I2C(BNO08X)) {
             logTo::logTo::logToAll("BNO08x not found");
             //i2cScan(Wire);
             return false;

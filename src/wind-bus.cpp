@@ -51,7 +51,6 @@ Adafruit_SSD1306 *display;
 #ifdef PICAN
 tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
-#define SEALEVELPRESSURE_HPA (1013.25)
 Adafruit_BME280 bme;
 bool bmeFound;
 #endif
@@ -104,7 +103,7 @@ ReactESP app;
 bool stackTrace = false;
 TwoWire *i2c;
 
-#if defined(PICAN) && defined(NMEA0183)
+#if defined(NMEA0183)
 #define NMEA0183serial Serial1
 #define NMEA0183RX 16 // ESPberry RX0 = IO16? 
 #define NMEA0183TX 15 
@@ -115,8 +114,18 @@ TwoWire *i2c;
 tNMEA0183 NMEA0183_3;
 #endif
 
-extern tBoatData *pBD;
+#if defined(RTK)
+#define RTKserial Serial2
+#define RTKRX 33
+#define RTKTX 32
+#define RTKBAUD 115200
+tNMEA0183 RTKport;
+#endif
+
 tBoatData BoatData;
+tRTKstats RTKdata;
+tEnvStats ENVdata;
+
 // TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
 
 //Stream *read_stream = &Serial;
@@ -152,9 +161,9 @@ elapsedMillis time_since_last_mastcomp_rx = 0;
 unsigned long total_time_since_last_mastcomp = 0.0;
 unsigned long avg_time_since_last_mastcomp = 0.0;
 
-int num_0183_messages = 0;
-int num_0183_fail = 0;
-int num_0183_ok = 0;
+extern int num_0183_messages;
+extern int num_0183_fail;
+extern int num_0183_ok;
 
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
@@ -444,6 +453,7 @@ void setup() {
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
 
+  //Wire.begin(22,27);
   Wire.begin();
   // slow down i2c to handle more devices
   Wire.setClock(100000);
@@ -518,8 +528,12 @@ void setup() {
   }
 #endif
   pBD=&BoatData; // need this even if we're not using 0183
+#ifdef RTK
+  pRTK=&RTKdata;
+#endif
+  pENV=&ENVdata;
   // Set up NMEA0183 ports and handlers
-#if defined(PICAN) && defined(NMEA0183)
+#if defined(NMEA0183)
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
   //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
@@ -531,6 +545,16 @@ void setup() {
     logTo::logToAll("failed to open NMEA0183 serial port");
   else
     logTo::logToAll("opened NMEA0183 serial port");
+#endif
+#ifdef RTK
+  RTKport.SetMsgHandler(HandleNMEA0183Msg);
+  RTKserial.begin(RTKBAUD,SERIAL_8N1,RTKRX,RTKTX);
+  RTKport.SetMessageStream(&RTKserial);
+  RTKport.Open();
+  if (!RTKserial)
+    logTo::logToAll("failed to open RTK serial port");
+  else
+    logTo::logToAll("opened RTK serial port");
 #endif
 #ifdef N2K
   // instantiate the NMEA2000 object for the main bus
@@ -682,17 +706,17 @@ void setup() {
 #endif
   mastCompDelta.begin();
 
-  //ElegantOTA.begin(&server);
+  ElegantOTA.begin(&server);
   WebSerial.begin(&server);
   WebSerial.onMessage(WebSerialonMessage);
 
   if (WiFi.status() == WL_CONNECTED) {
     // Update the time
-    #define RETRIES 10
-    int count=0;
-    while(!timeClient.update() && count++ < RETRIES) {
-        timeClient.forceUpdate();
-    }
+    //#define RETRIES 10
+    //int count=0;
+    //if (!timeClient.update() && count++ < RETRIES) {
+        timeClient.update();
+    //}
     logTo::logToAll(timeClient.getFormattedDate());
   }
 
@@ -711,11 +735,26 @@ void setup() {
 #if defined(PICAN)
     n2kWind->ParseMessages();
 #endif
-#if defined(PICAN) && defined(NMEA0183)
+#if defined(NMEA0183)
     NMEA0183_3.ParseMessages(); // GPS from ICOM
 #ifdef DEBUG_0183
     tNMEA0183Msg NMEA0183Msg;
     while (NMEA0183_3.GetMessage(NMEA0183Msg)) {
+    Serial.print(NMEA0183Msg.Sender());
+    Serial.print(NMEA0183Msg.MessageCode()); Serial.print(" ");
+    for (int i=0; i < NMEA0183Msg.FieldCount(); i++) {
+      Serial.print(NMEA0183Msg.Field(i));
+      if ( i<NMEA0183Msg.FieldCount()-1 ) Serial.print(" ");
+    }
+   Serial.print("\n");
+  }
+#endif
+#endif
+#ifdef RTK
+  RTKport.ParseMessages();  // GPS etc from WITmotion
+#ifdef DEBUG_RTK
+    tNMEA0183Msg NMEA0183Msg;
+    while (RTKport.GetMessage(NMEA0183Msg)) {
     Serial.print(NMEA0183Msg.Sender());
     Serial.print(NMEA0183Msg.MessageCode()); Serial.print(" ");
     for (int i=0; i < NMEA0183Msg.FieldCount(); i++) {
@@ -740,7 +779,7 @@ void setup() {
     // NTP client appears to hang (synchronous)
     //if (counter++ % 600 == 0) {
     //  logTo::logToAll(timeClient.getFormattedDate());
-#ifdef PICAN
+#ifdef PICANXXX
       if (bmeFound) {
         logTo::logToAll("Temperature = " + String(1.8 * bme.readTemperature() + 32));
         int press = bme.readPressure();
@@ -752,10 +791,6 @@ void setup() {
     consLog.flush();
   });
 
-  app.onRepeat(10, []() {
-    WebSerial.loop();
-  });
-  
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
 // if we get in range, it's simpler to reboot than to constantly check
 #if 0
@@ -865,6 +900,8 @@ void setup() {
 
 void loop() { 
   app.tick(); 
+  WebSerial.loop();
+  ElegantOTA.loop();
 }
 
 void demoInit() {

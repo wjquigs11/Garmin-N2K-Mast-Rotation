@@ -42,7 +42,6 @@ extern int mastOrientation;   // delta between mast compass and boat compass
 extern int sensOrientation;
 extern int boatOrientation;
 float getCompass(int correction);
-extern tBoatData BoatData;
 //void logTo::logToAll(String s);
 
 // Initialize static variables for RotationSensor Class

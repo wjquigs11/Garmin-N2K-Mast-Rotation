@@ -6,8 +6,6 @@
 #include "BNO085Compass.h"
 #include "logto.h"
 
-extern tBoatData *pBD;
-extern tBoatData BoatData;
 // TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
 
 extern Stream *forward_stream;
@@ -105,8 +103,8 @@ void logTo::logToAll(String s) {
   s = t = String();
 }
 
-String logTo::commandList[logTo::ASIZE] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi"};
+String logTo::commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
+  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk"};
 String words[10];
 
 void lsAPconn() {
@@ -166,6 +164,16 @@ void i2cScan(TwoWire Wire) {
   else {
     logTo::logToAll("done\n");
   }
+}
+
+String doubleToTimeString(double time) {
+  int hours = (int)(time / 10000);
+  int minutes = (int)((time - hours * 10000) / 100);
+  double seconds = fmod(time, 100);
+
+  char timeStr[13];
+  sprintf(timeStr, "%02d:%02d:%06.3f", hours, minutes, seconds);
+  return String(timeStr);
 }
 
 void WebSerialonMessage(uint8_t *data, size_t len) {
@@ -346,6 +354,41 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logTo::logToAll("0183: " + String(num_0183_messages));
       logTo::logToAll("0183 fail: " + String(num_0183_fail));
       logTo::logToAll("0183 ok: " + String(num_0183_ok));
+      return;
+    }
+#endif
+#ifdef RTK
+    if (words[i].equals("rtk") && pRTK) {
+      logTo::logToAll("antA:" + String(pRTK->antennaAstat));
+      logTo::logToAll("antB: " + String(pRTK->antennaBstat));
+      logTo::logToAll("baselen: " + String(pRTK->baseLen));
+      //logTo::logToAll("GPStime: " + String(pRTK->GPStime));
+      logTo::logToAll("GPStime: " + doubleToTimeString(pRTK->GPStime));
+      switch (pRTK->RTKqual) {
+        case 0:
+          logTo::logToAll("qual: no fix");
+          break;
+        case 4:
+          logTo::logToAll("qual: RTK fix");
+          break;        
+        case 6:
+          logTo::logToAll("qual: estimate (DR) mode");
+          break;
+      }
+      logTo::logToAll("pitch/roll: " + String(pRTK->pitch) + " " + String(pRTK->roll));
+      logTo::logToAll("heading: " + String(pRTK->heading));
+      logTo::logToAll("pAcc/rAcc: " + String(pRTK->pAcc) + " " + String(pRTK->rAcc));
+      logTo::logToAll("hAcc: " + String(pRTK->hAcc));
+      logTo::logToAll("usedSV: " + String(pRTK->usedSV));      
+      return;
+    }
+#endif
+#ifdef PICAN
+    if (bmeFound && words[i].startsWith("weat") && pENV) {
+      logTo::logToAll("Cabin Temp: " + String(pENV->temp));
+      logTo::logToAll("Pressure: " + String(pENV->pressure));
+      logTo::logToAll("Humidity: " + String(pENV->humidity));
+      return;
     }
 #endif
     if (words[i].equals("webserver")) {

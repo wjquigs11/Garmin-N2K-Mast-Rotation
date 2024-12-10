@@ -25,8 +25,12 @@ extern int mastAngle[];
 extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
 extern float mastCompassDeg;
-extern tBoatData BoatData;
 extern int boatCalStatus;
+
+#ifdef PICAN
+extern bool bmeFound;
+extern Adafruit_BME280 bme;
+#endif
 
 // Create AsyncWebServer object on port 80
 #define HTTP_PORT 80
@@ -74,6 +78,13 @@ String getSensorReadings() {
   }
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
   readings["windAngle"] = String(WindSensor::windAngleDegrees,0);
+#ifdef PICANXXX // doing this with URLs for now because I want the client side to control refresh rate
+  if (bmeFound) {
+    readings["temp"] = String(1.8 * bme.readTemperature() + 32);
+    readings["pressure"] = String(bme.readPressure() / 100.0);
+    readings["humidity"] = String(bme.readHumidity());
+  }
+#endif
   String jsonString = JSON.stringify(readings);
   //logTo::logToAll(jsonString);
   return jsonString;
@@ -216,6 +227,47 @@ void readPrefs() {
   BoatData.Variation = preferences.getFloat("variation", VARIATION);
 }
 
+#ifdef PICAN
+String readBME280Temperature() {
+  // Read temperature as Celsius (the default)
+  float t = bme.readTemperature();
+  // Convert temperature to Fahrenheit
+  t = 1.8 * t + 32;
+  if (isnan(t)) {    
+    Serial.println("Failed to read from BME280 sensor!");
+    return "";
+  }
+  else {
+    Serial.printf("temp %0.0f\n", t);
+    return String(t,0);
+  }
+}
+
+String readBME280Humidity() {
+  float h = bme.readHumidity();
+  if (isnan(h)) {
+    Serial.println("Failed to read from BME280 sensor!");
+    return "";
+  }
+  else {
+    Serial.printf("humidity %0.0f\n", h);
+    return String(h,0);
+  }
+}
+
+String readBME280Pressure() {
+  float p = bme.readPressure() / 100.0F;
+  if (isnan(p)) {
+    Serial.println("Failed to read from BME280 sensor!");
+    return "";
+  }
+  else {
+    Serial.printf("pressure %0.0f\n", p);
+    return String(p,0);
+  }
+}
+#endif
+
 void startWebServer() {
   logTo::logToAll("starting web server");
 
@@ -277,6 +329,27 @@ void startWebServer() {
     //logTo::logToAll("readings sent");
     json = String();
   });
+
+#ifdef PICAN
+  if (bmeFound) {
+    server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request) {
+      //Serial.println("/temperature");
+      request->send(200, "text/plain", readBME280Temperature().c_str());
+    });
+    server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request) {
+      //Serial.println("/humidity");
+      request->send(200, "text/plain", readBME280Humidity().c_str());
+    });
+    server.on("/pressure", HTTP_GET, [](AsyncWebServerRequest *request) {
+      //Serial.println("/pressure");
+      request->send(200, "text/plain", readBME280Pressure().c_str());
+    });
+  }
+  server.on("/weather", HTTP_GET, [](AsyncWebServerRequest *request) {
+    logTo::logToAll("weather.html");
+    request->send(SPIFFS, "/weather.html", "text/html");
+  });
+#endif
 
   server.on("/host", HTTP_GET, [](AsyncWebServerRequest *request) {
     String buf = "host: " + host + ", webtimerdelay: " + String(WebTimerDelay);
