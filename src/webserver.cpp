@@ -50,9 +50,12 @@ extern bool displayOnToggle, honeywellOnToggle, demoModeToggle;
 const char* PARAM_INPUT_1 = "output";
 const char* PARAM_INPUT_2 = "state";
 
+#ifdef DEMO
 void demoInit();
+#endif
+#ifdef COMPASS
 int compassDifference(int angle1, int angle2);
-
+#endif
 // Get Sensor Readings and return JSON object
 String getSensorReadings() {
   readings["rotateout"] = String(rotateout,0);
@@ -64,21 +67,27 @@ String getSensorReadings() {
     readings["PotValue"] = PotValue;
   }
 #endif
+#ifdef BNO08X
   if (compass.OnToggle) {
+    #ifdef COMPASS
     if (mastCompassDeg >= 0) { // set to -1 if mast compass times out
       readings["mastHeading"] = String(mastCompassDeg+mastOrientation,1);
       readings["mastDelta"] = mastAngle[1];
       readings["boatIMU"] = String(compass.boatIMU,1);
     }
+    #endif
     readings["boatHeading"] = String(compass.boatHeading,0);
-    readings["boatTrue"] = String(BoatData.TrueHeading,0);
+    readings["boatTrue"] = String(pBD->TrueHeading,0);
     //readings["boatCalStatus"] = String(boatCalStatus);
     if (!honeywellOnToggle) // honeywell takes precedence if both are enabled
       readings["rotateout"] = String(rotateout,0);
   }
+#else
+  readings["rotateout"] = String(rotateout,0);
+#endif
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
   readings["windAngle"] = String(WindSensor::windAngleDegrees,0);
-#ifdef PICANXXX // doing this with URLs for now because I want the client side to control refresh rate
+#ifdef PICAN // doing this with URLs for now because I want the client side to control refresh rate
   if (bmeFound) {
     readings["temp"] = String(1.8 * bme.readTemperature() + 32);
     readings["pressure"] = String(bme.readPressure() / 100.0);
@@ -107,7 +116,9 @@ String settings_processor(const String& var) {
     if (honeywellOnToggle) settingsString += "checked"; 
     settingsString += "><span class=\"slider\"></span></label>";
     settingsString += "<h4>Mast Compass</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"compass\" ";
+#ifdef COMPASS
     if (compass.OnToggle) settingsString += "checked"; 
+#endif
     settingsString += "><span class=\"slider\"></span></label>";
     return settingsString;
   }
@@ -115,7 +126,9 @@ String settings_processor(const String& var) {
   if (var == "orientation") return (settingsString = String(mastOrientation));
   if (var == "sensorient") return (settingsString = String(sensOrientation));
   if (var == "boatorient") return (settingsString = String(boatOrientation));
+#ifdef BNO08X
   if (var == "frequency") return (settingsString = String(compass.frequency));
+#endif
   if (var == "controlMAC") return (settingsString = String(WiFi.macAddress()));
   if (var == "variation") return (settingsString = String(BoatData.Variation));
   return (settingsString = String("settings processor: placeholder not found " + var));
@@ -168,10 +181,12 @@ void toggleCheckbox(const char* id) {
     logTo::logToAll("setting honeywell to " + String(honeywellOnToggle));
     honeywellOnToggle = !honeywellOnToggle;
   }
+#ifdef COMPASS
   if (strcmp(id, "compass") == 0) {
     logTo::logToAll("setting compass to " + String(compass.OnToggle));
     compass.OnToggle = !compass.OnToggle;
   }
+#endif
 }
 
 // Replaces HTML %placeholder% with stored values
@@ -208,9 +223,15 @@ void readPrefs() {
   preferences.begin("ESPwind", false);
   displayOnToggle = (preferences.getString("displayOnTog", "true") == "true") ? true : false;
   logTo::logToAll("display = " + String(displayOnToggle));
+#ifdef BNO08X
   compass.OnToggle = (preferences.getString("compass.OnTog", "false") == "true") ? true : false;
   logTo::logToAll("compass = " + String(compass.OnToggle));
   //readings["compass"] = (compass.OnToggle ? 1 : 0);
+  compass.frequency = preferences.getInt("compassFreq", 50);
+  logTo::logToAll("compassFrequency = " + String(compass.frequency));
+  compass.reportType = preferences.getInt("rtype", 0);
+  logTo::logToAll("reportType = " + String(compass.reportType));
+#endif
   honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
   logTo::logToAll("honeywell = " + String(honeywellOnToggle));
   //readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
@@ -220,10 +241,6 @@ void readPrefs() {
   //mastOrientation = preferences.getInt("mastOrientation", 0);
   sensOrientation = preferences.getInt("sensOrientation", 0);
   boatOrientation = preferences.getInt("boatOrientation", 0);
-  compass.frequency = preferences.getInt("compassFreq", 50);
-  logTo::logToAll("compassFrequency = " + String(compass.frequency));
-  compass.reportType = preferences.getInt("rtype", 0);
-  logTo::logToAll("reportType = " + String(compass.reportType));
   BoatData.Variation = preferences.getFloat("variation", VARIATION);
 }
 
@@ -238,7 +255,7 @@ String readBME280Temperature() {
     return "";
   }
   else {
-    Serial.printf("temp %0.0f\n", t);
+    //Serial.printf("temp %0.0f\n", t);
     return String(t,0);
   }
 }
@@ -250,7 +267,7 @@ String readBME280Humidity() {
     return "";
   }
   else {
-    Serial.printf("humidity %0.0f\n", h);
+    //Serial.printf("humidity %0.0f\n", h);
     return String(h,0);
   }
 }
@@ -262,7 +279,7 @@ String readBME280Pressure() {
     return "";
   }
   else {
-    Serial.printf("pressure %0.0f\n", p);
+    //Serial.printf("pressure %0.0f\n", p);
     return String(p,0);
   }
 }
@@ -270,6 +287,11 @@ String readBME280Pressure() {
 
 void startWebServer() {
   logTo::logToAll("starting web server");
+
+  // Set up CORS headers
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (!MDNS.begin(host.c_str()) ) {
     logTo::logToAll("Error starting MDNS responder.");
@@ -375,6 +397,7 @@ void startWebServer() {
     String inputMessage2;
     oldMastOrientation = mastOrientation;
     mastOrientation = 0;
+#ifdef COMPASS
     // GET input1 value on <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
     if (request->hasParam("confirm")) {
       inputMessage1 = request->getParam("confirm")->value();
@@ -386,6 +409,7 @@ void startWebServer() {
       logTo::logToAll("/mastcompass: " + inputMessage1);
       mastOrientation = oldMastOrientation;
     }
+#endif
     request->send(SPIFFS, "/mastcompass.html", "text/html");
   });
 
@@ -414,6 +438,7 @@ void startWebServer() {
         }
         preferences.putString("displayOnTog", displayOnToggle ? "true" : "false");
       }
+#ifdef COMPASS
       if (inputMessage1 == "compass") {
         if (inputMessage2 == "off") {
           logTo::logToAll("compass off");
@@ -427,6 +452,7 @@ void startWebServer() {
         preferences.putString("compass.OnTog", compass.OnToggle ? "true" : "false");
         //sendMastControl();
       }
+#endif
       if (inputMessage1 == "honeywell") {
         if (inputMessage2 == "off") {
           logTo::logToAll("honeywell off");
@@ -439,6 +465,7 @@ void startWebServer() {
         }
         preferences.putString("honeywellOnTog", honeywellOnToggle ? "true" : "false");
        }
+#ifdef DEMO
       if (inputMessage1 == "demo") {
         if (inputMessage2 == "off") {
           logTo::logToAll("demo off");
@@ -450,6 +477,7 @@ void startWebServer() {
         }
         preferences.putString("demoModeTog", demoModeToggle ? "true" : "false");
       }
+#endif
     }
     else {
       inputMessage1 = "No message sent";
@@ -550,10 +578,12 @@ void startWebServer() {
           mastOrientation = atoi(p->value().c_str());
           preferences.putInt("mastOrientation", mastOrientation);
         }
+#ifdef BNO08X
         if (p->name() == "frequency") {
           compass.frequency = atoi(p->value().c_str());
           preferences.putInt("compassFreq", compass.frequency);
         }
+#endif
         if (p->name() == "variation") {
           BoatData.Variation = atof(p->value().c_str());
           preferences.putFloat("variation", BoatData.Variation);

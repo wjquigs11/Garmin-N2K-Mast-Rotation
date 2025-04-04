@@ -1,3 +1,5 @@
+
+#ifdef BNO08X
 #include <Adafruit_BNO08x.h>
 #include "windparse.h"
 #include "compass.h"
@@ -22,10 +24,12 @@
             String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
             logTo::logTo::logToAll(logString);
         }
+        // temporary set frequency
+        frequency = 100;
         return true;
     }
 
-    // we ALWAYS enable SH2_ARVR_STABILIZED_GRV, as well as another report set by the user, 
+    // #ifdef COMPASS, enable SH2_ARVR_STABILIZED_GRV, as well as another report set by the user, 
     // usually SH2_GEOMAGNETIC_ROTATION_VECTOR (0x09) to get a compass heading
     // note that GRV is requested 10x the rate of the other (compass) report
     bool BNO085Compass::setReports() {
@@ -34,10 +38,12 @@
             logTo::logToAll("could not set report type: " + String(reportType,HEX));  
             return false;
         }
+#ifdef COMPASS
         if (!bno08x.enableReport(SH2_ARVR_STABILIZED_GRV, frequency*1000)) {
             logTo::logToAll("could not set report type (2): " + String(SH2_ARVR_STABILIZED_GRV,HEX));
             return false;
         } else logTo::logToAll("enabled " + String(SH2_ARVR_STABILIZED_GRV,HEX));
+#endif
         return true;
     }
 /*        if (!bno08x.enableReport((sh2_SensorId_t)reportType)) {
@@ -70,6 +76,9 @@
                                         sensorValue.un.rotationVector.j, 
                                         sensorValue.un.rotationVector.k, 
                                         correction);
+#ifdef DEBUG
+                logTo::logTo::logToAll("BNO085 Heading: " + String(boatHeading) + " Accuracy: " + String(boatAccuracy) + " CalStatus: " + String(boatCalStatus));
+#endif               
                 return 1;
             case SH2_ARVR_STABILIZED_GRV:
                 boatIMU = calculateHeading(sensorValue.un.arvrStabilizedGRV.real, 
@@ -107,3 +116,4 @@
 
         return heading;
     }
+#endif

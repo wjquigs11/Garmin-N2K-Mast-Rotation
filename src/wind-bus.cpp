@@ -201,21 +201,21 @@ float boatCompassTrue;
 float mastCompassDeg;
 float mastDelta;
 extern tN2kWindReference wRef;
+#ifdef COMPASS
 movingAvg mastCompDelta(10);
+#endif
 void mastHeading();
 int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 float getMastHeading();
 
-#define W1SCL 25
-#define W1SDA 26
-
 bool imuReady=false;
 bool mastIMUready=false;
 
-#include "BNO085Compass.h"
+#ifdef BNO08X
 BNO085Compass compass;
+#endif
 
 int headingErrCount;
 
@@ -339,11 +339,12 @@ void mastCompCounter() {
 
 // NMEA 2000 message handler for wind bus: check if message is wind and handle it
 void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
-  if (stackTrace) Serial.println("HandleNMEA2000MsgWind");
-   
+  if (stackTrace) {
+    //Serial.println("HandleNMEA2000MsgWind");
+    N2kMsg.Print(&Serial);
+    //Serial.printf("wind t: %d R: %d\n", millis(), N2kMsg.PGN);   
+  }
   windCounter();
-  //N2kMsg.Print(&Serial);
-  //Serial.printf("wind t: %d R: %d\n", millis(), N2kMsg.PGN);
   if (!n2kWindOpen) {
     n2kWindOpen = true;
     //n2kWind->SetForwardStream(forward_stream);
@@ -434,11 +435,17 @@ void OLEDdataWindDebug() {
     display->printf("Angle:%d\n", mastAngle[0]);
   }
 #endif
+#ifdef COMPASS
   if (compass.OnToggle) {
     //display->printf("M:%.1f B:%.1f T:%0.1f\n", mastCompassDeg, compass.boatIMU, BoatData.TrueHeading);
     display->printf("M:%.1f B:%.1f H:%.0f\n", mastCompassDeg, compass.boatIMU, compass.boatHeading);
     display->printf("Delta:%2d\n", mastAngle[1]);
   }
+#endif
+#ifdef BNO08X
+  display->printf("M:%2.2f\n", compass.boatHeading);
+#endif
+  display->printf("T:%2.2f\n", pBD->TrueHeading);
   display->display();
 }
 #endif
@@ -449,22 +456,14 @@ void setup() {
   logTo::logToAll("starting wind correction");
 
   esp_log_level_set("*", ESP_LOG_VERBOSE);  // Set global log level
+  //esp_task_wdt_init(timeout_seconds, true); // task timeout default 5 secs
 
   //adc1_config_width(ADC_WIDTH_BIT_12);
   //adc1_config_channel_atten(ADC1_CHANNEL_5, ADC_ATTEN_MAX);
 
-  //Wire.begin(22,27);
   Wire.begin();
   // slow down i2c to handle more devices
-  Wire.setClock(100000);
-
-#if 0
-  if (Wire1.begin(W1SDA, W1SCL))
-    logTo::logToAll("Wire1 OK");
-  else
-    logTo::logToAll("Wire1 FAIL");
-  Wire1.setClock(400000); // Set to 400 kHz 
-#endif
+  //Wire.setClock(100000);
 
 #if defined(RS485CAN) || defined(OGDISPLAY)  // on SPI
   Serial.println("reset OLED");
@@ -504,6 +503,8 @@ void setup() {
 #endif
 #ifdef DISPLAYON
   logTo::logToAll("OLED started");
+  display->ssd1306_command(SSD1306_SETCONTRAST);
+  display->ssd1306_command(0);  // dim display
   display->clearDisplay();
   display->setTextSize(1);             
   display->setTextColor(SSD1306_WHITE);
@@ -696,7 +697,7 @@ void setup() {
 #endif
 #ifdef BNO08X
   logTo::logToAll("BNO08X");
-  imuReady = compass.IMUready = compass.begin();
+  imuReady = compass.OnToggle = compass.begin();
   if (imuReady) {
     //compass.setReports();
   } else {
@@ -704,7 +705,9 @@ void setup() {
     i2cScan(Wire);
   }
 #endif
+#ifdef COMPASS
   mastCompDelta.begin();
+#endif
 
   ElegantOTA.begin(&server);
   WebSerial.begin(&server);
@@ -751,7 +754,6 @@ void setup() {
 #endif
 #endif
 #ifdef RTK
-  RTKport.ParseMessages();  // GPS etc from WITmotion
 #ifdef DEBUG_RTK
     tNMEA0183Msg NMEA0183Msg;
     while (RTKport.GetMessage(NMEA0183Msg)) {
@@ -763,6 +765,8 @@ void setup() {
     }
    Serial.print("\n");
   }
+#else
+  RTKport.ParseMessages();  // GPS etc from WITmotion/UM982
 #endif
 #endif
   });
@@ -832,8 +836,6 @@ void setup() {
       }
     });
   }
-#endif
-
   // check in for new heading 100 msecs = 10Hz
   if (imuReady && !demoModeToggle)
     app.onRepeat(compass.frequency, []() {
@@ -850,17 +852,15 @@ void setup() {
         Serial.println(compass.boatIMU);
         Serial.print(">delta:");
         Serial.println(mastDelta);  
-#ifdef BNO08X
         Serial.printf(">boat:%0.2f\n", compass.boatHeading);
         //Serial.printf(">true:%0.2f\n",BoatData.TrueHeading); 
         Serial.printf(">calstat:%d\n", compass.boatCalStatus);
         Serial.printf(">acc:%0.2f\n", compass.boatAccuracy*RADTODEG);
-#endif
     }
-#if defined(N2K)
-    // transmit heading
+#if defined(N2K) && !defined(RTK)
+    // transmit heading 
     if (n2kMainOpen) {
-      pBD->TrueHeading = compass.boatHeading + VARIATION; // will suffice until I get it from GPS
+      pBD->TrueHeading = compass.boatHeading + VARIATION;
       SetN2kPGN127250(correctN2kMsg, 0xFF, (double)compass.boatHeading*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
       if (!n2kMain->SendMsg(correctN2kMsg)) {
         //logTo::logToAll("Failed to send mag heading from compass reaction");
@@ -875,15 +875,21 @@ void setup() {
 #endif
     });
     else logTo::logTo::logToAll("compass not ready no heading reaction");
+#endif
 
 #ifdef DISPLAYON
   // update results
   app.onRepeat(500, []() {
-    if (displayOnToggle)
-      OLEDdataWindDebug();
+    if (displayOnToggle) OLEDdataWindDebug();
+      else {
+        display->clearDisplay();
+        display->display();
+      }
+#ifdef DEMO
     if (demoModeToggle) {
       demoIncr();
     }
+#endif
   });
   #endif // DISPLAYON
 
@@ -898,12 +904,46 @@ void setup() {
 #endif
 }
 
+#ifdef DEBUG_RTK
+const int MAXL = 256;
+char keyBuffer[MAXL], gpsBuffer[MAXL];
+int keyBufIdx, gpsBufIdx;
+#endif
+
 void loop() { 
   app.tick(); 
   WebSerial.loop();
   ElegantOTA.loop();
+#ifdef DEBUG_RTK
+  char incomingChar;
+  while (Serial.available() > 0) {
+    incomingChar = Serial.read();
+    if (incomingChar == '\n' || incomingChar == '\r') {
+      keyBuffer[keyBufIdx] = '\0'; // Null terminate
+      // send to GPS
+      //Serial.printf("command: %s\n", keyBuffer);
+      RTKserial.println(keyBuffer);
+      keyBufIdx = 0; // Reset for next line
+    } else if (keyBufIdx < MAXL - 1) {
+        keyBuffer[keyBufIdx++] = incomingChar;
+    }
+    //Serial.print(incomingChar);
+  }  while (RTKserial.available() > 0) {
+    incomingChar = RTKserial.read();
+    if (incomingChar == '\n' || incomingChar == '\r') {
+      gpsBuffer[gpsBufIdx] = '\0'; // Null terminate
+      //processBuffer();
+      Serial.printf("gps: %s\n", gpsBuffer);
+      gpsBufIdx = 0; // Reset for next line
+    } else if (gpsBufIdx < MAXL - 1) {
+        gpsBuffer[gpsBufIdx++] = incomingChar;
+    }
+    //Serial.print(incomingChar);
+  }
+#endif
 }
 
+#ifdef DEMO
 void demoInit() {
   WindSensor::windSpeedKnots = 9.8;
   WindSensor::windAngleDegrees = 47;
@@ -936,3 +976,4 @@ void demoIncr() {
   if (PotValue < 0) PotValue = 100;
 #endif
 }
+#endif

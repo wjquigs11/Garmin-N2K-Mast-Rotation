@@ -70,8 +70,9 @@ extern int mastAngle[2]; // array for both sensors
 // 0 = honeywell
 // 1 = compass
 
+extern Adafruit_SSD1306 *display; // temp hack; move to windparse.h, but requires a bunch of #ifdefs
+int displayBright = 200;
 
-extern bool displayOnToggle, honeywellOnToggle;
 /* bool teleplot=false;
 extern int numReports[], totalReports;
 */
@@ -95,16 +96,16 @@ extern File consLog;
 
 void logTo::logToAll(String s) {
   if (s.endsWith("\n")) s.remove(s.length() - 1);
-  String t = "[" + String(millis() / 1000) + "]: ";
-  Serial.println(t + s);
-  //consLog.println(s);
+  //String t = "[" + String(millis() / 1000) + "]: ";
+  Serial.println(s);
+  if (consLog) consLog.println(s);
   if (serverStarted)
-    WebSerial.println(t + s);
-  s = t = String();
+    WebSerial.println(s);
+  s = String();
 }
 
 String logTo::commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk"};
+  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv"};
 String words[10];
 
 void lsAPconn() {
@@ -144,8 +145,9 @@ void lsAPconn() {
 void i2cScan(TwoWire Wire) {
   byte error, address;
   int nDevices = 0;
-  logTo::logToAll("Scanning...");
+  logTo::logToAll("Scanning i2c...");
   for (address = 1; address < 127; address++) {
+    Serial.printf("0x",address);
     Wire.beginTransmission(address);
     error = Wire.endTransmission(); 
     char buf[16];
@@ -159,10 +161,10 @@ void i2cScan(TwoWire Wire) {
     }
   }
   if (nDevices == 0) {
-    logTo::logToAll("No I2C devices found\n");
+    logTo::logToAll("No I2C devices found");
   }
   else {
-    logTo::logToAll("done\n");
+    logTo::logToAll("done");
   }
 }
 
@@ -223,7 +225,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logTo::logToAll("        Correct AWA: " + String(rotateout));
 #endif
       WebSerial.flush();
+      return;
     }
+#ifdef COMPASS
     if (words[i].equals("compass")) {
       logTo::logToAll("               Boat IMU: " + String(compass.boatIMU));
       logTo::logToAll("           Boat Compass: " + String(compass.boatHeading));
@@ -244,9 +248,11 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logTo::logToAll();
       CV = String();
 #endif
+      return;
     }
-    if (words[i].equals("n2k")) {
+#endif
 #ifdef N2K
+    if (words[i].equals("n2k")) {
       logTo::logToAll("           n2k main: " + String(num_n2k_messages));
       logTo::logToAll("           n2k wind: " + String(num_wind_messages));
       logTo::logToAll("      n2k wind fail: " + String(num_wind_fail));
@@ -259,11 +265,13 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           logTo::logToAll(String(otherPGN[i]));
         }
       }
-#endif
+      return;
     }
+#endif
     if (words[i].equals("format")) {
       SPIFFS.format();
       logTo::logToAll("SPIFFS formatted");
+      return;
     }
     if (words[i].equals("restart")) {
       logTo::logToAll("Restarting...");
@@ -279,19 +287,24 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       root.close();
       //logTo::logToAll("done");
+      return;
     }
     if (words[i].equals("scan")) {
       i2cScan(Wire);
+      return;
     }
     if (words[i].equals("readings")) {
       //logTo::logToAll(readings);
+      return;
     }
     if (words[i].equals("mast")) {
       //sendMastControl();
       //logTo::logToAll(readings);
+      return;
     }
     if (words[i].equals("lsap")) {
       lsAPconn();
+      return;
     }
     if (words[i].equals("wifi")) {
       int priority;
@@ -327,21 +340,30 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           logTo::logToAll("Display: " + String(displayOnToggle));
           return;
         }
+#ifdef COMPASS
         if (words[i].startsWith("comp")) {
           compass.OnToggle = !compass.OnToggle;
           logTo::logToAll("Compass: " + String(compass.OnToggle));
           return;
         }        
+#endif
         if (words[i].startsWith("honey")) {
           honeywellOnToggle = !honeywellOnToggle;
           logTo::logToAll("Honeywell: " + String(honeywellOnToggle));
           return;
         }
-
+        if (words[i].startsWith("stack")) {
+          stackTrace = !stackTrace;
+          logTo::logToAll("stackTrace: " + String(stackTrace));
+          return;
+        }
       } else {
         logTo::logToAll("Display: " + String(displayOnToggle));
+#ifdef COMPASS
         logTo::logToAll("Compass: " + String(compass.OnToggle));
+#endif
         logTo::logToAll("Honeywell: " + String(honeywellOnToggle));
+        logTo::logToAll("stackTrace: " + String(stackTrace));
       }
       return;
     }
@@ -402,18 +424,21 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         } else {
           logTo::logToAll("No clients connected");
         }
-
+      return;
     }
     if (words[i].equals("windrx")) {
       logTo::logToAll("last wind time: " + String(time_since_last_wind_rx) + " avg wind time: " + String(avg_time_since_last_wind) + " ms");
       if (time_since_last_wind_rx > 0.0)
         logTo::logToAll(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
+      return;
     }    
+#ifdef COMPASS
     if (words[i].equals("teleplot")) {
       compass.teleplot = !compass.teleplot;
       logTo::logToAll("teleplot: " + String(compass.teleplot));
       return;
     }
+#endif
     if (words[i].equals("hostname")) {
       if (!words[++i].isEmpty()) {
         host = words[i];
@@ -426,14 +451,36 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       return;
     }  
+#ifdef COMPASS
     if (words[i].equals("hall")) {
       logTo::logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
       mastOrientation = 0;
       mastOrientation = mastDelta = readCompassDelta(); 
       logTo::logToAll("new orientation: " + String(mastDelta));
-    return;
+      return;
     }
-#if 0
+#endif
+    if (words[i].equals("gsv")) {
+      logTo::logToAll("maxSat: " + String(maxSat));
+      int totalSat = 0;
+      for (int j=0; j<MAXSAT; j++) {
+        if (GSVseen[j].SVID > 0) {
+          totalSat++;
+          logTo::logToAll(String(GSVseen[j].SVID) + " el: " + String(GSVseen[j].Elevation) + " az: " + String(GSVseen[j].Azimuth) + " SNR: " + String(GSVseen[j].SNR));
+          GSVseen[j].SVID = 0;
+        }
+        if (totalSat % 10 == 0) WebSerial.flush();
+      }
+      logTo::logToAll("total satellites: " + String(totalSat));
+      logTo::logToAll("resetting GSV list!");
+      return;
+    }
+    if (words[i].startsWith("gsvtog")) {
+      GSVtoggle = !GSVtoggle;
+      logTo::logToAll("GSVtoggle: " + String(GSVtoggle));
+      return;
+    }
+    #ifdef COMPASS
     if (words[i].startsWith("freq")) {
       int frequency = compassParams.frequency;
       if (!words[++i].isEmpty()) {
@@ -445,6 +492,21 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logTo::logToAll("frequency %d\n", frequency);
       return;
     }
+#endif
+#ifdef BNO08X
+if (words[i].startsWith("freq")) {
+  int frequency = compass.frequency;
+  if (!words[++i].isEmpty()) {
+    frequency = atoi(words[i].c_str());
+    //if (frequency < BNOREADRATE) frequency = BNOREADRATE;
+    preferences.putInt("frequency", frequency);
+    compass.frequency = frequency;
+  }
+  logTo::logToAll("frequency " + String(frequency));
+  return;
+}
+#endif
+#ifdef COMPASS
     if (words[i].startsWith("orient")) {
       if (!words[++i].isEmpty()) {
         int orientation = atoi(words[i].c_str());
@@ -465,6 +527,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;
     }
 #endif
+#ifdef COMPASS
     if (words[i].startsWith("report")) {
       for (int i=0; i<SH2_MAX_SENSOR_ID; i++) {
         if (compass.numReports[i] > 0)
@@ -473,6 +536,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       logTo::logToAll("total reports " + String(compass.totalReports));
       return;
     }
+#endif
 #ifdef BNO08X
     if (words[i].equals("rtype")) {
       int reportType;
@@ -486,6 +550,22 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       } else {
         logTo::logToAll("compass report type is 0x" + String(reportType,HEX));
       }
+      return;
+    }
+#endif
+#if 0 // maybe change to a screen timeout but how to turn back on without web interface?
+    if (words[i].equals("bright")) {
+      i++;
+      if (words[i].equals("up")) {
+        displayBright += 10;
+        if (displayBright > 255) displayBright = 255;
+      } else if (words[i].equals("down")) {
+        displayBright -= 10;
+        if (displayBright < 0) displayBright = 0;
+      }
+      logTo::logToAll("set contrast");
+      display->ssd1306_command(SSD1306_SETCONTRAST);
+      display->ssd1306_command(0);
       return;
     }
 #endif

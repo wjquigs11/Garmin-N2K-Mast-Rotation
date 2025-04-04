@@ -6,6 +6,8 @@
 struct tBoatData {
   unsigned long DaysSince1970;   // Days since 1970-01-01
   
+  // degrees not radians
+  // remember to convert if you transmit in n2k
   double TrueHeading,SOG,COG,Variation,
          STW, // meters/sec
          TWS, TWA, // meters/sec
@@ -72,6 +74,10 @@ extern tRTKstats *pRTK;
 extern tRTKstats RTKdata;
 extern tEnvStats *pENV;
 extern tEnvStats ENVdata;
+
+// redefine value in NMEA0183.h
+// UM982 sends NMEA0183 messages longer than 81 chars
+#define MAX_NMEA0183_MSG_BUF_LEN 101
 
 #endif // _BoatData_H_
 

@@ -20,7 +20,7 @@ public:
     float boatAccuracy;
     float boatIMU; // heading relative to centerline (or wherever the gadget is when we start up)
     int boatCalStatus;
-    bool IMUready;
+    //bool IMUready;
     bool OnToggle;
     bool teleplot=false;
     int numReports[SH2_MAX_SENSOR_ID], totalReports;

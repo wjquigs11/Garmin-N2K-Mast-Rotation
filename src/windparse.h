@@ -21,7 +21,6 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <SPIFFS.h>
-#include <Arduino_JSON.h>
 #include <ESPmDNS.h>
 #include <SPI.h>
 #include <ESPAsyncWebServer.h>
@@ -116,3 +115,14 @@ extern int mastAngle[];
 #define SEALEVELPRESSURE_HPA (1013.25)
 extern Adafruit_BME280 bme;
 extern bool bmeFound;
+
+#define MAXSAT 140 // no idea how many satellites there are 
+extern struct tGSV GSVseen[]; 
+extern int maxSat;
+extern bool GSVtoggle;
+
+extern bool displayOnToggle, honeywellOnToggle;
+extern bool stackTrace;
+
+#define DEGTORAD 0.01745329252
+#define RADTODEG 57.2957795131

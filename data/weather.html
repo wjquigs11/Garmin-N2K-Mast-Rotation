@@ -1,18 +1,22 @@
-<!DOCTYPE HTML><html>
+<!DOCTYPE HTML>
+<html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="highcharts.js"></script>
   <style>
     body {
       min-width: 310px;
-    	max-width: 800px;
-    	height: 400px;
+      max-width: 800px;
+      height: auto;
       margin: 0 auto;
     }
     h2 {
       font-family: Arial;
       font-size: 2.5rem;
       text-align: center;
+    }
+    .container {
+      margin-bottom: 20px; /* Space between charts */
     }
   </style>
 </head>
@@ -21,148 +25,98 @@
   <div id="chart-temperature" class="container"></div>
   <div id="chart-humidity" class="container"></div>
   <div id="chart-pressure" class="container"></div>
-</body>
+
 <script>
+  function createChart(container, title, yAxisTitle, yMin=0, yMax=100) {
+    return new Highcharts.Chart({
+      chart: { renderTo: container },
+      title: { text: title },
+      series: [{ showInLegend: false, data: [] }],
+      plotOptions: {
+        line: { animation: false, dataLabels: { enabled: true } }
+      },
+      xAxis: {
+        type: 'datetime',
+        dateTimeLabelFormats: { second: '%H:%M:%S' }
+      },
+      yAxis: { 
+        title: { text: yAxisTitle },
+        min: yMin,
+        max: yMax
+      },
+      credits: { enabled: false }
+    });
+  }
 
-var chartT = new Highcharts.Chart({
-  chart:{ renderTo : 'chart-temperature' },
-  title: { text: 'Cabin Temperature' },
-  time: {
-    useUTC: false
-  },
-  series: [{
-    showInLegend: false,
-    data: []
-  }],
-  plotOptions: {
-    line: { animation: false,
-      dataLabels: { enabled: false }
-    },
-    series: { color: '#059e8a' }
-  },
-  xAxis: { type: 'datetime',
-    dateTimeLabelFormats: { second: '%H:%M:%S' }
-  },
-  yAxis: {
-    //title: { text: 'Temperature (Celsius)' }
-    title: { text: 'Temperature (Fahrenheit)' },
-    min: 0,
-    max: 100,
-    tickInterval: 20,
-    endOnTick: false
-  },
-  credits: { enabled: false }
-});
-setInterval(function ( ) {
-  var xhttp = new XMLHttpRequest();
-  xhttp.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      var x = (new Date()).getTime(),
-          y = parseFloat(this.responseText);
-      //console.log(this.responseText);
-      if(chartT.series[0].data.length > 40) {
-        chartT.series[0].addPoint([x, y], true, true, true);
-      } else {
-        chartT.series[0].addPoint([x, y], true, false, true);
-      }
-      chartT.setTitle({ text: 'Cabin Temperature: ' + y.toFixed(1) + ' F' });
+  Highcharts.setOptions({
+    time: {
+        useUTC: false // Use local time instead of UTC
+        // timezone: 'America/New_York' // Uncomment this line if needed
     }
-  };
-  xhttp.open("GET", "/temperature", true);
-  xhttp.send();
-}, 30000 ) ;
+  });
 
-var chartH = new Highcharts.Chart({
-  chart:{ renderTo:'chart-humidity' },
-  title: { text: 'Humidity' },
-  time: {
-    useUTC: false
-  },
-  series: [{
-    showInLegend: false,
-    data: []
-  }],
-  plotOptions: {
-    line: { animation: false,
-      dataLabels: { enabled: true }
-    }
-  },
-  xAxis: {
-    type: 'datetime',
-    dateTimeLabelFormats: { second: '%H:%M:%S' }
-  },
-  yAxis: {
-    title: { text: 'Humidity (%)' },
-    min: 0,
-    max: 100,
-    tickInterval: 20,
-    endOnTick: false
-  },
-  credits: { enabled: false }
-});
-setInterval(function ( ) {
-  var xhttp = new XMLHttpRequest();
-  xhttp.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      var x = (new Date()).getTime(),
-          y = parseFloat(this.responseText);
-      //console.log(this.responseText);
-      if(chartH.series[0].data.length > 40) {
-        chartH.series[0].addPoint([x, y], true, true, true);
-      } else {
-        chartH.series[0].addPoint([x, y], true, false, true);
-      }
-    }
-  };
-  xhttp.open("GET", "/humidity", true);
-  xhttp.send();
-}, 30000 ) ;
+  const chartT = createChart('chart-temperature', 'Cabin Temperature', 'Temperature (Fahrenheit)');
+  const chartH = createChart('chart-humidity', 'Humidity', 'Humidity (%)');
+  const chartP = createChart('chart-pressure', 'Atmospheric Pressure', 'Pressure (hPa)', 950, 1050);
 
-var chartP = new Highcharts.Chart({
-  chart:{ renderTo:'chart-pressure' },
-  title: { text: 'Pressure' },
-  time: {
-    useUTC: false
-  },
-  series: [{
-    showInLegend: false,
-    data: []
-  }],
-  plotOptions: {
-    line: { animation: false,
-      dataLabels: { enabled: true }
-    },
-    series: { color: '#18009c' }
-  },
-  xAxis: {
-    type: 'datetime',
-    dateTimeLabelFormats: { second: '%H:%M:%S' }
-  },
-  yAxis: {
-    title: { text: 'Pressure (hPa)' },
-    min: 950,
-    max: 1050,
-    tickInterval: 20,
-    endOnTick: false  
-  },
-  credits: { enabled: false }
-});
-setInterval(function ( ) {
-  var xhttp = new XMLHttpRequest();
-  xhttp.onreadystatechange = function() {
-    if (this.readyState == 4 && this.status == 200) {
-      var x = (new Date()).getTime(),
-          y = parseFloat(this.responseText);
-      //console.log(this.responseText);
-      if(chartP.series[0].data.length > 40) {
-        chartP.series[0].addPoint([x, y], true, true, true);
-      } else {
-        chartP.series[0].addPoint([x, y], true, false, true);
+  // Initialize title variables for each chart
+  let currentTempTitle = 'Cabin Temperature';
+  let currentHumidTitle = 'Humidity';
+  let currentPressTitle = 'Atmospheric Pressure';
+
+  function fetchData(chart, url, currentTitle, updateTitleCallback, dataLen) {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.readyState == 4) {
+        if (this.status == 200) {
+          var x = (new Date()).getTime(),
+              y = parseFloat(this.responseText);
+          if (chart.series[0].data.length > dataLen) {
+            chart.series[0].addPoint([x, y], true, true, true);
+          } else {
+            chart.series[0].addPoint([x, y], true, false, true);
+          }
+          console.log(currentTitle, dataLen);
+          // Update the title using the provided callback
+          updateTitleCallback(y);
+          
+          // Schedule next data fetch
+          setTimeout(() => fetchData(chart, url, currentTitle, updateTitleCallback, dataLen), 30000); // Adjust interval as needed
+        } else {
+          console.error("Error fetching data:", this.statusText);
+          // Retry after a fixed interval on error
+          setTimeout(() => fetchData(chart, url, currentTitle, updateTitleCallback, dataLen), 10000); // Retry interval
+        }
       }
-    }
-  };
-  xhttp.open("GET", "/pressure", true);
-  xhttp.send();
-}, 30000 ) ;
+    };
+    xhttp.open("GET", url, true);
+    xhttp.send();
+  }
+
+  // Function to update temperature chart title
+  function updateTempTitle(y) {
+    currentTempTitle = `Cabin Temperature: ${y.toFixed(1)} F`;
+    chartT.setTitle({ text: currentTempTitle });
+  }
+
+  // Function to update humidity chart title
+  function updateHumidTitle(y) {
+    currentHumidTitle = `Humidity: ${y.toFixed(1)} %`;
+    chartH.setTitle({ text: currentHumidTitle });
+  }
+
+  // Function to update pressure chart title
+  function updatePressTitle(y) {
+    currentPressTitle = `Atmospheric Pressure: ${y.toFixed(1)} hPa`;
+    chartP.setTitle({ text: currentPressTitle });
+  }
+
+  //let baseURL = "http://192.168.68.68";
+  let baseURL = ""; // to go to local (ESP32)
+  // Start fetching data for each chart with initial interval
+  fetchData(chartT, baseURL+"/temperature", currentTempTitle, updateTempTitle, 40);
+  fetchData(chartH, baseURL+"/humidity", currentHumidTitle, updateHumidTitle, 40);
+  fetchData(chartP, baseURL+"/pressure", currentPressTitle, updatePressTitle, 8640);
 </script>
+</body>
 </html>

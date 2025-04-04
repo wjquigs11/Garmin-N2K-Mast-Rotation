@@ -37,7 +37,9 @@ int PotHi=0;
 extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
 extern bool honeywellOnToggle;
 extern float mastCompassDeg, mastDelta;
+#ifdef COMPASS
 extern movingAvg mastCompDelta;
+#endif
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern int sensOrientation;
 extern int boatOrientation;
@@ -85,7 +87,7 @@ char prbuf[PRBUF];
 void calcTrueWind();
 void windCounter();
 void mastCompCounter();
-
+#define DEBUG
 #ifdef HONEY
 // returns degrees, and corresponds to the current value of the Honeywell sensor
 float readAnalogRotationValue() {      
@@ -138,6 +140,7 @@ int compassDifference(int angle1, int angle2) {
 }
 
 float readCompassDelta() {
+#ifdef COMPASS
   if (imuReady) {
     float mastDelta = compassDifference(compass.boatIMU, mastCompassDeg+mastOrientation);
     //logTo::logToAll("readCompassDelta m: " + String(mastCompassDeg+mastOrientation) + " b: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
@@ -146,6 +149,7 @@ float readCompassDelta() {
     return mastDelta;
   }
   //Serial.println("compass not ready");
+#endif
   return -1;
 }
 
@@ -180,6 +184,7 @@ void WindSpeed() {
 #ifdef HONEY
   if (honeywellOnToggle) {
     mastRotate = readAnalogRotationValue();
+#ifdef COMPASS
     // the only time this will trigger is if I get a Wind packet at the same moment as the mast is centered.
     // might be better to poll the rotation sensor when I get a packet from the mast compass on the wind bus
     // I could also "correct" mast compass based on Honeywell sensor, although that would invalidate the comparison between the two
@@ -190,6 +195,7 @@ void WindSpeed() {
       mastOrientation = mastDelta = readCompassDelta();
       logTo::logToAll("new orientation: " + String(mastDelta));
     }
+#endif
 #ifdef XMITRUDDER
     // shift from -portRange..stbdRange to 0..x
     SetN2kPGN127245(correctN2kMsg, (mastRotate+portRange)*DEGTORAD, 0, N2kRDO_NoDirectionOrder, 0);
@@ -197,11 +203,13 @@ void WindSpeed() {
 #endif
   }
 #endif
+#ifdef COMPASS
   if (compass.OnToggle) {
     // only use compass if Honeywell not enabled
     if (!honeywellOnToggle)
       mastRotate = readCompassDelta();
   }
+#endif
   #ifdef DEBUG
   //Serial.print(" mastRotate: ");
   //Serial.print(mastRotate);
