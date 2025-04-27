@@ -53,7 +53,7 @@ const char* PARAM_INPUT_2 = "state";
 #ifdef DEMO
 void demoInit();
 #endif
-#ifdef COMPASS
+#ifdef BNO_GRV
 int compassDifference(int angle1, int angle2);
 #endif
 // Get Sensor Readings and return JSON object
@@ -69,7 +69,7 @@ String getSensorReadings() {
 #endif
 #ifdef BNO08X
   if (compass.OnToggle) {
-    #ifdef COMPASS
+    #ifdef BNO_GRV
     if (mastCompassDeg >= 0) { // set to -1 if mast compass times out
       readings["mastHeading"] = String(mastCompassDeg+mastOrientation,1);
       readings["mastDelta"] = mastAngle[1];
@@ -95,7 +95,7 @@ String getSensorReadings() {
   }
 #endif
   String jsonString = JSON.stringify(readings);
-  //logTo::logToAll(jsonString);
+  //log::toAll(jsonString);
   return jsonString;
 }
 
@@ -107,7 +107,7 @@ String getSensorReadings() {
 */
 String settingsString(100);
 String settings_processor(const String& var) {
-  logTo::logToAll("settings processor var: " + var);
+  log::toAll("settings processor var: " + var);
   if (var == "BUTTONPLACEHOLDER") {
     settingsString = "<h4>Display</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"display\" ";
     if (displayOnToggle) settingsString += "checked";
@@ -116,7 +116,7 @@ String settings_processor(const String& var) {
     if (honeywellOnToggle) settingsString += "checked"; 
     settingsString += "><span class=\"slider\"></span></label>";
     settingsString += "<h4>Mast Compass</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"compass\" ";
-#ifdef COMPASS
+#ifdef BNO_GRV
     if (compass.OnToggle) settingsString += "checked"; 
 #endif
     settingsString += "><span class=\"slider\"></span></label>";
@@ -135,7 +135,7 @@ String settings_processor(const String& var) {
 }
 /*
 String settings_processor(const String& var) {
-  logTo::logToAll("settings processor var: " + var);
+  log::toAll("settings processor var: " + var);
   if (var == "BUTTONPLACEHOLDER") {
     String buttons = "";
     buttons += "<h4>Display</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"display\" ";
@@ -160,7 +160,7 @@ String settings_processor(const String& var) {
 }
 */
 String demo_processor(const String& var) {
-  logTo::logToAll("demo processor var: " + var);
+  log::toAll("demo processor var: " + var);
   if (var == "BUTTONPLACEHOLDER") {
     String buttons = "";
     buttons += "<h4>Demo Mode</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"demo\" ";
@@ -172,18 +172,18 @@ String demo_processor(const String& var) {
 }
 
 void toggleCheckbox(const char* id) {
-  logTo::logToAll("toggleCheckbox id: " + String(id));
+  log::toAll("toggleCheckbox id: " + String(id));
   if (strcmp(id, "display") == 0) {
     displayOnToggle = !displayOnToggle;
-    logTo::logToAll("setting display to " + String(displayOnToggle));
+    log::toAll("setting display to " + String(displayOnToggle));
   }
   if (strcmp(id, "honeywell") == 0) {
-    logTo::logToAll("setting honeywell to " + String(honeywellOnToggle));
+    log::toAll("setting honeywell to " + String(honeywellOnToggle));
     honeywellOnToggle = !honeywellOnToggle;
   }
-#ifdef COMPASS
+#ifdef BNO_GRV
   if (strcmp(id, "compass") == 0) {
-    logTo::logToAll("setting compass to " + String(compass.OnToggle));
+    log::toAll("setting compass to " + String(compass.OnToggle));
     compass.OnToggle = !compass.OnToggle;
   }
 #endif
@@ -222,26 +222,35 @@ void compassPing() {  // ping mast compass needs work for use case where mast co
 void readPrefs() {
   preferences.begin("ESPwind", false);
   displayOnToggle = (preferences.getString("displayOnTog", "true") == "true") ? true : false;
-  logTo::logToAll("display = " + String(displayOnToggle));
+  log::toAll("display = " + String(displayOnToggle));
 #ifdef BNO08X
   compass.OnToggle = (preferences.getString("compass.OnTog", "false") == "true") ? true : false;
-  logTo::logToAll("compass = " + String(compass.OnToggle));
+  log::toAll("compass = " + String(compass.OnToggle));
   //readings["compass"] = (compass.OnToggle ? 1 : 0);
   compass.frequency = preferences.getInt("compassFreq", 50);
-  logTo::logToAll("compassFrequency = " + String(compass.frequency));
+  log::toAll("compassFrequency = " + String(compass.frequency));
   compass.reportType = preferences.getInt("rtype", 0);
-  logTo::logToAll("reportType = " + String(compass.reportType));
+  log::toAll("reportType = " + String(compass.reportType));
 #endif
   honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
-  logTo::logToAll("honeywell = " + String(honeywellOnToggle));
+  log::toAll("honeywell = " + String(honeywellOnToggle));
   //readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
   //demoModeToggle = (preferences.getString("demoModeTog", "false") == "true") ? true : false;
-  logTo::logToAll("demo = " + String(demoModeToggle));
+  log::toAll("demo = " + String(demoModeToggle));
   WebTimerDelay = preferences.getInt("WebTimerDelay", 500);
   //mastOrientation = preferences.getInt("mastOrientation", 0);
   sensOrientation = preferences.getInt("sensOrientation", 0);
   boatOrientation = preferences.getInt("boatOrientation", 0);
   BoatData.Variation = preferences.getFloat("variation", VARIATION);
+#ifdef GPX
+preferences.putString("GPXlog", "gpxfile");
+preferences.putInt("logFileIdx", 0);
+  strcpy(GPXlog, preferences.getString("GPXlog", "gpxfile").c_str());
+  log::toAll("gpxFilePrefix = " + String(GPXlog));
+  // increment here? maybe!
+  logFileIdx = preferences.getInt("logFileIdx", 0)+1;
+  log::toAll("logFileIdx = " + String(logFileIdx));
+#endif
 }
 
 #ifdef PICAN
@@ -286,7 +295,7 @@ String readBME280Pressure() {
 #endif
 
 void startWebServer() {
-  logTo::logToAll("starting web server");
+  log::toAll("starting web server");
 
   // Set up CORS headers
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
@@ -294,15 +303,15 @@ void startWebServer() {
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (!MDNS.begin(host.c_str()) ) {
-    logTo::logToAll("Error starting MDNS responder.");
+    log::toAll("Error starting MDNS responder.");
   } else
-      logTo::logToAll("MDNS started " + host);
+      log::toAll("MDNS started " + host);
 
   // Add service to MDNS-SD
   if (!MDNS.addService("http", "tcp", HTTP_PORT)) {
-    logTo::logToAll("MDNS add service failed");
+    log::toAll("MDNS add service failed");
     sprintf(prbuf, "Free: heap %u, block: %u, min: %u, pSRAM %u", ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getMinFreeHeap(), ESP.getFreePsram());
-    logTo::logToAll(prbuf);
+    log::toAll(prbuf);
   }
   
   // SERVER INIT
@@ -318,17 +327,17 @@ void startWebServer() {
 
   // here's another bit of ugliness, until I figure out how to dynamically show/hide gauges in JS
   server.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
-    logTo::logToAll("index.html");
+    log::toAll("index.html");
     request->send(SPIFFS, "/index.html", "text/html");
   });
 
   server.on("/heap", HTTP_GET, [](AsyncWebServerRequest * request) {
-    logTo::logToAll("heap.html");
+    log::toAll("heap.html");
     request->send(200, "text/plain", String(ESP.getFreeHeap()));
   });
   
   server.on("/demo", HTTP_GET, [](AsyncWebServerRequest *request) {
-    logTo::logToAll("demo.html");
+    log::toAll("demo.html");
     request->send(SPIFFS, "/demo.html", "text/html", false, demo_processor);
   });
 
@@ -342,13 +351,13 @@ void startWebServer() {
      So any page that needs windSpeed can create an element with that label and get the value 
   */
   server.on("/readings", HTTP_GET, [](AsyncWebServerRequest *request) {
-    //logTo::logToAll("readings");
+    //log::toAll("readings");
     String json;
     //json.reserve(512);
     json = getSensorReadings();
-    //logTo::logToAll("sending readings " + String(json.length()));
+    //log::toAll("sending readings " + String(json.length()));
     request->send(200, "application/json", json);
-    //logTo::logToAll("readings sent");
+    //log::toAll("readings sent");
     json = String();
   });
 
@@ -368,45 +377,45 @@ void startWebServer() {
     });
   }
   server.on("/weather", HTTP_GET, [](AsyncWebServerRequest *request) {
-    logTo::logToAll("weather.html");
+    log::toAll("weather.html");
     request->send(SPIFFS, "/weather.html", "text/html");
   });
 #endif
 
   server.on("/host", HTTP_GET, [](AsyncWebServerRequest *request) {
     String buf = "host: " + host + ", webtimerdelay: " + String(WebTimerDelay);
-    logTo::logToAll(buf);
+    log::toAll(buf);
     request->send(200, "text/plain", buf.c_str());
     buf = String();
   });
 
   server.on("/settings", HTTP_GET, [](AsyncWebServerRequest *request) {
-    logTo::logToAll("settings.html");
+    log::toAll("settings.html");
     request->send(SPIFFS, "/settings.html", "text/html", false, settings_processor);
   });
 
   server.on("/compass", HTTP_GET, [](AsyncWebServerRequest *request) {
-    logTo::logToAll("compass.html");
+    log::toAll("compass.html");
     request->send(SPIFFS, "/compass.html", "text/html");
   });
 
   static int oldMastOrientation;
   server.on("/mastcompass", HTTP_GET, [](AsyncWebServerRequest *request) {
-    logTo::logToAll("mastcompass.html");
+    log::toAll("mastcompass.html");
     String inputMessage1;
     String inputMessage2;
     oldMastOrientation = mastOrientation;
     mastOrientation = 0;
-#ifdef COMPASS
+#ifdef BNO_GRV
     // GET input1 value on <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
     if (request->hasParam("confirm")) {
       inputMessage1 = request->getParam("confirm")->value();
-      logTo::logToAll("/mastcompass: " + inputMessage1);
+      log::toAll("/mastcompass: " + inputMessage1);
       mastOrientation = compassDifference(compass.boatIMU, mastCompassDeg+mastOrientation);
     }
     if (request->hasParam("cancel")) {
       inputMessage1 = request->getParam("cancel")->value();
-      logTo::logToAll("/mastcompass: " + inputMessage1);
+      log::toAll("/mastcompass: " + inputMessage1);
       mastOrientation = oldMastOrientation;
     }
 #endif
@@ -415,7 +424,7 @@ void startWebServer() {
 
   // Send a GET request to <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
   server.on("/params", HTTP_GET, [] (AsyncWebServerRequest *request) {
-    //logTo::logToAll("params.html");
+    //log::toAll("params.html");
     String inputMessage1;
     String inputMessage2;
     // GET input1 value on <ESP_IP>/params?output=<inputMessage1>&state=<inputMessage2>
@@ -424,28 +433,28 @@ void startWebServer() {
       inputMessage2 = request->getParam(PARAM_INPUT_2)->value();
       //digitalWrite(inputMessage1.toInt(), inputMessage2.toInt());
       //("/params got %s %s", inputMessage1, inputMessage2);
-      logTo::logToAll("/params: " + inputMessage1 + " " + inputMessage2);
+      log::toAll("/params: " + inputMessage1 + " " + inputMessage2);
       if (inputMessage1 == "display") {
         if (inputMessage2 == "off") {
-          logTo::logToAll("display off");
+          log::toAll("display off");
           displayOnToggle = false;
 #ifdef DISPLAYON
           display->clearDisplay();
 #endif
         } else {
-          logTo::logToAll("display on");
+          log::toAll("display on");
           displayOnToggle = true;
         }
         preferences.putString("displayOnTog", displayOnToggle ? "true" : "false");
       }
-#ifdef COMPASS
+#ifdef BNO_GRV
       if (inputMessage1 == "compass") {
         if (inputMessage2 == "off") {
-          logTo::logToAll("compass off");
+          log::toAll("compass off");
           compass.OnToggle = false;
           readings["compass"] = 0;
         } else {
-          logTo::logToAll("compass on");
+          log::toAll("compass on");
           compass.OnToggle = true;
           readings["compass"] = 1;
         }
@@ -455,11 +464,11 @@ void startWebServer() {
 #endif
       if (inputMessage1 == "honeywell") {
         if (inputMessage2 == "off") {
-          logTo::logToAll("honeywell off");
+          log::toAll("honeywell off");
           honeywellOnToggle = false;
           readings["honeywell"] = 0;
         } else {
-          logTo::logToAll("honeywell on");
+          log::toAll("honeywell on");
           honeywellOnToggle = true;
           readings["honeywell"] = 1;
         }
@@ -468,10 +477,10 @@ void startWebServer() {
 #ifdef DEMO
       if (inputMessage1 == "demo") {
         if (inputMessage2 == "off") {
-          logTo::logToAll("demo off");
+          log::toAll("demo off");
           demoModeToggle = false;
         } else {
-          logTo::logToAll("demo on");
+          log::toAll("demo on");
           demoModeToggle = true;
           demoInit();
         }
@@ -490,7 +499,7 @@ void startWebServer() {
 
 #if 0
   server.on("/calibrate", HTTP_GET, [](AsyncWebServerRequest *request) {
-    logTo::logToAll("calibrate.html");
+    log::toAll("calibrate.html");
     request->send(SPIFFS, "/calibrate.html", "text/html", false, cal_processor);
   });
 
@@ -565,7 +574,7 @@ void startWebServer() {
       const AsyncWebParameter* p = request->getParam(i);
       if(p->isPost()) {
         // HTTP POST ssid value
-        logTo::logToAll("params POST " + p->name() + " " + p->value());
+        log::toAll("params POST " + p->name() + " " + p->value());
         if (p->name() == "webtimerdelay") {
           WebTimerDelay = atoi(p->value().c_str());
           preferences.putInt("WebTimerDelay", WebTimerDelay);
@@ -643,7 +652,7 @@ void startWebServer() {
   }); // onNotFound
 
   server.begin();
-  logTo::logToAll("HTTP server started @ " + WiFi.localIP().toString());
+  log::toAll("HTTP server started @ " + WiFi.localIP().toString());
 }
 
 HTTPClient httpC;

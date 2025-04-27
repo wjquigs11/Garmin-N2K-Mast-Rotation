@@ -2,10 +2,9 @@
 #ifndef LOGTO_H
 #define LOGTO_H
 
-class logTo {
+class log {
 public:
-    static void logToAll(String s);
-    logTo() {}
+    static void toAll(String s);
     static const int ASIZE = 20;
     //static String commandList[ASIZE];
     static String commandList[];

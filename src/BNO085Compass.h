@@ -19,6 +19,7 @@ public:
     float boatHeading;
     float boatAccuracy;
     float boatIMU; // heading relative to centerline (or wherever the gadget is when we start up)
+                   // (only used if BNO_GRV is defined)
     int boatCalStatus;
     //bool IMUready;
     bool OnToggle;

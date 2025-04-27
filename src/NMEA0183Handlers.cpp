@@ -96,22 +96,22 @@ char msg[128];
 
 void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg) {
   num_0183_messages++;
-  //logTo::logToAll(String(num_0183_messages) + " " + String(NMEA0183Msg.Sender()) + String(NMEA0183Msg.MessageCode()));
+  //log::toAll(String(num_0183_messages) + " " + String(NMEA0183Msg.Sender()) + String(NMEA0183Msg.MessageCode()));
   int iHandler;
   // Find handler
-  //logTo::logToAll(String(NMEA0183Msg.MessageCode()));
+  //log::toAll(String(NMEA0183Msg.MessageCode()));
   for (iHandler=0; NMEA0183Handlers[iHandler].Code!=0 && !NMEA0183Msg.IsMessageCode(NMEA0183Handlers[iHandler].Code); iHandler++);
   if (NMEA0183Handlers[iHandler].Code!=0) {
     NMEA0183Handlers[iHandler].numMessages++;
-    //logTo::logToAll(String(NMEA0183Handlers[iHandler].Code) + " " + String(NMEA0183Handlers[iHandler].numMessages));
+    //log::toAll(String(NMEA0183Handlers[iHandler].Code) + " " + String(NMEA0183Handlers[iHandler].numMessages));
     NMEA0183Handlers[iHandler].Handler(NMEA0183Msg); 
   }
 #ifdef WITMOTION
   else {
     if (!strcmp(NMEA0183Msg.Sender(),"PA")) // ignore RTK "PAIR" for now
-      logTo::logToAll("unknown 0183 message: " + String(NMEA0183Msg.Sender()) + " " + String(NMEA0183Msg.MessageCode()));
+      log::toAll("unknown 0183 message: " + String(NMEA0183Msg.Sender()) + " " + String(NMEA0183Msg.MessageCode()));
     //for (int i=0; i < NMEA0183Msg.FieldCount(); i++) {
-      //logTo::logToAll(String(NMEA0183Msg.Field(i)));
+      //log::toAll(String(NMEA0183Msg.Field(i)));
       //Serial.print(NMEA0183Msg.Field(i));
       //if ( i<NMEA0183Msg.FieldCount()-1 ) Serial.print(" ");
     //}
@@ -156,7 +156,7 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
       NMEA0183HandlersDebugStream->print("SOG="); NMEA0183HandlersDebugStream->println(pBD->SOG);
       NMEA0183HandlersDebugStream->print("Variation="); NMEA0183HandlersDebugStream->println(pBD->Variation);  
   }
-  //logTo::logToAll("RMC lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " COG: " + String(pBD->COG));
+  //log::toAll("RMC lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " COG: " + String(pBD->COG));
 }
 
 // We might get a sequence of GSV messages, each with up to 4 satellites
@@ -175,15 +175,15 @@ void HandleGSV(const tNMEA0183Msg &NMEA0183Msg) {
   // SatelliteCount here refers to the total number of satellites in this sequence of 1-3 messages
   if (NMEA0183ParseGSV_nc(NMEA0183Msg, totalMSG, thisMSG, SatelliteCount, SatInfo[0], SatInfo[1], SatInfo[2], SatInfo[3])) {
   } else if (NMEA0183HandlersDebugStream!=0) { NMEA0183HandlersDebugStream->println("Failed to parse GSV"); }
-  //logTo::logToAll("GSV sat count: " + String(SatelliteCount) + " msg " + String(thisMSG) + "/" + String(totalMSG));
+  //log::toAll("GSV sat count: " + String(SatelliteCount) + " msg " + String(thisMSG) + "/" + String(totalMSG));
   if (thisMSG == 1) { // start counting again
     SatCount = 0;
   }
   for (int i=0; i<4; i++) {
-    //logTo::logToAll(String(SatInfo[i].SVID) + " el: " + String(SatInfo[i].Elevation) + " az: " + String(SatInfo[i].Azimuth) + " SNR: " + String(SatInfo[i].SNR));
+    //log::toAll(String(SatInfo[i].SVID) + " el: " + String(SatInfo[i].Elevation) + " az: " + String(SatInfo[i].Azimuth) + " SNR: " + String(SatInfo[i].SNR));
     if (SatInfo[i].SVID > maxSat) maxSat = SatInfo[i].SVID; // IDK what the hell I'm doing with this
     if (SatInfo[i].SVID > MAXSAT) {
-      logTo::logToAll("saw higher satellite!!!");
+      log::toAll("saw higher satellite!!!");
     } else {
       GSVseen[SatInfo[i].SVID] = SatInfo[i];
     }
@@ -212,7 +212,7 @@ void HandleGGA(const tNMEA0183Msg &NMEA0183Msg) {
                    pBD->DGPSAge,pBD->DGPSReferenceStationID)) {
     } else if (NMEA0183HandlersDebugStream!=0) { NMEA0183HandlersDebugStream->println("Failed to parse GGA"); }
   if (abs(SatelliteCount-pBD->SatelliteCount) > 1) {
-    logTo::logToAll("GGA sat count changed old: " + String(pBD->SatelliteCount) + " new: " + String(SatelliteCount));
+    //log::toAll("GGA sat count changed old: " + String(pBD->SatelliteCount) + " new: " + String(SatelliteCount));
     pBD->SatelliteCount = SatelliteCount;
   }
   if (NMEA2000!=0) {
@@ -236,7 +236,7 @@ void HandleGGA(const tNMEA0183Msg &NMEA0183Msg) {
       NMEA0183HandlersDebugStream->print("DGPSAge="); NMEA0183HandlersDebugStream->println(pBD->DGPSAge);
       NMEA0183HandlersDebugStream->print("DGPSReferenceStationID="); NMEA0183HandlersDebugStream->println(pBD->DGPSReferenceStationID);
     }
-    //logTo::logToAll("GGA lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " qual: " + String(pBD->GPSQualityIndicator) + " sat: " + String(pBD->SatelliteCount));
+    //log::toAll("GGA lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " qual: " + String(pBD->GPSQualityIndicator) + " sat: " + String(pBD->SatelliteCount));
 }
 
 void HandleVTG(const tNMEA0183Msg &NMEA0183Msg) {
@@ -264,6 +264,7 @@ void HandleGLL(const tNMEA0183Msg &NMEA0183Msg) {
 
 double NMEA0183GetDouble(const char *data);
 
+#ifdef WITMOTION
 // Quectel status of antennas
 void HandlePQTMANTEN(const tNMEA0183Msg &NMEA0183Msg) {
   bool result=(NMEA0183Msg.FieldCount()>=5);
@@ -288,7 +289,7 @@ void HandlePQTMTAR(const tNMEA0183Msg &NMEA0183Msg) {
     for (int i=0; i<NMEA0183Msg.FieldCount(); i++) {
       logMsg += String(NMEA0183Msg.Field(i)) + ",";
     }
-    logTo::logToAll(logMsg);
+    log::toAll(logMsg);
   }
   bool result=(NMEA0183Msg.FieldCount()>=12);
   if (result) {
@@ -310,11 +311,10 @@ void HandlePQTMTAR(const tNMEA0183Msg &NMEA0183Msg) {
     pRTK->usedSV = NMEA0183GetDouble(NMEA0183Msg.Field(12)); // number of satellites
     //Serial.printf("v: %f t: %f q: %f r: %f l: %f p: %f r: %f h: %f pa: %f ra: %f ha: %f sv: %f\n",
     //  Version, GPStime, Quality, Reserved, Length, Pitch, Roll, Heading, PitchAcc, RollAcc, HeadAcc, UsedSV);
-    //logTo::logToAll("PQTMTAR q: " + String(Quality) + " l: " + String(Length) + " p: " + String(Pitch) + " r: " + String(Roll) + " h: " + String(Roll) + " sv: " + String(UsedSV));
+    //log::toAll("PQTMTAR q: " + String(Quality) + " l: " + String(Length) + " p: " + String(Pitch) + " r: " + String(Roll) + " h: " + String(Roll) + " sv: " + String(UsedSV));
   }
 }
-
-double NMEA0183GetDouble(const char *data);
+#endif
 
 //*****************************************************************************
 // $GNHPR,074615.00,320.9610,-66.1712,000.0000,4,47,0.00,0999*45

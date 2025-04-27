@@ -34,17 +34,18 @@ float mastRotate, rotateout;
 int PotValue=0;
 int PotLo=9999;
 int PotHi=0;
+bool logPot = false;
 extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
 extern bool honeywellOnToggle;
 extern float mastCompassDeg, mastDelta;
-#ifdef COMPASS
+#ifdef BNO_GRV
 extern movingAvg mastCompDelta;
 #endif
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern int sensOrientation;
 extern int boatOrientation;
 float getCompass(int correction);
-//void logTo::logToAll(String s);
+//void log::toAll(String s);
 
 // Initialize static variables for RotationSensor Class
 int RotationSensor::newValue{0};
@@ -87,16 +88,23 @@ char prbuf[PRBUF];
 void calcTrueWind();
 void windCounter();
 void mastCompCounter();
-#define DEBUG
+//#define DEBUG
 #ifdef HONEY
 // returns degrees, and corresponds to the current value of the Honeywell sensor
 float readAnalogRotationValue() {      
 #if defined(SH_ESP32)
   PotValue = analogRead(POT_PIN);
 #else
+#ifdef INA219
+  float busvoltage = ina219.getBusVoltage_V();
+  Serial.printf("busvoltage: %f\n", busvoltage);
+  mastAngle[0] = map(busvoltage, lowset, highset, -portRange, stbdRange)+sensOrientation;
+  return mastAngle[0];
+#else
   if (adsInit)
     PotValue = ads.readADC_SingleEnded(0);
-#endif
+#endif // INA219
+#endif // SH_ESP32
   //int AltValue = adc1_get_raw(ADC1_CHANNEL_5);
   if (!PotValue)
     return 0;
@@ -105,14 +113,18 @@ float readAnalogRotationValue() {
   if (PotValue < PotLo && PotValue > 0) { 
     PotLo = PotValue;
     readings["PotLo"] = String(PotLo); // for calibration
+    if (PotLo < lowset)
+      log::toAll("WARNING! PotValue lower than lowset " + String(PotLo));
   } else if (PotValue > PotHi) {
     PotHi = PotValue;
     readings["PotHi"] = String(PotHi); // for calibration
+    if (PotHi > highset) 
+      log::toAll("WARNING! PotValue greater than highset " + String(PotHi));
   }
-  #ifdef DEBUG
-  sprintf(prbuf, " pot(l/v/h): %d/%d/%d ", PotLo, PotValue, PotHi);
-  //Serial.print(prbuf);
-  #endif
+  if (logPot) {
+    sprintf(prbuf, " pot low:%d (lowset:%d)/current: %d/high: %d (highset:%d)", PotLo, lowset, PotValue, PotHi, highset);
+    log::toAll(prbuf);
+  }
   // the moving average variable is only initialized if ADC is present
   int newValue = honeywellSensor.reading(PotValue);    // calculate the moving average
   int oldValue = RotationSensor::oldValue;
@@ -127,7 +139,7 @@ float readAnalogRotationValue() {
   // map 10 bit number to degrees of rotation
   mastAngle[0] = map(oldValue, lowset, highset, -portRange, stbdRange)+sensOrientation;
   //sprintf(prbuf,"map: %d %d %d %d %d = %ld\n", oldValue, lowset, highset, -portRange, stbdRange, mastAngle[0]);
-  //logTo::logToAll(prbuf);
+  //log::toAll(prbuf);
   return mastAngle[0]; 
 }
 #endif
@@ -140,10 +152,10 @@ int compassDifference(int angle1, int angle2) {
 }
 
 float readCompassDelta() {
-#ifdef COMPASS
+#ifdef BNO_GRV
   if (imuReady) {
     float mastDelta = compassDifference(compass.boatIMU, mastCompassDeg+mastOrientation);
-    //logTo::logToAll("readCompassDelta m: " + String(mastCompassDeg+mastOrientation) + " b: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
+    //log::toAll("readCompassDelta m: " + String(mastCompassDeg+mastOrientation) + " b: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
     mastCompDelta.reading((int)(mastDelta*100)); // moving average
     return mastDelta;
@@ -184,16 +196,16 @@ void WindSpeed() {
 #ifdef HONEY
   if (honeywellOnToggle) {
     mastRotate = readAnalogRotationValue();
-#ifdef COMPASS
+#ifdef BNO_GRV
     // the only time this will trigger is if I get a Wind packet at the same moment as the mast is centered.
     // might be better to poll the rotation sensor when I get a packet from the mast compass on the wind bus
     // I could also "correct" mast compass based on Honeywell sensor, although that would invalidate the comparison between the two
     if (abs(mastRotate) < 1) {
       // mast is centered; reset delta between mast IMU and boat IMU
-      logTo::logToAll("WindSpeed: got center trigger, prev orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
+      log::toAll("WindSpeed: got center trigger, prev orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
       mastOrientation = 0;
       mastOrientation = mastDelta = readCompassDelta();
-      logTo::logToAll("new orientation: " + String(mastDelta));
+      log::toAll("new orientation: " + String(mastDelta));
     }
 #endif
 #ifdef XMITRUDDER
@@ -203,7 +215,7 @@ void WindSpeed() {
 #endif
   }
 #endif
-#ifdef COMPASS
+#ifdef BNO_GRV
   if (compass.OnToggle) {
     // only use compass if Honeywell not enabled
     if (!honeywellOnToggle)
@@ -225,9 +237,9 @@ void WindSpeed() {
   else {
     rotateout = anglesum;               
   }
-  #ifdef DEBUG
-  logTo::logToAll("rotate now " + String(PotValue) + " low " + String(PotLo) + " hi " + String(PotHi));
-  logTo::logToAll("mastrotate " + String(mastRotate) + " anglesum " + String(anglesum) + " rotateout " + String(rotateout));
+  #if 0
+  log::toAll("rotate now " + String(PotValue) + " low " + String(PotLo) + " hi " + String(PotHi));
+  log::toAll("mastrotate " + String(mastRotate) + " anglesum " + String(anglesum) + " rotateout " + String(rotateout));
   #endif
   // send corrected wind on main bus
   // note we are sending the original speed reading in m/s
@@ -285,7 +297,7 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
   double variation;
   tN2kHeadingReference headingRef;
   if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
-    //logTo::logToAll("wind heading ref " + String(headingRef));
+    //log::toAll("wind heading ref " + String(headingRef));
     mastCompassDeg = heading * RADTODEG;
     readCompassDelta();
     // NOTE we do NOT transmit boat heading on N2K here; only from reaction in wind-bus.cpp, to avoid flooding bus
@@ -341,7 +353,7 @@ void parseWindCAN() {
     case 130306: { 
       if (windCANsrc == -1) { // this is our first wind packet, track the source
         windCANsrc = SRC;
-        logTo::logToAll("got first wind from CAN " + String(windCANsrc));
+        log::toAll("got first wind from CAN " + String(windCANsrc));
       }
       WindSensor::windSpeedMeters = ((cdata[2] << 8) | cdata[1]) / 100.0;
       WindSensor::windAngleRadians = ((cdata[4] << 8) | cdata[3]) / 10000.0;
@@ -376,7 +388,7 @@ void parseWindCAN() {
       // hack! if hRef == N2khr_true that means mast IMU is aligned with Hall sensor
       if (hRef == N2khr_true) {
         mastCompassDeg = mastCompassRad * RADTODEG;
-        logTo::logToAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
+        log::toAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
         mastOrientation = 0;
         mastOrientation = mastDelta = readCompassDelta();
       }
@@ -400,7 +412,7 @@ void parseWindCAN() {
         }
       }
       if (!PGNfound) {
-        logTo::logToAll("new wind PGN " + String(PGN));
+        log::toAll("new wind PGN " + String(PGN));
         otherPGN[otherPGNindex++] = PGN;
       }
       // pass through everything that's not covered above (wind and heading)
@@ -416,7 +428,7 @@ void parseWindCAN() {
       } else {
         num_wind_other_fail++;
         if (num_wind_other_fail % 100 == 1)
-          logTo::logToAll("Failed to pass through from wind to main PGN: " + String(PGN));  
+          log::toAll("Failed to pass through from wind to main PGN: " + String(PGN));  
       }
       break;
     }
@@ -439,7 +451,7 @@ void parseWindCAN() {
         } else {
           num_wind_other_fail++;
           if (num_wind_other_fail < 10)
-            logTo::logToAll("Failed to forward packet from wind to main PGN: " + String(PGN));  
+            log::toAll("Failed to forward packet from wind to main PGN: " + String(PGN));  
         }
         // temporary: check to see if we can parse the message we just created
         if (PGN == 128259) {

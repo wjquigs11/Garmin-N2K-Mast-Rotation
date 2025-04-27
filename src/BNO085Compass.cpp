@@ -15,34 +15,34 @@
 
     bool BNO085Compass::begin() {
         if (!bno08x.begin_I2C(BNO08X)) {
-            logTo::logTo::logToAll("BNO08x not found");
+            log::log::toAll("BNO08x not found");
             //i2cScan(Wire);
             return false;
         }
-        logTo::logTo::logToAll("BNO08x Found\n");
+        log::log::toAll("BNO08x Found\n");
         for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
             String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
-            logTo::logTo::logToAll(logString);
+            log::log::toAll(logString);
         }
         // temporary set frequency
         frequency = 100;
         return true;
     }
 
-    // #ifdef COMPASS, enable SH2_ARVR_STABILIZED_GRV, as well as another report set by the user, 
+    // #ifdef BNO_GRV, enable SH2_ARVR_STABILIZED_GRV (game rotation vector), as well as another report set by the user, 
     // usually SH2_GEOMAGNETIC_ROTATION_VECTOR (0x09) to get a compass heading
     // note that GRV is requested 10x the rate of the other (compass) report
     bool BNO085Compass::setReports() {
-        logTo::logToAll("Setting compass report to: 0x" + String(reportType,HEX));
+        log::toAll("Setting compass report to: 0x" + String(reportType,HEX));
         if (!bno08x.enableReport(reportType, frequency*10000)) {
-            logTo::logToAll("could not set report type: " + String(reportType,HEX));  
+            log::toAll("could not set report type: " + String(reportType,HEX));  
             return false;
         }
-#ifdef COMPASS
+#ifdef BNO_GRV
         if (!bno08x.enableReport(SH2_ARVR_STABILIZED_GRV, frequency*1000)) {
-            logTo::logToAll("could not set report type (2): " + String(SH2_ARVR_STABILIZED_GRV,HEX));
+            log::toAll("could not set report type (2): " + String(SH2_ARVR_STABILIZED_GRV,HEX));
             return false;
-        } else logTo::logToAll("enabled " + String(SH2_ARVR_STABILIZED_GRV,HEX));
+        } else log::toAll("enabled " + String(SH2_ARVR_STABILIZED_GRV,HEX));
 #endif
         return true;
     }
@@ -53,7 +53,7 @@
 */
 
     void BNO085Compass::logPart() {
-        logTo::logTo::logToAll("test");
+        log::log::toAll("test");
     }
 
     int BNO085Compass::getHeading(int correction) {
@@ -77,7 +77,7 @@
                                         sensorValue.un.rotationVector.k, 
                                         correction);
 #ifdef DEBUG
-                logTo::logTo::logToAll("BNO085 Heading: " + String(boatHeading) + " Accuracy: " + String(boatAccuracy) + " CalStatus: " + String(boatCalStatus));
+                log::log::toAll("BNO085 Heading: " + String(boatHeading) + " Accuracy: " + String(boatAccuracy) + " CalStatus: " + String(boatCalStatus));
 #endif               
                 return 1;
             case SH2_ARVR_STABILIZED_GRV:

@@ -39,6 +39,9 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #endif
+#ifdef GPX
+#include <FS.h>
+#endif
 
 #define SPI_CS_PIN 5
 #define CAN_INT_PIN 21
@@ -51,6 +54,7 @@
 #define POT_PIN 33 // ESPberry ADC1_CH5
 // voltage sensor 5:1 so 12v measures at 2.4 volts so use ADC_ATTEN_DB_12
 #endif
+extern bool logPot;
 
 class RotationSensor {
   public:
@@ -86,6 +90,8 @@ void SendN2kWind(int);
 
 #define WindUpdatePeriod 500
 
+extern Preferences preferences;
+
 // timing/display
 extern int num_n2k_messages;
 extern int num_wind_messages;
@@ -105,8 +111,11 @@ extern Adafruit_SSD1306 *display;
 extern char prbuf[PRBUF];
 
 // Honeywell observed range
-#define lowset 56
-#define highset 311
+// TBD: make this dynamic based on min/max over a long runtime
+//#define lowset 56
+//#define highset 311
+#define lowset 11
+#define highset 244
 extern int mastAngle[];
 
 #define MAXPGN 64
@@ -126,3 +135,30 @@ extern bool stackTrace;
 
 #define DEGTORAD 0.01745329252
 #define RADTODEG 57.2957795131
+
+#ifdef RTK
+extern bool rtkDebug;
+#endif
+
+#ifdef GPX
+// GPX files
+extern char logFile[];
+extern char logTempName[];
+extern File GPXlogFile, WPTlogFile;
+extern char GPXlog[];
+extern int lastLogFile;  // Store the last update time
+#define NEWLOGFILE 600000 // start a new .gpx file every 10 minutes
+extern int logFileIdx;
+void writeGPXHeader(File &file);
+void writeTrackPoint(File &file, double lat, double lon, double speed, float heading, double timestamp);
+void closeGPXFile(File &file);
+void writeHeadingWaypoint(File &file, double lat, double lon, double speed, float heading, double timestamp);
+void startNextLog();
+void initGPX();
+#define GPXTIMER 5000
+#endif
+
+#ifdef INA219
+#include <Adafruit_INA219.h>
+extern Adafruit_INA219 ina219;
+#endif

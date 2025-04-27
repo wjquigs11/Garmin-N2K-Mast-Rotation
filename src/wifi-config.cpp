@@ -39,7 +39,7 @@ IPAddress localGateway;
 //IPAddress localGateway(192, 168, 1, 1); //hardcoded
 IPAddress subnet(255, 255, 0, 0);
 
-//void logTo::logTo::logToAll(String S);
+//void log::log::toAll(String S);
 
 String readFile(fs::FS &fs, const char * path){
   Serial.printf("Reading file: %s\r\n", path);
@@ -93,7 +93,7 @@ void writeFile(fs::FS &fs, const char * path, const char * message){
 bool readWiFi() {
   File file = SPIFFS.open(wifiPath);
   if(!file || file.isDirectory()) {
-    logTo::logToAll("failed to open wifi file for reading");
+    log::toAll("failed to open wifi file for reading");
     return false;
   }
   int i=0;
@@ -102,14 +102,14 @@ bool readWiFi() {
     pass[i] = file.readStringUntil(':');
     ip[i] = file.readStringUntil(':');
     gateway[i] = file.readStringUntil('\n');
-    logTo::logToAll("SSID " + ssid[i]);
-    logTo::logToAll("passwd " + pass[i]);
-    logTo::logToAll("IP " + ip[i]);
-    logTo::logToAll("gateway " + gateway[i]);
+    log::toAll("SSID " + ssid[i]);
+    log::toAll("passwd " + pass[i]);
+    log::toAll("IP " + ip[i]);
+    log::toAll("gateway " + gateway[i]);
     i++;
   }
   num_nets=i;
-  logTo::logToAll("found " + String(num_nets) + " networks");
+  log::toAll("found " + String(num_nets) + " networks");
   return true;
 }
 
@@ -163,12 +163,12 @@ bool initWiFi() {
 
 void startAP() {
     // Connect to Wi-Fi network with SSID and password
-    logTo::logTo::logToAll("Setting AP (Access Point)");
+    log::log::toAll("Setting AP (Access Point)");
     // NULL sets an open Access Point
     WiFi.softAP("ESP-WIFI-MANAGER", NULL);
 
     IPAddress IP = WiFi.softAPIP();
-    logTo::logTo::logToAll("AP IP address: " + IP.toString());
+    log::log::toAll("AP IP address: " + IP.toString());
 
     // Web Server Root URL
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
