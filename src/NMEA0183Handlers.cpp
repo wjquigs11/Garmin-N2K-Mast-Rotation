@@ -55,7 +55,7 @@ void HandleHPR(const tNMEA0183Msg &NMEA0183Msg);
 void HandleVTG(const tNMEA0183Msg &NMEA0183Msg);
 
 // Internal variables
-tNMEA2000 *NMEA2000;
+//tNMEA2000 *NMEA2000;
 Stream* NMEA0183HandlersDebugStream=0;
 struct tGSV SatInfo[4];
 struct tGSV GSVseen[MAXSAT];  
@@ -127,26 +127,26 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
   //Serial.println("RMC");
   if (pBD==0) return;
   double variation;
-  if (NMEA0183ParseRMC_nc(NMEA0183Msg,pBD->GPSTime,pBD->Latitude,pBD->Longitude,pBD->COG,pBD->SOG,pBD->DaysSince1970,variation)) {
+  if (NMEA0183ParseRMC_nc(NMEA0183Msg,pBD->GPSTime,pBD->Latitude,pBD->Longitude,pBD->COG,pBD->SOG,pBD->DaysSince1970,pBD->Variation)) {
   } else if (NMEA0183HandlersDebugStream!=0) { NMEA0183HandlersDebugStream->println("Failed to parse RMC"); }
-  if (NMEA2000!=0) {
+  if (n2kMain!=0) {
       tN2kMsg N2kMsg;
       // COGSOGRapid
       SetN2kPGN129026(N2kMsg, 255, N2khr_true, pBD->COG, pBD->SOG);
-      if (!NMEA2000->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
+      if (!n2kMain->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
       // GNSSPosition
       SetN2kPGN129029(N2kMsg,255,pBD->DaysSince1970,pBD->GPSTime,
                   pBD->Latitude,pBD->Longitude,pBD->Altitude,
                   N2kGNSSt_GPS,N2kGNSSm_GNSSfix,
                   pBD->SatelliteCount,pBD->HDOP,0,0,
                   0,N2kGNSSt_GPS,0,0);
-      if (!NMEA2000->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
+      if (!n2kMain->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
       // LatLonRapid
       //SetN2kPGN129025(N2kMsg, pBD->Latitude, pBD->Longitude);
-      //if (!NMEA2000->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
+      //if (!n2kMain->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
       // Variation - taking out since it doesn't seem to be parsing correctly
       //SetN2kPGN127258(N2kMsg, 255, N2kmagvar_Calc, pBD->DaysSince1970, pBD->Variation);
-      //NMEA2000->SendMsg(N2kMsg);
+      //n2kMain->SendMsg(N2kMsg);
     }
   if (NMEA0183HandlersDebugStream!=0) {
       NMEA0183HandlersDebugStream->print("RMC Time="); NMEA0183HandlersDebugStream->println(pBD->GPSTime);
@@ -157,6 +157,11 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
       NMEA0183HandlersDebugStream->print("Variation="); NMEA0183HandlersDebugStream->println(pBD->Variation);  
   }
   //log::toAll("RMC lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " COG: " + String(pBD->COG));
+  // if we are tuning, output relevant data to compare e.g. paddle log with GPS speed
+  if (tuning) {
+    sprintf(prbuf, "STW: %2.2f SOG: %2.2f HDG: %2.2f COG: %2.2f", pBD->STW*MTOKTS, pBD->SOG*MTOKTS, pBD->TrueHeading, pBD->COG*RADTODEG);
+    log::toAll(prbuf);
+  }
 }
 
 // We might get a sequence of GSV messages, each with up to 4 satellites
@@ -215,13 +220,13 @@ void HandleGGA(const tNMEA0183Msg &NMEA0183Msg) {
     //log::toAll("GGA sat count changed old: " + String(pBD->SatelliteCount) + " new: " + String(SatelliteCount));
     pBD->SatelliteCount = SatelliteCount;
   }
-  if (NMEA2000!=0) {
+  if (n2kMain!=0) {
       tN2kMsg N2kMsg;
       SetN2kGNSS(N2kMsg,1,pBD->DaysSince1970,pBD->GPSTime,pBD->Latitude,pBD->Longitude,pBD->Altitude,
                 N2kGNSSt_GPS,GNSMethofNMEA0183ToN2k(pBD->GPSQualityIndicator),pBD->SatelliteCount,pBD->HDOP,0,
                 pBD->GeoidalSeparation,1,N2kGNSSt_GPS,pBD->DGPSReferenceStationID,pBD->DGPSAge
                 );
-      NMEA2000->SendMsg(N2kMsg); 
+      n2kMain->SendMsg(N2kMsg); 
     }
 
     if (NMEA0183HandlersDebugStream!=0) {
@@ -245,12 +250,12 @@ void HandleVTG(const tNMEA0183Msg &NMEA0183Msg) {
   if (NMEA0183ParseVTG_nc(NMEA0183Msg,pBD->COG,MagneticCOG,pBD->SOG)) {
     //pBD->Variation=pBD->COG-MagneticCOG; // Save variation for Magnetic heading
   } else if (NMEA0183HandlersDebugStream!=0) { NMEA0183HandlersDebugStream->println("Failed to parse VTG"); }
-  if (NMEA2000!=0) { 
+  if (n2kMain!=0) { 
     tN2kMsg N2kMsg;
     SetN2kCOGSOGRapid(N2kMsg,1,N2khr_true,pBD->COG,pBD->SOG);
-    NMEA2000->SendMsg(N2kMsg);
+    n2kMain->SendMsg(N2kMsg);
 //      SetN2kBoatSpeed(N2kMsg,1,SOG);
-//      NMEA2000.SendMsg(N2kMsg);
+//      n2kMain.SendMsg(N2kMsg);
   }
   if (NMEA0183HandlersDebugStream!=0) {
     NMEA0183HandlersDebugStream->print("True heading="); NMEA0183HandlersDebugStream->println(pBD->TrueHeading);
@@ -316,6 +321,7 @@ void HandlePQTMTAR(const tNMEA0183Msg &NMEA0183Msg) {
 }
 #endif
 
+// these messages are from the UM982 TBD: add #define so I can switch back to Witmotion if necessary
 //*****************************************************************************
 // $GNHPR,074615.00,320.9610,-66.1712,000.0000,4,47,0.00,0999*45
 //        UTC      ,HEADING ,PITCH   ,ROLL    ,QUAL,Sat#,Age,stnID,CKSUM
@@ -357,12 +363,17 @@ void HandleHPR(const tNMEA0183Msg &NMEA0183Msg) {
   int QF, SatNo, Station;
   if (pBD==0) return;
   if (NMEA0183ParseHPR(NMEA0183Msg, UTC, Heading, Pitch, Roll, QF, SatNo, Age, Station)) {
-    pBD->TrueHeading=Heading;
+    pBD->TrueHeading=fmod(Heading+rtkOrientation, 359.9);
   } else if (NMEA0183HandlersDebugStream!=0) { NMEA0183HandlersDebugStream->println("Failed to parse HPR"); }
-  if (NMEA2000!=0) { 
+  if (n2kMain!=0) { 
     tN2kMsg N2kMsg;
-    SetN2kPGN127250(N2kMsg, 1, pBD->TrueHeading*DEGTORAD, pBD->SOG, pBD->Variation*DEGTORAD, N2khr_true);
-    NMEA2000->SendMsg(N2kMsg);
+    // Vessel Heading (deviation should always be 0 since it's not a magnetic compass)
+    // heading arrives in DEGREES convert to radians for n2k
+    SetN2kPGN127250(N2kMsg, 1, pBD->TrueHeading*DEGTORAD, 0, pBD->Variation, N2khr_true);
+    n2kMain->SendMsg(N2kMsg);
+    //log::toAll("sending 127250");
+    // Attitude
+    //setN2kPGN127257();
   }
   if (NMEA0183HandlersDebugStream!=0) {
     NMEA0183HandlersDebugStream->print("True heading="); NMEA0183HandlersDebugStream->println(pBD->TrueHeading);

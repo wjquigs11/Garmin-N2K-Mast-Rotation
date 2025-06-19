@@ -80,6 +80,7 @@ void parseWindCAN();
 void WindSpeed();
 
 extern tNMEA2000Handler NMEA2000Handlers[];
+extern tNMEA2000 *n2kMain;
 
 float readAnalogRotationValue();
 void parseWindCAN();
@@ -118,6 +119,16 @@ extern char prbuf[PRBUF];
 #define highset 244
 extern int mastAngle[];
 
+extern int mastOrientation; // mast compass position relative to boat compass position
+extern int sensOrientation; // Honeywell orientation relative to centerline
+extern int boatOrientation; // boat compass position relative to centerline
+extern int rtkOrientation;
+extern int mastAngle[];
+extern float mastRotate, rotateout;
+extern uint8_t compassAddress[];
+extern float mastCompassDeg;
+extern int boatCalStatus;
+
 #define MAXPGN 64
 #define MAX_NETS 4
 
@@ -138,6 +149,7 @@ extern bool stackTrace;
 
 #ifdef RTK
 extern bool rtkDebug;
+extern bool tuning; // for tuning instruments e.g. paddlewheel vs GPS
 #endif
 
 #ifdef GPX

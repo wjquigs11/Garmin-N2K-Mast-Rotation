@@ -82,8 +82,6 @@ String getSensorReadings() {
     if (!honeywellOnToggle) // honeywell takes precedence if both are enabled
       readings["rotateout"] = String(rotateout,0);
   }
-#else
-  readings["rotateout"] = String(rotateout,0);
 #endif
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
   readings["windAngle"] = String(WindSensor::windAngleDegrees,0);
@@ -94,6 +92,8 @@ String getSensorReadings() {
     readings["humidity"] = String(bme.readHumidity());
   }
 #endif
+  readings["TWA"] = String(BoatData.TWA*(180/M_PI),2);
+  readings["TWS"] = String(BoatData.TWS*1.943844,2);
   String jsonString = JSON.stringify(readings);
   //log::toAll(jsonString);
   return jsonString;
@@ -126,6 +126,7 @@ String settings_processor(const String& var) {
   if (var == "orientation") return (settingsString = String(mastOrientation));
   if (var == "sensorient") return (settingsString = String(sensOrientation));
   if (var == "boatorient") return (settingsString = String(boatOrientation));
+  if (var == "RTKorient") return (settingsString = String(rtkOrientation));
 #ifdef BNO08X
   if (var == "frequency") return (settingsString = String(compass.frequency));
 #endif
@@ -133,32 +134,7 @@ String settings_processor(const String& var) {
   if (var == "variation") return (settingsString = String(BoatData.Variation));
   return (settingsString = String("settings processor: placeholder not found " + var));
 }
-/*
-String settings_processor(const String& var) {
-  log::toAll("settings processor var: " + var);
-  if (var == "BUTTONPLACEHOLDER") {
-    String buttons = "";
-    buttons += "<h4>Display</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"display\" ";
-    if (displayOnToggle) buttons += "checked";
-    buttons += "><span class=\"slider\"></span></label>";
-    buttons += "<h4>Honeywell</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"honeywell\" ";
-    if (honeywellOnToggle) buttons += "checked"; 
-    buttons += "><span class=\"slider\"></span></label>";
-    buttons += "<h4>Mast Compass</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"compass\" ";
-    if (compass.OnToggle) buttons += "checked"; 
-    buttons += "><span class=\"slider\"></span></label>";
-    return buttons;
-  }
-  if (var == "webtimerdelay") return String(WebTimerDelay);
-  if (var == "orientation") return String(mastOrientation);
-  if (var == "sensorient") return String(sensOrientation);
-  if (var == "boatorient") return String(boatOrientation);
-  if (var == "frequency") return String(compassFrequency);
-  if (var == "controlMAC") return String(WiFi.macAddress());
-  if (var == "variation") return String(BoatData.Variation);
-  return String("settings processor: placeholder not found " + var);
-}
-*/
+
 String demo_processor(const String& var) {
   log::toAll("demo processor var: " + var);
   if (var == "BUTTONPLACEHOLDER") {
@@ -376,9 +352,38 @@ void startWebServer() {
       request->send(200, "text/plain", readBME280Pressure().c_str());
     });
   }
+  
+  // Dedicated endpoints for Apparent Wind Speed and Apparent Wind Angle
+  server.on("/aws", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", String(WindSensor::windSpeedKnots,2).c_str());
+  });
+  
+  server.on("/awa", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", String(rotateout,2).c_str());
+  });
+  
+  // Dedicated endpoints for True Wind Speed and True Wind Angle
+  server.on("/tws", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", String(BoatData.TWS*1.943844,2).c_str());
+  });
+  
+  server.on("/twa", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", String(BoatData.TWA*(180/M_PI),2).c_str());
+  });
+  
+  // Dedicated endpoint for Speed Through Water
+  server.on("/stw", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", String(BoatData.STW*MTOKTS,2).c_str());
+  });
+  
   server.on("/weather", HTTP_GET, [](AsyncWebServerRequest *request) {
     log::toAll("weather.html");
     request->send(SPIFFS, "/weather.html", "text/html");
+  });  
+  
+  server.on("/wind", HTTP_GET, [](AsyncWebServerRequest *request) {
+    log::toAll("wind.html");
+    request->send(SPIFFS, "/wind.html", "text/html");
   });
 #endif
 
@@ -601,6 +606,10 @@ void startWebServer() {
         if (p->name() == "boatorient") {
           boatOrientation = atoi(p->value().c_str());
           preferences.putInt("boatOrientation", boatOrientation);
+        }
+        if (p->name() == "RTKorient") {
+          rtkOrientation = atoi(p->value().c_str());
+          preferences.putInt("rtkOrientation", rtkOrientation);
         }
       } // isPost
     } // for params

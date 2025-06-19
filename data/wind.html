@@ -1,0 +1,277 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="highcharts.js"></script>
+  <style>
+    body {
+      min-width: 310px;
+      max-width: 800px;
+      height: auto;
+      margin: 0 auto;
+    }
+    h2 {
+      font-family: Arial;
+      font-size: 2.5rem;
+      text-align: center;
+    }
+    .container {
+      margin-bottom: 20px; /* Space between charts */
+    }
+  </style>
+</head>
+<body>
+  <h2>Wind Data</h2>
+  <div id="chart-apparent-wind" class="container"></div>
+  <div id="chart-stw" class="container"></div>
+  <div id="chart-wind" class="container"></div>
+
+<script>
+  function createMultiSeriesChart(container, title, yAxisTitle, yMin=0, yMax=100, isSTW=false) {
+    return new Highcharts.Chart({
+      chart: { renderTo: container },
+      title: { text: title },
+      series: isSTW ?
+        [{ name: 'STW (knots)', data: [] }] :
+        [
+          { name: title.includes('Apparent') ? 'AWS (knots)' : 'TWS (knots)', data: [] },
+          { name: title.includes('Apparent') ? 'AWA (degrees)' : 'TWA (degrees)', data: [] }
+        ],
+      plotOptions: {
+        line: { animation: false, dataLabels: { enabled: true } }
+      },
+      xAxis: {
+        type: 'datetime',
+        dateTimeLabelFormats: { second: '%H:%M:%S' }
+      },
+      yAxis: {
+        title: { text: yAxisTitle },
+        min: yMin,
+        max: yMax
+      },
+      legend: {
+        enabled: true
+      },
+      credits: { enabled: false }
+    });
+  }
+
+  Highcharts.setOptions({
+    time: {
+        useUTC: false // Use local time instead of UTC
+        // timezone: 'America/New_York' // Uncomment this line if needed
+    }
+  });
+
+  // Create charts with a wider y-axis range to accommodate both wind speed and angle values
+  const apparentWindChart = createMultiSeriesChart('chart-apparent-wind', 'Apparent Wind Data', 'Value', 0, 360);
+  const stwChart = createMultiSeriesChart('chart-stw', 'Speed Through Water', 'Knots', 0, 20, true);
+  const windChart = createMultiSeriesChart('chart-wind', 'True Wind Data', 'Value', 0, 360);
+
+  // Initialize title variables for the charts
+  let currentApparentWindTitle = 'Apparent Wind Data';
+  let currentSTWTitle = 'Speed Through Water';
+  let currentWindTitle = 'True Wind Data';
+
+  function fetchWindData(dataLen) {
+    fetchAWS(dataLen);
+    fetchAWA(dataLen);
+    fetchSTW(dataLen);
+    fetchTWS(dataLen);
+    fetchTWA(dataLen);
+  }
+
+  function fetchSTW(dataLen) {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.readyState == 4) {
+        if (this.status == 200) {
+          var x = (new Date()).getTime(),
+              y = parseFloat(this.responseText);
+          if (stwChart.series[0].data.length > dataLen) {
+            stwChart.series[0].addPoint([x, y], true, true, true);
+          } else {
+            stwChart.series[0].addPoint([x, y], true, false, true);
+          }
+          
+          updateSTWTitle();
+          
+          // Schedule next data fetch
+          setTimeout(() => fetchSTW(dataLen), 3000); // 3-second update interval
+        } else {
+          console.error("Error fetching STW data:", this.statusText);
+          // Retry after a fixed interval on error
+          setTimeout(() => fetchSTW(dataLen), 5000); // Shorter retry interval
+        }
+      }
+    };
+    xhttp.open("GET", baseURL+"/stw", true);
+    xhttp.send();
+  }
+
+  function fetchAWS(dataLen) {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.readyState == 4) {
+        if (this.status == 200) {
+          var x = (new Date()).getTime(),
+              y = parseFloat(this.responseText);
+          if (apparentWindChart.series[0].data.length > dataLen) {
+            apparentWindChart.series[0].addPoint([x, y], true, true, true);
+          } else {
+            apparentWindChart.series[0].addPoint([x, y], true, false, true);
+          }
+          
+          updateApparentWindTitle();
+          
+          // Schedule next data fetch
+          setTimeout(() => fetchAWS(dataLen), 3000); // 3-second update interval
+        } else {
+          console.error("Error fetching AWS data:", this.statusText);
+          // Retry after a fixed interval on error
+          setTimeout(() => fetchAWS(dataLen), 5000); // Shorter retry interval
+        }
+      }
+    };
+    xhttp.open("GET", baseURL+"/aws", true);
+    xhttp.send();
+  }
+
+  function fetchAWA(dataLen) {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.readyState == 4) {
+        if (this.status == 200) {
+          var x = (new Date()).getTime(),
+              y = parseFloat(this.responseText);
+          if (apparentWindChart.series[1].data.length > dataLen) {
+            apparentWindChart.series[1].addPoint([x, y], true, true, true);
+          } else {
+            apparentWindChart.series[1].addPoint([x, y], true, false, true);
+          }
+          
+          updateApparentWindTitle();
+          
+          // Schedule next data fetch
+          setTimeout(() => fetchAWA(dataLen), 3000); // 3-second update interval
+        } else {
+          console.error("Error fetching AWA data:", this.statusText);
+          // Retry after a fixed interval on error
+          setTimeout(() => fetchAWA(dataLen), 5000); // Shorter retry interval
+        }
+      }
+    };
+    xhttp.open("GET", baseURL+"/awa", true);
+    xhttp.send();
+  }
+
+  function fetchTWS(dataLen) {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.readyState == 4) {
+        if (this.status == 200) {
+          var x = (new Date()).getTime(),
+              y = parseFloat(this.responseText);
+          if (windChart.series[0].data.length > dataLen) {
+            windChart.series[0].addPoint([x, y], true, true, true);
+          } else {
+            windChart.series[0].addPoint([x, y], true, false, true);
+          }
+          
+          updateWindTitle();
+          
+          // Schedule next data fetch
+          setTimeout(() => fetchTWS(dataLen), 3000); // 3-second update interval
+        } else {
+          console.error("Error fetching TWS data:", this.statusText);
+          // Retry after a fixed interval on error
+          setTimeout(() => fetchTWS(dataLen), 5000); // Shorter retry interval
+        }
+      }
+    };
+    xhttp.open("GET", baseURL+"/TWS", true);
+    xhttp.send();
+  }
+
+  function fetchTWA(dataLen) {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function() {
+      if (this.readyState == 4) {
+        if (this.status == 200) {
+          var x = (new Date()).getTime(),
+              y = parseFloat(this.responseText);
+          if (windChart.series[1].data.length > dataLen) {
+            windChart.series[1].addPoint([x, y], true, true, true);
+          } else {
+            windChart.series[1].addPoint([x, y], true, false, true);
+          }
+          
+          updateWindTitle();
+          
+          // Schedule next data fetch
+          setTimeout(() => fetchTWA(dataLen), 3000); // 3-second update interval
+        } else {
+          console.error("Error fetching TWA data:", this.statusText);
+          // Retry after a fixed interval on error
+          setTimeout(() => fetchTWA(dataLen), 5000); // Shorter retry interval
+        }
+      }
+    };
+    xhttp.open("GET", baseURL+"/TWA", true);
+    xhttp.send();
+  }
+
+  // Function to update apparent wind chart title
+  function updateApparentWindTitle() {
+    let awsValue = "N/A";
+    let awaValue = "N/A";
+    
+    if (apparentWindChart.series[0].data.length > 0) {
+      awsValue = apparentWindChart.series[0].data[apparentWindChart.series[0].data.length - 1].y.toFixed(1);
+    }
+    
+    if (apparentWindChart.series[1].data.length > 0) {
+      awaValue = apparentWindChart.series[1].data[apparentWindChart.series[1].data.length - 1].y.toFixed(1);
+    }
+    
+    currentApparentWindTitle = `Apparent Wind Data: AWS ${awsValue} knots, AWA ${awaValue}°`;
+    apparentWindChart.setTitle({ text: currentApparentWindTitle });
+  }
+
+  // Function to update true wind chart title
+  function updateWindTitle() {
+    let twsValue = "N/A";
+    let twaValue = "N/A";
+    
+    if (windChart.series[0].data.length > 0) {
+      twsValue = windChart.series[0].data[windChart.series[0].data.length - 1].y.toFixed(1);
+    }
+    
+    if (windChart.series[1].data.length > 0) {
+      twaValue = windChart.series[1].data[windChart.series[1].data.length - 1].y.toFixed(1);
+    }
+    
+    currentWindTitle = `True Wind Data: TWS ${twsValue} knots, TWA ${twaValue}°`;
+    windChart.setTitle({ text: currentWindTitle });
+  }
+
+  // Function to update STW chart title
+  function updateSTWTitle() {
+    let stwValue = "N/A";
+    
+    if (stwChart.series[0].data.length > 0) {
+      stwValue = stwChart.series[0].data[stwChart.series[0].data.length - 1].y.toFixed(1);
+    }
+    
+    currentSTWTitle = `Speed Through Water: ${stwValue} knots`;
+    stwChart.setTitle({ text: currentSTWTitle });
+  }
+
+  //let baseURL = "http://192.168.68.68";
+  let baseURL = ""; // to go to local (ESP32)
+  
+  // Start fetching data for both series with 15 minutes of history (300 data points at 3-second intervals)
+  fetchWindData(300);
+</script>
+</body>
+</html>

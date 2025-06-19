@@ -197,6 +197,7 @@ extern const char* serverName;
 int mastOrientation; // delta between mast compass and boat compass
 int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
 int boatOrientation; // delta between boat compass and magnetic north
+int rtkOrientation;  // delta between boat RTK compass and TRUE north
 float boatCompassTrue;
 float mastCompassDeg;
 float mastDelta;
@@ -428,11 +429,12 @@ void OLEDdataWindDebug() {
   display->printf("N2K:%d ", num_n2k_messages % 10000);
   display->printf("Wind:%d\n", num_wind_messages % 10000);
   display->printf("S/A/R:%2.1f/%2.0f/%2.0f\n", windSpeedKnots, windAngleDegrees,rotateout);
+  //sprintf(prbuf,"S/A/R:%2.1f/%2.0f/%2.0f\n", windSpeedKnots, windAngleDegrees,rotateout);
+  //log::toAll(prbuf);
   //display->printf("Rot:%d\n", mastRotate);
 #ifdef HONEY
   if (honeywellOnToggle) {
-    display->printf("Sensor:%d/%d/%d\n", PotLo, PotValue, PotHi);
-    display->printf("Angle:%d\n", mastAngle[0]);
+    display->printf("Sens:%d/%d/%d:%d\n", PotLo, PotValue, PotHi, mastAngle[0]);
   }
 #endif
 #ifdef BNO_GRV
@@ -541,6 +543,7 @@ if (!ina219.begin()) {
   // Set up NMEA0183 ports and handlers
 #if defined(NMEA0183)
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
+  // send debugging information (currently for RTK compass)
   //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
   //NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, -1);
@@ -655,7 +658,7 @@ if (!ina219.begin()) {
 #ifdef GPX
   initGPX();
 #endif
-#if 0
+#if 1
 // making it async
   if (initWiFi()) {
     startWebServer();
@@ -795,13 +798,13 @@ if (!ina219.begin()) {
     //if (counter++ % 600 == 0) {
     //  log::toAll(timeClient.getFormattedDate());
 #ifdef PICANXXX
-      if (bmeFound) {
-        log::toAll("Temperature = " + String(1.8 * bme.readTemperature() + 32));
-        int press = bme.readPressure();
-        log::toAll("Pressure = " + String(press / 100.0F) + " hPa " + String(press * 0.0002953) + " inHg");
-        //log::toAll("Altitude = " + String(bme.readAltitude(SEALEVELPRESSURE_HPA)*3.28084));
-        log::toAll("Humidity = " + String(bme.readHumidity()) + " %");
-      }
+    if (bmeFound) {
+      log::toAll("Temperature = " + String(1.8 * bme.readTemperature() + 32));
+      int press = bme.readPressure();
+      log::toAll("Pressure = " + String(press / 100.0F) + " hPa " + String(press * 0.0002953) + " inHg");
+      //log::toAll("Altitude = " + String(bme.readAltitude(SEALEVELPRESSURE_HPA)*3.28084));
+      log::toAll("Humidity = " + String(bme.readHumidity()) + " %");
+    }
 #endif
     consLog.flush();
   });
@@ -932,6 +935,7 @@ if (!ina219.begin()) {
 
 #ifdef RTK
 bool rtkDebug = false;
+bool tuning = false;
 const int MAXL = 256;
 char keyBuffer[MAXL], gpsBuffer[MAXL];
 int keyBufIdx, gpsBufIdx;

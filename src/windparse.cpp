@@ -41,9 +41,11 @@ extern float mastCompassDeg, mastDelta;
 #ifdef BNO_GRV
 extern movingAvg mastCompDelta;
 #endif
+/*
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern int sensOrientation;
 extern int boatOrientation;
+*/
 float getCompass(int correction);
 //void log::toAll(String s);
 
@@ -119,7 +121,7 @@ float readAnalogRotationValue() {
     PotHi = PotValue;
     readings["PotHi"] = String(PotHi); // for calibration
     if (PotHi > highset) 
-      log::toAll("WARNING! PotValue greater than highset " + String(PotHi));
+      log::toAll("WARNING! PotValue greater than highset value:" + String(PotHi) + " highset:" + String(highset));
   }
   if (logPot) {
     sprintf(prbuf, " pot low:%d (lowset:%d)/current: %d/high: %d (highset:%d)", PotLo, lowset, PotValue, PotHi, highset);
@@ -140,7 +142,7 @@ float readAnalogRotationValue() {
   mastAngle[0] = map(oldValue, lowset, highset, -portRange, stbdRange)+sensOrientation;
   //sprintf(prbuf,"map: %d %d %d %d %d = %ld\n", oldValue, lowset, highset, -portRange, stbdRange, mastAngle[0]);
   //log::toAll(prbuf);
-  return mastAngle[0]; 
+  return -mastAngle[0]; 
 }
 #endif
 
@@ -485,21 +487,35 @@ void BoatSpeed(const tN2kMsg &N2kMsg) {
   }
 }
 
+// claude
+// Convert apparent wind to true wind
 void calcTrueWind() {
-  // note using meters/sec and radians
-  ////Serial.printf("WS(m): %2.2f WA(r): %2.2f cos: %2.2f\n", WindSensor::windSpeedMeters, WindSensor::windAngleRadians, cos(WindSensor::windAngleRadians));
   double AWS = WindSensor::windSpeedMeters;
-  double AWA = WindSensor::windAngleRadians;
+  double AWA = rotateout;
   double STW = BoatData.STW;
-  BoatData.TWS = sqrt(STW*STW + AWS*AWS - 2 * STW * AWS * cos(WindSensor::windAngleRadians));
+  double HDG = pBD->TrueHeading; // Boat heading in radians
+    
+  // Calculate apparent wind components relative to boat
+  double aw_x = AWS * sin(AWA);  // perpendicular to boat
+  double aw_y = AWS * cos(AWA);  // parallel to boat (forward/aft)
+  // Calculate boat velocity components (boat moves in heading direction)
+  double boat_x = STW * sin(HDG);
+  double boat_y = STW * cos(HDG);
+  // True wind = Apparent wind + Boat velocity
+  double tw_x = aw_x + boat_x;
+  double tw_y = aw_y + boat_y;
+  // Calculate true wind speed and direction
+  BoatData.TWS = sqrt(tw_x * tw_x + tw_y * tw_y);
   if (BoatData.TWS > BoatData.maxTWS) BoatData.maxTWS = BoatData.TWS;
-  // Calculate the component of AWS in the direction of the vessel's motion
-  double AWS_parallel = AWS * sin(AWA);
-  // Calculate the angle between the true wind direction and the vessel's heading
-  BoatData.TWA = acos((STW * cos(AWA) - AWS_parallel) / BoatData.TWS);
+  BoatData.TWA = atan2(tw_x, tw_y);
+  // Normalize direction to 0-2π range
+  if (BoatData.TWA < 0) {
+      BoatData.TWA += 2 * PI;
+  }
+    
 //#define DEBUG
 #ifdef DEBUG
-  //Serial.printf("STW(k): %2.2f TWS(k): %2.2f TWA(d): %2.2f\n", STW*1.943844, TWS*1.943844, TWA*(180/M_PI));
+  Serial.printf("STW(k): %2.2f AWA(k): %2.2f TWS(k): %2.2f TWA(d): %2.2f\n", STW*1.943844, AWA*(180/M_PI), BoatData.TWS*1.943844, BoatData.TWA*(180/M_PI));
 #endif
 }
 

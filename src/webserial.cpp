@@ -15,7 +15,7 @@ extern tNMEA2000 *n2kMain;
 #ifdef HONEY
 // Honeywell sensor
 extern movingAvg honeywellSensor;                // define the moving average object
-extern int mastRotate, rotateout;
+//extern int mastRotate, rotateout;
 extern int PotValue, PotLo, PotHi;
 extern Adafruit_ADS1015 ads;
 extern int adsInit;
@@ -105,7 +105,8 @@ void log::toAll(String s) {
 }
 
 String log::commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv"};
+  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv", 
+"tuning"};
 String words[10];
 
 void lsAPconn() {
@@ -377,8 +378,10 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
       log::toAll("Latitude: " + String(pBD->Latitude));
       log::toAll("Longitude: " + String(pBD->Longitude));
-      log::toAll("Variation: " + String(pBD->Variation));
+      log::toAll("Variation: " + String(pBD->Variation*RADTODEG));
+      // heading is degrees !!!
       log::toAll("Heading: " + String(pBD->TrueHeading));
+      log::toAll("COG: " + String(pBD->COG*RADTODEG));
       log::toAll("SOG: " + String(pBD->SOG));
       log::toAll("0183 fail: " + String(num_0183_fail));
       log::toAll("0183 ok: " + String(num_0183_ok));
@@ -386,12 +389,12 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
 #endif
 #ifdef RTK
-    if (words[i].equals("rtk") && pRTK) {
-      if (!words[++i].isEmpty()) {
+    if (words[i].equals("rtk")) {
+      if (words[++i].equals("debug")) {
         rtkDebug = !rtkDebug;
         log::toAll("rtkDebug: " + String(rtkDebug));
         return;
-      } else {
+      } else if (pRTK) {
         log::toAll("antA:" + String(pRTK->antennaAstat));
         log::toAll("antB: " + String(pRTK->antennaBstat));
         log::toAll("baselen: " + String(pRTK->baseLen));
@@ -410,11 +413,15 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         }
         log::toAll("pitch/roll: " + String(pRTK->pitch) + " " + String(pRTK->roll));
         log::toAll("heading: " + String(pRTK->heading));
+        log::toAll("RTK orientation: " + String(rtkOrientation));
         log::toAll("pAcc/rAcc: " + String(pRTK->pAcc) + " " + String(pRTK->rAcc));
         log::toAll("hAcc: " + String(pRTK->hAcc));
         log::toAll("usedSV: " + String(pRTK->usedSV));      
         return;
       }
+    }
+    if (words[i].equals("tuning")) {
+      tuning = !tuning;
     }
 #endif
 #ifdef PICAN
