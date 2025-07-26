@@ -5,7 +5,7 @@ typedef struct compass_s {
     int calStatus;
     int readingId;
     bool compassOnToggle = true;
-    int orientation = 0;
+    float orientation = 0.0;
     int variation = 0;
     int frequency = 100;
     char hostname[64] = "";

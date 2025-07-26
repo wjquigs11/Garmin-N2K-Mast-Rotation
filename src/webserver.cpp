@@ -18,6 +18,7 @@ extern int PotValue;
 #endif
 int MagLo, MagHi; // ends of range corresponding to PotLo/PotHi and portRange/stbdRange
 // however, they're just used as a calibration sanity check since they will change all the time when the boat is moving
+#if 0 //CLEAN UP! it's in windparse.h
 extern int mastOrientation; // mast compass position relative to boat compass position
 extern int sensOrientation; // Honeywell orientation relative to centerline
 extern int boatOrientation; // boat compass position relative to centerline
@@ -26,7 +27,7 @@ extern float mastRotate, rotateout;
 extern uint8_t compassAddress[];
 extern float mastCompassDeg;
 extern int boatCalStatus;
-
+#endif
 #ifdef PICAN
 extern bool bmeFound;
 extern Adafruit_BME280 bme;
@@ -77,7 +78,7 @@ String getSensorReadings() {
     }
     #endif
     readings["boatHeading"] = String(compass.boatHeading,0);
-    readings["boatTrue"] = String(pBD->TrueHeading,0);
+    readings["boatTrue"] = String(pBD->trueHeading,0);
     //readings["boatCalStatus"] = String(boatCalStatus);
     if (!honeywellOnToggle) // honeywell takes precedence if both are enabled
       readings["rotateout"] = String(rotateout,0);
@@ -92,8 +93,14 @@ String getSensorReadings() {
     readings["humidity"] = String(bme.readHumidity());
   }
 #endif
-  readings["TWA"] = String(BoatData.TWA*(180/M_PI),2);
-  readings["TWS"] = String(BoatData.TWS*1.943844,2);
+  // note that there are also dedicated http endpoints for wind data for the wind.html charts
+  // so this is a bit redundant
+  // here, we're pushing updates via readings[]
+  // but the dedicated endpoints are good for pulling updates on a different schedule
+  // the problem with dedicated endpoints is that it crashes the ESP32 in asynctcp(), so going back to SSE
+  readings["TWA"] = String(BoatData.TWA,2);
+  readings["TWS"] = String(BoatData.TWS*MTOKTS,2);
+  readings["VMG"] = String(BoatData.VMG*MTOKTS,2);
   String jsonString = JSON.stringify(readings);
   //log::toAll(jsonString);
   return jsonString;
@@ -220,12 +227,23 @@ void readPrefs() {
   BoatData.Variation = preferences.getFloat("variation", VARIATION);
 #ifdef GPX
 preferences.putString("GPXlog", "gpxfile");
-preferences.putInt("logFileIdx", 0);
+preferences.putInt("GPXlogFileIdx", 0);
   strcpy(GPXlog, preferences.getString("GPXlog", "gpxfile").c_str());
   log::toAll("gpxFilePrefix = " + String(GPXlog));
   // increment here? maybe!
-  logFileIdx = preferences.getInt("logFileIdx", 0)+1;
-  log::toAll("logFileIdx = " + String(logFileIdx));
+  logFileIdx = preferences.getInt("GPXlogFileIdx", 0)+1;
+  log::toAll("GPXlogFileIdx = " + String(logFileIdx));
+#endif
+#ifdef WINDLOG
+preferences.putString("windLog", windLog);
+// comment out after first run
+preferences.putInt("windLogFileIdx", 0);
+strcpy(windLog, preferences.getString("windLog", windLog).c_str());
+log::toAll("wind log file prefix = " + String(windLog));
+// increment here? maybe
+windLogFileIdx = preferences.getInt("windLogFileIdx", 0);//+1;
+log::toAll("windLogFileIdx = " + String(windLogFileIdx));
+// TBD: consider storing bool windLogging instead of turning it on each time you reboot
 #endif
 }
 
@@ -364,16 +382,21 @@ void startWebServer() {
   
   // Dedicated endpoints for True Wind Speed and True Wind Angle
   server.on("/tws", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", String(BoatData.TWS*1.943844,2).c_str());
+    request->send(200, "text/plain", String(BoatData.TWS*MTOKTS,2).c_str());
   });
   
   server.on("/twa", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", String(BoatData.TWA*(180/M_PI),2).c_str());
+    request->send(200, "text/plain", String(BoatData.TWA,2).c_str());
   });
   
   // Dedicated endpoint for Speed Through Water
   server.on("/stw", HTTP_GET, [](AsyncWebServerRequest *request) {
     request->send(200, "text/plain", String(BoatData.STW*MTOKTS,2).c_str());
+  });
+  
+  // Dedicated endpoint for VMG to wind
+  server.on("/vmg", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", String(BoatData.VMG*MTOKTS,2).c_str());
   });
   
   server.on("/weather", HTTP_GET, [](AsyncWebServerRequest *request) {

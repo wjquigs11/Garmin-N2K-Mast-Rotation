@@ -159,7 +159,7 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
   //log::toAll("RMC lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " COG: " + String(pBD->COG));
   // if we are tuning, output relevant data to compare e.g. paddle log with GPS speed
   if (tuning) {
-    sprintf(prbuf, "STW: %2.2f SOG: %2.2f HDG: %2.2f COG: %2.2f", pBD->STW*MTOKTS, pBD->SOG*MTOKTS, pBD->TrueHeading, pBD->COG*RADTODEG);
+    sprintf(prbuf, "STW: %2.2f SOG: %2.2f HDG: %2.2f COG: %2.2f", pBD->STW*MTOKTS, pBD->SOG*MTOKTS, pBD->trueHeading, pBD->COG*RADTODEG);
     log::toAll(prbuf);
   }
 }
@@ -209,7 +209,7 @@ void HandleGSA(const tNMEA0183Msg &NMEA0183Msg) {
 }
 
 void HandleGGA(const tNMEA0183Msg &NMEA0183Msg) {
-  //Serial.println("GGA");
+  Serial.println("GGA");
   int SatelliteCount;
   if (pBD==0) return;
   if (NMEA0183ParseGGA_nc(NMEA0183Msg,pBD->GPSTime,pBD->Latitude,pBD->Longitude,
@@ -241,7 +241,7 @@ void HandleGGA(const tNMEA0183Msg &NMEA0183Msg) {
       NMEA0183HandlersDebugStream->print("DGPSAge="); NMEA0183HandlersDebugStream->println(pBD->DGPSAge);
       NMEA0183HandlersDebugStream->print("DGPSReferenceStationID="); NMEA0183HandlersDebugStream->println(pBD->DGPSReferenceStationID);
     }
-    //log::toAll("GGA lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " qual: " + String(pBD->GPSQualityIndicator) + " sat: " + String(pBD->SatelliteCount));
+    log::toAll("GGA lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " qual: " + String(pBD->GPSQualityIndicator) + " sat: " + String(pBD->SatelliteCount));
 }
 
 void HandleVTG(const tNMEA0183Msg &NMEA0183Msg) {
@@ -258,7 +258,7 @@ void HandleVTG(const tNMEA0183Msg &NMEA0183Msg) {
 //      n2kMain.SendMsg(N2kMsg);
   }
   if (NMEA0183HandlersDebugStream!=0) {
-    NMEA0183HandlersDebugStream->print("True heading="); NMEA0183HandlersDebugStream->println(pBD->TrueHeading);
+    NMEA0183HandlersDebugStream->print("True heading="); NMEA0183HandlersDebugStream->println(pBD->trueHeading);
   }
 }
 
@@ -350,11 +350,13 @@ bool NMEA0183ParseHPR(const tNMEA0183Msg &NMEA0183Msg, double &UTC, double &Head
 /*
 Quality:
 0 = Fix invalid
-1 = Single point positioning 2 = Differential GPS
+1 = Single point positioning 
+2 = Differential GPS
 4 = RTK fix
 5 = RTK float
 6 = Dead reckoning mode
-7 = Manual input mode (fixed value) 8 = Extra wide-lane
+7 = Manual input mode (fixed value) 
+8 = Extra wide-lane
 9 = SBAS
 */
 
@@ -363,20 +365,38 @@ void HandleHPR(const tNMEA0183Msg &NMEA0183Msg) {
   int QF, SatNo, Station;
   if (pBD==0) return;
   if (NMEA0183ParseHPR(NMEA0183Msg, UTC, Heading, Pitch, Roll, QF, SatNo, Age, Station)) {
-    pBD->TrueHeading=fmod(Heading+rtkOrientation, 359.9);
+    if (Heading > 0.01 && Pitch > 0.01 && Roll > 0.01) {
+      // sensor is currently sending 0 for HPR so only set heading if all are >0
+      pBD->trueHeading=fmod(Heading+rtkOrientation, 359.9);
+      pRTK->GPStime = UTC;
+      pRTK->RTKqual = QF; // quality of fix
+      pRTK->heading = pBD->trueHeading;
+      pRTK->pitch = Pitch;
+      pRTK->roll = Roll;
+      pRTK->usedSV = SatNo;
+    } else {
+      // use magnetic heading
+      pBD->trueHeading=fmod(pBD->magHeading+pBD->Variation,359.9);
+      if (rtkDebug) {
+        //log::toAll("setting heading from compass " + String(pBD->magHeading));
+      }
+    }
   } else if (NMEA0183HandlersDebugStream!=0) { NMEA0183HandlersDebugStream->println("Failed to parse HPR"); }
   if (n2kMain!=0) { 
     tN2kMsg N2kMsg;
     // Vessel Heading (deviation should always be 0 since it's not a magnetic compass)
     // heading arrives in DEGREES convert to radians for n2k
-    SetN2kPGN127250(N2kMsg, 1, pBD->TrueHeading*DEGTORAD, 0, pBD->Variation, N2khr_true);
+    if (rtkDebug) {
+      //log::toAll("sending n2k true heading " + String(pBD->trueHeading) + " variation " + String(pBD->Variation));
+    }
+    SetN2kPGN127250(N2kMsg, 1, pBD->trueHeading*DEGTORAD, 0, pBD->Variation*DEGTORAD, N2khr_true);
     n2kMain->SendMsg(N2kMsg);
     //log::toAll("sending 127250");
     // Attitude
     //setN2kPGN127257();
   }
   if (NMEA0183HandlersDebugStream!=0) {
-    NMEA0183HandlersDebugStream->print("True heading="); NMEA0183HandlersDebugStream->println(pBD->TrueHeading);
+    NMEA0183HandlersDebugStream->print("True heading="); NMEA0183HandlersDebugStream->println(pBD->trueHeading);
     NMEA0183HandlersDebugStream->print("Pitch="); NMEA0183HandlersDebugStream->println(Pitch);
     NMEA0183HandlersDebugStream->print("Roll="); NMEA0183HandlersDebugStream->println(Roll);
     NMEA0183HandlersDebugStream->print("Quality Fix="); NMEA0183HandlersDebugStream->println(QF);

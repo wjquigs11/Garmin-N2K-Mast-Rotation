@@ -36,6 +36,7 @@ extern void loopWifi();
 void startWebServer();
 void writeWiFi(int priority, String ssidNew, String passwdNew);
 
+#if 0
 // mast compass
 int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
 float parseMastHeading(const tN2kMsg &N2kMsg);  // mast heading
@@ -45,6 +46,7 @@ void httpInit(const char* serverName);
 extern const char* serverName;
 extern int mastOrientation;   // delta between mast compass and boat compass
 extern float mastCompassDeg;
+#endif
 #ifdef CMPS14
 extern byte calibrationStatus[];
 #endif
@@ -96,17 +98,21 @@ extern File consLog;
 
 void log::toAll(String s) {
   if (s.endsWith("\n")) s.remove(s.length() - 1);
-  //String t = "[" + String(millis() / 1000) + "]: ";
   Serial.println(s);
-  if (consLog) consLog.println(s);
-  if (serverStarted)
+  String t = "[" + String(millis() / 1000) + "]: " + s;
+  if (consLog) consLog.println(t);
+  //if (serverStarted)
     WebSerial.println(s);
   s = String();
+  t = String();
 }
 
 String log::commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-  "gps", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv", 
+  "gps", "gpsdebug", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv", 
 "tuning"};
+
+const char *RTKqualStr[] = {"invalid", "single point", "differential GPS", "RTK fix", "RTK float", "DR", "manual", "xtra wide", "SBAS"};
+
 String words[10];
 
 void lsAPconn() {
@@ -181,12 +187,11 @@ String doubleToTimeString(double time) {
 
 void WebSerialonMessage(uint8_t *data, size_t len) {
   //Serial.printf("Received %lu bytes from WebSerial: ", len);
-  Serial.write(data, len);
+  //Serial.write(data, len);
   //Serial.println();
-  ////Serial.printf("commandList size is: %d\n", ASIZE(commandList));
-  log::toAll("Received Data...");
+  //Serial.printf("commandList size is: %d\n", ASIZE(commandList));
   String dataS = String((char*)data);
-  // Split the String into an array of Strings using spaces as delimiters
+  log::toAll(dataS);
   int wordCount = 0;
   int startIndex = 0;
   int endIndex = 0;
@@ -199,8 +204,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       startIndex = endIndex + 1;
     }
   }
+  //log::toAll("words: " + String(wordCount));
   for (int i = 0; i < wordCount; i++) {   
-    log::toAll(words[i]); 
+    //log::toAll(String(i) + ":" + words[i]); 
     int j;
     if (words[i].equals("?")) {
       for (j = 1; j < log::ASIZE; j++) {
@@ -220,12 +226,22 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       log::toAll("             uptime: " + String(millis() / 1000));
       log::toAll("           AWS (in): " + String(WindSensor::windSpeedKnots));
       log::toAll("           AWA (in): " + String(WindSensor::windAngleDegrees));
-      WebSerial.flush();
+      //WebSerial.flush();
 #ifdef HONEY
       log::toAll(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
       log::toAll("       Sensor angle: " + String(mastRotate));
       log::toAll("        Correct AWA: " + String(rotateout));
 #endif
+      return;
+    }
+    if (words[i].equals("wind")) {
+      log::toAll("STW: " + String(pBD->STW*MTOKTS));
+      log::toAll("AWS: " + String(WindSensor::windSpeedKnots) + " AWA: " + String(WindSensor::windAngleDegrees));
+      log::toAll("TWS: " + String(pBD->TWS*MTOKTS) + " TWA: " + String(pBD->TWA));
+      log::toAll("HDG: " + String(pBD->trueHeading));
+      log::toAll("TWD:" + String(pBD->TWD));
+      log::toAll("VMG: " + String(pBD->VMG*MTOKTS));
+      log::toAll("maxTWS: " + String(pBD->maxTWS*MTOKTS));
       return;
     }
     if (words[i].equals("potlog")) {
@@ -235,6 +251,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     }
     if (words[i].equals("compass")) {
       log::toAll("           Boat Compass: " + String(compass.boatHeading));
+      log::toAll("              Boat True: " + String(pBD->trueHeading));
+      log::toAll("              Variation: " + String(pBD->Variation*RADTODEG));
+      log::toAll("            Orientation: " + String(boatOrientation));
       log::toAll("      Heading Err Count: " + String(headingErrCount));
 #ifdef BNO_GRV
       log::toAll("               Boat IMU: " + String(compass.boatIMU));
@@ -363,6 +382,12 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           log::toAll("stackTrace: " + String(stackTrace));
           return;
         }
+        if (words[i].startsWith("windlo")) {
+          windLogging = !windLogging;
+          if (!windLogging) startNextWindLog();
+          log::toAll("windLogging: " + String(windLogging));
+          return;
+        }
       } else {
         log::toAll("Display: " + String(displayOnToggle));
 //#ifdef BNO_GRV
@@ -370,6 +395,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 //#endif
         log::toAll("Honeywell: " + String(honeywellOnToggle));
         log::toAll("stackTrace: " + String(stackTrace));
+        log::toAll("Wind Log: " + String(windLogging));
       }
       return;
     }
@@ -380,26 +406,34 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       log::toAll("Longitude: " + String(pBD->Longitude));
       log::toAll("Variation: " + String(pBD->Variation*RADTODEG));
       // heading is degrees !!!
-      log::toAll("Heading: " + String(pBD->TrueHeading));
+      log::toAll("Heading: " + String(pBD->trueHeading));
       log::toAll("COG: " + String(pBD->COG*RADTODEG));
       log::toAll("SOG: " + String(pBD->SOG));
       log::toAll("0183 fail: " + String(num_0183_fail));
       log::toAll("0183 ok: " + String(num_0183_ok));
       return;
     }
+#if 0
+    if (words[i].startsWith("gpsde") && pBD) {
+      gpsDebug = !gpsDebug;
+      log::toAll("rtkDebug: " + String(rtkDebug));
+    }
+#endif
 #endif
 #ifdef RTK
     if (words[i].equals("rtk")) {
-      if (words[++i].equals("debug")) {
+      if (wordCount > 1 && words[++i].equals("debug")) {
         rtkDebug = !rtkDebug;
         log::toAll("rtkDebug: " + String(rtkDebug));
         return;
       } else if (pRTK) {
-        log::toAll("antA:" + String(pRTK->antennaAstat));
-        log::toAll("antB: " + String(pRTK->antennaBstat));
-        log::toAll("baselen: " + String(pRTK->baseLen));
+        //log::toAll("antA:" + String(pRTK->antennaAstat));
+        //log::toAll("antB: " + String(pRTK->antennaBstat));
+        //log::toAll("baselen: " + String(pRTK->baseLen));
         //log::toAll("GPStime: " + String(pRTK->GPStime));
         log::toAll("GPStime: " + doubleToTimeString(pRTK->GPStime));
+        // TBD: fix this. Depends on which GPS sensor
+#if 0
         switch (pRTK->RTKqual) {
           case 0:
             log::toAll("qual: no fix");
@@ -411,11 +445,13 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
             log::toAll("qual: estimate (DR) mode");
             break;
         }
+#endif
+        log::toAll("RTK fix quality: " + String(RTKqualStr[pRTK->RTKqual]));
         log::toAll("pitch/roll: " + String(pRTK->pitch) + " " + String(pRTK->roll));
         log::toAll("heading: " + String(pRTK->heading));
         log::toAll("RTK orientation: " + String(rtkOrientation));
-        log::toAll("pAcc/rAcc: " + String(pRTK->pAcc) + " " + String(pRTK->rAcc));
-        log::toAll("hAcc: " + String(pRTK->hAcc));
+        //log::toAll("pAcc/rAcc: " + String(pRTK->pAcc) + " " + String(pRTK->rAcc));
+        //log::toAll("hAcc: " + String(pRTK->hAcc));
         log::toAll("usedSV: " + String(pRTK->usedSV));      
         return;
       }
@@ -470,6 +506,16 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       return;
     }  
+    if (words[i].equals("variation")) {
+      if (!words[++i].isEmpty()) {
+        pBD->Variation = atof(words[i].c_str())*DEGTORAD;
+        preferences.putFloat("variation", pBD->Variation);
+        log::toAll("variation set to " + String(pBD->Variation));
+      } else {
+        log::toAll("variation: " + String(pBD->Variation));
+      }
+      return;
+    }  
 #ifdef BNO_GRV
     if (words[i].equals("hall")) {
       log::toAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
@@ -479,6 +525,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;
     }
 #endif
+#ifdef PICAN
     if (words[i].equals("gsv")) {
       log::toAll("maxSat: " + String(maxSat));
       int totalSat = 0;
@@ -497,6 +544,13 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     if (words[i].startsWith("gsvtog")) {
       GSVtoggle = !GSVtoggle;
       log::toAll("GSVtoggle: " + String(GSVtoggle));
+      return;
+    }
+#endif
+    if (words[i].startsWith("pass")) {
+      passThrough = !passThrough;
+      log::toAll("pass: " + String(passThrough?"true":"false"));
+      WebSerial.printf("PT: %s\n",passThrough?"true":"false");
       return;
     }
 #ifdef BNO_GRV
@@ -525,24 +579,23 @@ if (words[i].startsWith("freq")) {
   return;
 }
 #endif
-#ifdef BNO_GRV
+#if 1
     if (words[i].startsWith("orient")) {
       if (!words[++i].isEmpty()) {
         int orientation = atoi(words[i].c_str());
         if (words[i].startsWith("+")) {
           words[i].remove(0, 1);
-          orientation = compassParams.orientation + atoi(words[i].c_str());
+          orientation = boatOrientation + atoi(words[i].c_str());
         } else if (words[i].startsWith("-")) {
           words[i].remove(0, 1);
-          orientation = compassParams.orientation - atoi(words[i].c_str());
-        } else // no + or - so set orientation absolute
-          compassParams.orientation = orientation;
+          orientation = boatOrientation - atoi(words[i].c_str());
+        } // no + or - so set orientation absolute
         if (orientation < 0) orientation = 0;
         if (orientation > 359) orientation = 359;
-        compassParams.orientation = orientation;
+        boatOrientation = orientation;
         preferences.putInt("orientation", orientation);
       } 
-      log::toAll("compass orientation %d\n",compassParams.orientation);
+      log::toAll("boat compass orientation: " + String(boatOrientation));
       return;
     }
 #endif

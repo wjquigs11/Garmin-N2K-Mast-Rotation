@@ -8,9 +8,12 @@ struct tBoatData {
   
   // degrees not radians
   // remember to convert if you transmit in n2k
-  double TrueHeading,SOG,COG,Variation,
+  double trueHeading,SOG,COG,Variation,
+         magHeading,
          STW, // meters/sec
-         TWS, TWA, // meters/sec
+         TWS, TWA, // meters/sec and DEGREES NOT RADIANS
+         TWD, // relative to north
+         VMG, // meters/sec (velocity made good to wind)
          maxTWS,
          GPSTime,// Secs since midnight,
          Latitude, Longitude, Altitude, HDOP, GeoidalSeparation, DGPSAge;
@@ -19,12 +22,15 @@ struct tBoatData {
 
 public:
   tBoatData() {
-    TrueHeading=0;
-    SOG=0;
-    COG=0; 
+    trueHeading=-1.0; // init to -1 in case we have no sources for heading
+    SOG=0.0;
+    COG=0.0; 
     Variation=0.0;
+    magHeading=0.0;
     STW=0.0;
     TWS=0.0; TWA=0.0;
+    TWD=0.0;
+    VMG=0.0;
     maxTWS=0.0;
     GPSTime=0;
     Altitude=0;

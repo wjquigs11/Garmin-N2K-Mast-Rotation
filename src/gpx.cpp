@@ -16,7 +16,7 @@ but maybe only for colors
 char logFile[32];
 char logTempName[32];
 File GPXlogFile, WPTlogFile;
-char GPXlog[32];
+char GPXlog[] = "gpxLog";
 int lastLogFile = 0;  // Store the last update time
 #define NEWLOGFILE 600000 // start a new .gpx file every 10 minutes
 int logFileIdx;
@@ -84,7 +84,7 @@ void writeHeadingWaypoint(File &file, double lat, double lon, double speed, floa
 }
 
 void initGPX() {
-    sprintf(logTempName, "/%s%d.log",GPXlog,logFileIdx);
+    sprintf(logTempName, "/%s%03d.log",GPXlog,logFileIdx);
     if (SPIFFS.exists(logTempName)) {
         GPXlogFile = SPIFFS.open(logTempName, "a", false);
     } else {
@@ -98,14 +98,15 @@ void initGPX() {
         log::toAll("failed to open WPT log");
 }
 
+// not used yet...let's see how big the file gets first
 void startNextLog() {
   log::toAll("starting next GPX logfile @" + String(logFileIdx+1) + " time: " + String(millis()));
   // close .gpx file and start a new one
   if (GPXlogFile) {
     ++logFileIdx;
     closeGPXFile(GPXlogFile);
-    sprintf(logTempName, "%s%5d.log",GPXlog,logFileIdx);
-    preferences.putInt("logFileIdx",logFileIdx);
+    sprintf(logTempName, "%s%03d.log",GPXlog,logFileIdx);
+    preferences.putInt("GPXlogFileIdx",logFileIdx);
     GPXlogFile = SPIFFS.open(logTempName, "w", true);
     writeGPXHeader(GPXlogFile);
   } else {

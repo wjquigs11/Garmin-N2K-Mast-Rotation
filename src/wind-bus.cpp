@@ -55,6 +55,8 @@ Adafruit_BME280 bme;
 bool bmeFound;
 #endif
 
+bool passThrough = false;
+
 // display
 // v1 uses Wire for I2C at standard pins, no defs needed?
 //#define OGDISPLAY   // original controller is the only one with I2C display
@@ -194,7 +196,7 @@ float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external sour
 //float getCompass(int correction);      // boat heading from internal ESP32 compass
 void httpInit(const char* serverName);
 extern const char* serverName;
-int mastOrientation; // delta between mast compass and boat compass
+float mastOrientation; // delta between mast compass and boat compass
 int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
 int boatOrientation; // delta between boat compass and magnetic north
 int rtkOrientation;  // delta between boat RTK compass and TRUE north
@@ -235,8 +237,6 @@ void i2cScan(TwoWire Wire);
 void demoIncr();
 float readCompassDelta();
 int compassDifference(int angle1, int angle2);
-
-void calcTrueWind();
 
 void ToggleLed() {
   static bool led_state = false;
@@ -439,15 +439,19 @@ void OLEDdataWindDebug() {
 #endif
 #ifdef BNO_GRV
   if (compass.OnToggle) {
-    //display->printf("M:%.1f B:%.1f T:%0.1f\n", mastCompassDeg, compass.boatIMU, BoatData.TrueHeading);
+    //display->printf("M:%.1f B:%.1f T:%0.1f\n", mastCompassDeg, compass.boatIMU, BoatData.trueHeading);
     display->printf("M:%.1f B:%.1f H:%.0f\n", mastCompassDeg, compass.boatIMU, compass.boatHeading);
     display->printf("Delta:%2d\n", mastAngle[1]);
   }
 #endif
-#ifdef BNO08X
-  display->printf("M:%2.2f\n", compass.boatHeading);
+#ifdef MASTIMU
+  display->printf("Mast:%2.0f/Rot:%2.0f\n",mastCompassDeg,mastRotate);
 #endif
-  display->printf("T:%2.2f\n", pBD->TrueHeading);
+#ifdef BNO08X
+  display->printf("M:%2.0f/T:%2.0f\n", compass.boatHeading,pBD->trueHeading);
+#else
+  display->printf("T:%2.0f\n", pBD->trueHeading);
+#endif
   display->display();
 }
 #endif
@@ -529,7 +533,7 @@ if (!ina219.begin()) {
   if (!(adsInit = ads.begin())) {  // start ADS1015 ADC default 0x4A
     log::toAll("ads sensor not found");
     honeywellOnToggle = false;
-    i2cScan(Wire);
+    //i2cScan(Wire);
 #endif // INA219
   } else {
     honeywellSensor.begin();    // Instantiates the moving average object
@@ -543,11 +547,8 @@ if (!ina219.begin()) {
   // Set up NMEA0183 ports and handlers
 #if defined(NMEA0183)
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
-  // send debugging information (currently for RTK compass)
   //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
-  //NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, -1);
-  //Serial1.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
   NMEA0183_3.SetMessageStream(&NMEA0183serial);
   NMEA0183_3.Open();
   if (!NMEA0183serial) 
@@ -658,7 +659,10 @@ if (!ina219.begin()) {
 #ifdef GPX
   initGPX();
 #endif
-#if 1
+#ifdef WINDLOG
+  initWindLog();
+#endif
+
 // making it async
   if (initWiFi()) {
     startWebServer();
@@ -667,7 +671,6 @@ if (!ina219.begin()) {
   }
   serverStarted=true;
   log::toAll("ESP local MAC addr: " + WiFi.macAddress());
-#endif
 
 #ifdef ICM209
   imu.begin(Wire1, ICM209);
@@ -686,7 +689,7 @@ if (!ina219.begin()) {
     avgYaw.begin();
   } else {
     log::toAll("Failed to find ICM20948");
-    i2cScan(Wire1);
+    //i2cScan(Wire1);
   }
 #endif
 #ifdef ISM330
@@ -704,17 +707,18 @@ if (!ina219.begin()) {
     log::toAll("IMU ISM330 detected.");  
   } else {
     log::toAll("Failed to find IMU ISM330 @ 0x" + String(ISM330,HEX));
-    i2cScan(Wire);
+    //i2cScan(Wire);
   }
 #endif
 #ifdef BNO08X
   log::toAll("BNO08X");
   imuReady = compass.OnToggle = compass.begin();
+  pBD->Variation = VARIATION;
   if (imuReady) {
     //compass.setReports();
   } else {
     log::toAll("BNO08x not found");
-    i2cScan(Wire);
+    //i2cScan(Wire);
   }
 #endif
 #ifdef BNO_GRV
@@ -722,7 +726,9 @@ if (!ina219.begin()) {
 #endif
 
   ElegantOTA.begin(&server);
+  WebSerial.setBuffer(128);
   WebSerial.begin(&server);
+  WebSerial.setBuffer(100);
   WebSerial.onMessage(WebSerialonMessage);
 
 #if 0
@@ -812,12 +818,19 @@ if (!ina219.begin()) {
 #ifdef GPX
   static int trackPtCounter=0;
   app.onRepeat(GPXTIMER, []() {
-    writeTrackPoint(GPXlogFile, pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->TrueHeading, pBD->GPSTime);
+    writeTrackPoint(GPXlogFile, pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->trueHeading, pBD->GPSTime);
     if (trackPtCounter++ % 500 == 0) {
-      writeHeadingWaypoint(WPTlogFile, pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->TrueHeading, pBD->GPSTime);
-      sprintf(prbuf, "lat: %3.4lf lon: %3.4f SOG: %2.2f Heading: %2.2f", pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->TrueHeading);
+      writeHeadingWaypoint(WPTlogFile, pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->trueHeading, pBD->GPSTime);
+      sprintf(prbuf, "lat: %3.4lf lon: %3.4f SOG: %2.2f Heading: %2.2f", pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->trueHeading);
       log::toAll(prbuf);
     }
+  });
+#endif
+
+#ifdef WINDLOG
+  app.onRepeat(WINDTIMER, []() {
+    if (windLogging)
+      writeWindPoint(windLogFile, millis()/1000, rotateout, WindSensor::windSpeedKnots, pBD->STW, pBD->TWA, pBD->TWS, pBD->TWD, pBD->VMG, pBD->trueHeading);
   });
 #endif
 
@@ -862,7 +875,8 @@ if (!ina219.begin()) {
         headingErrCount++;
         if (headingErrCount % 500 == 0)
           log::toAll("heading error count: " + String(headingErrCount) + "ret val: " + String(err));
-      }
+      } else
+        pBD->magHeading = compass.boatHeading;
     });
   }
   // check in for new heading 100 msecs = 10Hz
@@ -877,25 +891,25 @@ if (!ina219.begin()) {
         if (corrMastComp > 359) corrMastComp -= 360;
         if (corrMastComp < 0) corrMastComp += 360;
         Serial.println(corrMastComp);
-        Serial.print(">boat:");
+        Serial.print(">boatIMU:");
         Serial.println(compass.boatIMU);
         Serial.print(">delta:");
         Serial.println(mastDelta);  
-        Serial.printf(">boat:%0.2f\n", compass.boatHeading);
-        Serial.printf(">true:%0.2f\n",BoatData.TrueHeading); 
+        Serial.printf(">boatCOMP:%0.2f\n", compass.boatHeading);
+        Serial.printf(">true:%0.2f\n",BoatData.trueHeading); 
         Serial.printf(">calstat:%d\n", compass.boatCalStatus);
         Serial.printf(">acc:%0.2f\n", compass.boatAccuracy*RADTODEG);
     }
 #if defined(N2K) && !defined(RTK)
     // transmit heading 
+    pBD->trueHeading = compass.boatHeading + pBD->Variation;
     if (n2kMainOpen) {
-      pBD->TrueHeading = compass.boatHeading + VARIATION;
       SetN2kPGN127250(correctN2kMsg, 0xFF, (double)compass.boatHeading*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
       if (!n2kMain->SendMsg(correctN2kMsg)) {
         //log::toAll("Failed to send mag heading from compass reaction");
         num_wind_other_fail++;
       }
-      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)pBD->TrueHeading*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_true);
+      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)pBD->trueHeading*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_true);
       if (!n2kMain->SendMsg(correctN2kMsg)) {
         //log::toAll("Failed to send true heading from compass reaction");
         num_wind_other_fail++;
@@ -922,13 +936,16 @@ if (!ina219.begin()) {
   });
   #endif // DISPLAYON
 
-#if 0
-  app.onRepeat(2000, []() {
-    calcTrueWind();
+#if 1
+  app.onRepeat(500, []() {
+    calcTrueWindAngle();
+    /*
     log::toAll("STW: " + String(pBD->STW*MTOKTS));
     log::toAll("AWS: " + String(WindSensor::windSpeedKnots) + " AWA: " + String(WindSensor::windAngleDegrees));
-    log::toAll("TWS: " + String(pBD->TWS) + " TWA: " + String(pBD->TWA*RADTODEG));
+    log::toAll("TWS: " + String(pBD->TWS*MTOKTS) + " TWA: " + String(pBD->TWA));
+    log::toAll("VMG: " + String(pBD->VMG*MTOKTS));
     log::toAll("maxTWS: " + String(pBD->maxTWS*MTOKTS));
+    */
   });
 #endif
 }
@@ -987,7 +1004,7 @@ void demoInit() {
 #ifdef HONEY
   PotValue = 50;
 #endif
-  BoatData.TrueHeading = 131;
+  BoatData.trueHeading = 131;
 }
 
 void demoIncr() {
@@ -1001,8 +1018,8 @@ void demoIncr() {
   if (mastCompassDeg < 0) mastCompassDeg = 200;
   compass.boatIMU -= 9;
   if (compass.boatIMU < 0) compass.boatIMU = 220;
-  BoatData.TrueHeading -= 10;
-  if (BoatData.TrueHeading < 0) BoatData.TrueHeading = 231;
+  BoatData.trueHeading -= 10;
+  if (BoatData.trueHeading < 0) BoatData.trueHeading = 231;
   mastAngle[0] = mastAngle[1] = mastCompassDeg - compass.boatIMU;
 #ifdef HONEY
   PotValue -= 5;

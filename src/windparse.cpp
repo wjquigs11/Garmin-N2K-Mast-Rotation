@@ -38,6 +38,7 @@ bool logPot = false;
 extern int portRange, stbdRange; // NB BOTH are positive (from web calibration)
 extern bool honeywellOnToggle;
 extern float mastCompassDeg, mastDelta;
+extern bool passThru;
 #ifdef BNO_GRV
 extern movingAvg mastCompDelta;
 #endif
@@ -154,16 +155,14 @@ int compassDifference(int angle1, int angle2) {
 }
 
 float readCompassDelta() {
-#ifdef BNO_GRV
   if (imuReady) {
     float mastDelta = compassDifference(compass.boatIMU, mastCompassDeg+mastOrientation);
     //log::toAll("readCompassDelta m: " + String(mastCompassDeg+mastOrientation) + " b: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
     mastAngle[1] = mastDelta;
-    mastCompDelta.reading((int)(mastDelta*100)); // moving average
+    //reading((int)(mastDelta*100)); // moving average
     return mastDelta;
   }
   //Serial.println("compass not ready");
-#endif
   return -1;
 }
 
@@ -210,18 +209,15 @@ void WindSpeed() {
       log::toAll("new orientation: " + String(mastDelta));
     }
 #endif
+#ifdef MASTIMU
+    //mastRotate = mastOrientation; // read from Rudder PGN on Wind bus from mast IMU
+    mastRotate = readCompassDelta();
+#endif
 #ifdef XMITRUDDER
     // shift from -portRange..stbdRange to 0..x
     SetN2kPGN127245(correctN2kMsg, (mastRotate+portRange)*DEGTORAD, 0, N2kRDO_NoDirectionOrder, 0);
     n2kMain->SendMsg(correctN2kMsg);
 #endif
-  }
-#endif
-#ifdef BNO_GRV
-  if (compass.OnToggle) {
-    // only use compass if Honeywell not enabled
-    if (!honeywellOnToggle)
-      mastRotate = readCompassDelta();
   }
 #endif
   #ifdef DEBUG
@@ -300,8 +296,8 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
   tN2kHeadingReference headingRef;
   if (ParseN2kPGN127250(N2kMsg, SID, heading, deviation, variation, headingRef)) {
     //log::toAll("wind heading ref " + String(headingRef));
-    mastCompassDeg = heading * RADTODEG;
-    readCompassDelta();
+    mastCompassDeg = heading * RADTODEG + BoatData.Variation;
+    mastRotate = compassDifference(mastCompassDeg, BoatData.trueHeading);
     // NOTE we do NOT transmit boat heading on N2K here; only from reaction in wind-bus.cpp, to avoid flooding bus
   } else {
     // no boat compass, use external heading info
@@ -318,15 +314,16 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
     //} 
     // !compass.OnToggle (no internal compass), so set boat heading here
     // TBD: check if we're getting true or magnetic
-    //BoatData.TrueHeading = heading;
+    //BoatData.trueHeading = heading;
     //BoatData.Variation = variation;
   } // else
 }
 #endif
 
+//#define DEBUG
 #ifdef RS485CAN
 extern mcp2515_can n2kWind;
-extern tN2kMsg correctN2kMsg;
+//extern tN2kMsg correctN2kMsg;
 int windCANsrc = -1;
 //extern mcp2515_can n2kWind;
 byte cdata[MAX_DATA_SIZE] = {0};
@@ -350,67 +347,90 @@ void parseWindCAN() {
   SID = cdata[0];
 #ifdef DEBUG
   Serial.printf("CAN PGN %d SRC %d SID %d len %d\n", PGN, SRC, SID, len);
+  for (int i=0; i<len; i++)
+    Serial.printf("%x:%d ",cdata[i],cdata[i]);
+  Serial.println();
 #endif
-  switch (PGN) {
-    case 130306: { 
-      if (windCANsrc == -1) { // this is our first wind packet, track the source
-        windCANsrc = SRC;
-        log::toAll("got first wind from CAN " + String(windCANsrc));
-      }
-      WindSensor::windSpeedMeters = ((cdata[2] << 8) | cdata[1]) / 100.0;
-      WindSensor::windAngleRadians = ((cdata[4] << 8) | cdata[3]) / 10000.0;
-      wRef = (tN2kWindReference)(cdata[5]&0x07);
-#ifdef DEBUGCAN
-      Serial.printf("CAN parsed wind SID %d Speed %0.2f Angle %0.4f (%0.4f) ref %d (%x)\n", SID, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, WindSensor::windAngleRadians*(180/M_PI), wRef, cdata[5]);
-        for (int i=0; i<8; i++)
-          Serial.printf("%02X ", cdata[i]);
-        Serial.println();
-#endif
-      if (time_since_last_mastcomp_rx > 5000) {
-        // if mast messages timeout, send unchanged wind PGN
-        SetN2kPGN130306(correctN2kMsg, 0xFF, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, N2kWind_Apparent); 
-        if (n2kMain->SendMsg(correctN2kMsg)) {
-          //Serial.printf("sent n2k wind %0.2f", rotateout);
-        } else {
-          //Serial.println("Failed to send wind from parseWindCAN()");  
-          num_wind_other_fail++;
+  if (!passThrough)
+    switch (PGN) {
+      case 130306: { 
+        if (windCANsrc == -1) { // this is our first wind packet, track the source
+          windCANsrc = SRC;
+          log::toAll("got first wind from CAN " + String(windCANsrc));
         }
-      } else 
-      WindSpeed();
-      break;
-    } 
-    case 127250: {
-      mastCompCounter(); // for timeout if it gets disconnected
-      float mastCompassRad = ((cdata[2] << 8) | cdata[1]) / 10000.0;
-      // deviation 4|3, variation 6|5
-      hRef = (tN2kHeadingReference)(cdata[7]&0x03);
-      if (hRef == N2khr_Unavailable) { // expected from mast IMU
-            mastCompassDeg = mastCompassRad * RADTODEG;
+        WindSensor::windSpeedMeters = ((cdata[2] << 8) | cdata[1]) / 100.0;
+        WindSensor::windAngleRadians = ((cdata[4] << 8) | cdata[3]) / 10000.0;
+        wRef = (tN2kWindReference)(cdata[5]&0x07);
+  #ifdef DEBUGCAN
+        Serial.printf("CAN parsed wind SID %d Speed %0.2f Angle %0.4f (%0.4f) ref %d (%x)\n", SID, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, WindSensor::windAngleRadians*(180/M_PI), wRef, cdata[5]);
+          for (int i=0; i<8; i++)
+            Serial.printf("%02X ", cdata[i]);
+          Serial.println();
+  #endif
+        if (time_since_last_mastcomp_rx > 5000) {
+          // if mast messages timeout, send unchanged wind PGN
+          SetN2kPGN130306(correctN2kMsg, 0xFF, WindSensor::windSpeedMeters, WindSensor::windAngleRadians, N2kWind_Apparent); 
+          if (n2kMain->SendMsg(correctN2kMsg)) {
+            //Serial.printf("sent n2k wind %0.2f", rotateout);
+          } else {
+            //Serial.println("Failed to send wind from parseWindCAN()");  
+            num_wind_other_fail++;
+          }
+        } else 
+        WindSpeed();
+        //break;
+        return; // so as not to pass-through this packet
+      } 
+      case 127250: {
+        mastCompCounter(); // for timeout if it gets disconnected
+        float mastCompassRad = ((cdata[2] << 8) | cdata[1]) / 10000.0;
+        // deviation 4|3, variation 6|5
+        hRef = (tN2kHeadingReference)(cdata[7]&0x03);
+        /*
+        if (hRef == N2khr_umavailable) { // expected from mast IMU
+              mastCompassDeg = mastCompassRad * RADTODEG;
+        }
+        // hack! if hRef == N2khr_true that means mast IMU is aligned with Hall sensor
+        if (hRef == N2khr_true) {
+          mastCompassDeg = mastCompassRad * RADTODEG;
+          log::toAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
+          mastOrientation = 0;
+          mastOrientation = mastDelta = readCompassDelta();
+        }
+        */
+        if (hRef == N2khr_magnetic) {
+          mastCompassDeg = mastCompassRad * RADTODEG + BoatData.Variation;
+          mastRotate = compassDifference(mastCompassDeg, BoatData.trueHeading);
+          sprintf(prbuf,"compass heading, mast(t): %2.2f boat(t): %2.2f cdelta: %2.2f",mastCompassDeg, BoatData.trueHeading, mastRotate);
+          log::toAll(prbuf);
+        }
+  #ifdef DEBUG
+        Serial.printf("CAN parsed heading SID %d heading %0.4f ref %d (%x)\n", SID, mastCompassDeg, hRef, cdata[5]);
+  #endif
+        //break;  // don't forward heading
+        return;
       }
-      // hack! if hRef == N2khr_true that means mast IMU is aligned with Hall sensor
-      if (hRef == N2khr_true) {
-        mastCompassDeg = mastCompassRad * RADTODEG;
-        log::toAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
-        mastOrientation = 0;
-        mastOrientation = mastDelta = readCompassDelta();
+      case 127245: {
+        // Parse rudder data manually from CAN bus
+        // Extract rudder position directly from bytes 5-6 (little-endian)
+        int16_t rawValue = (cdata[5] << 8) | cdata[4];
+        mastOrientation = rawValue * 0.0001 * RADTODEG;
+        if (compass.teleplot) Serial.printf(">gyro:%0.2f\n",mastOrientation);
+          else log::toAll("mast/rudder angle: " + String(mastOrientation,2));
+        //break;
+        return;
       }
-      if (hRef == N2khr_magnetic) {
-        // do NOT set mastCompassDeg for magnetic heading since this will be referenced to mag north
-        float mastCompassDegMag = mastCompassRad * RADTODEG + BoatData.Variation;
-        //logToAll("got compass heading, mast: " + String(mastCompassDegMag) + " boat: " + String(BoatData.TrueHeading) + String(compassDifference(mastCompassDegMag, BoatData.TrueHeading)));
-      }
-#ifdef DEBUGXXX
-      Serial.printf("CAN parsed heading SID %d heading %0.4f ref %d (%x)\n", SID, mastCompassDeg, hRef, cdata[5]);
-#endif
-      break;  // don't forward heading
-    }
-    default: { 
+    } // switch(PGN)
+    // switch should return for above PGNs
+    // if passThrough = true, we will come here
+    //default: { 
       num_wind_other++; 
       bool PGNfound=false;
       for (int i=0; i<otherPGNindex; i++) {
         if (otherPGN[i] == PGN) {
           PGNfound=true;
-          break;
+          //break;
+          return;
         }
       }
       if (!PGNfound) {
@@ -432,48 +452,25 @@ void parseWindCAN() {
         if (num_wind_other_fail % 100 == 1)
           log::toAll("Failed to pass through from wind to main PGN: " + String(PGN));  
       }
-      break;
-    }
-  }
+      //break;
+    //}
 }
-
-#if 0
-      // everything that's not from wind source, pass through to main bus
-      // done for Paul because he has depth transducer on same branch as wind
-      if (SRC != windCANsrc) {
-        correctN2kMsg.SetPGN(PGN);
-        correctN2kMsg.Priority=2;
-        correctN2kMsg.AddByte(SID);
-        for (int i=1; i<len; i++) {
-          correctN2kMsg.AddByte(cdata[i]);
-        }
-        if (n2kMain->SendMsg(correctN2kMsg)) {
-          num_wind_other_ok++;
-          //Serial.printf("forward N2k OK %d\n", PGN);
-        } else {
-          num_wind_other_fail++;
-          if (num_wind_other_fail < 10)
-            log::toAll("Failed to forward packet from wind to main PGN: " + String(PGN));  
-        }
-        // temporary: check to see if we can parse the message we just created
-        if (PGN == 128259) {
-          double watref, gndref;
-          tN2kSpeedWaterReferenceType type;
-          if (ParseN2kPGN128259(correctN2kMsg, SID, watref, gndref, type))
-            Serial.printf("parsed speed PGN %d that we created SID %d watref %0.2f gndref %0.2f\n", PGN, SID, watref, gndref);
-          else Serial.printf("failed to parse speed PGN %d that we created\n", PGN);
-        }
-#if 0
-        if (PGN == 127250) {
-          double heading, deviation, variation;
-          tN2kHeadingReference headingRef;
-          //if (ParseN2kPGN127250(correctN2kMsg, SID, heading, deviation, variation, headingRef))
-          //  Serial.printf("parsed heading PGN %d that we created\n", PGN);
-          //else Serial.printf("failed to parse heading PGN %d that we created\n", PGN);
-        }
-#endif
 #endif
 
+#if 0
+// keep this code around in case I want to use the library by building a message from raw data and parsing it
+      correctN2kMsg.SetPGN(127245L);
+      correctN2kMsg.Priority=2;
+      for (int i=0; i<len; i++)
+        correctN2kMsg.Data[i]=cdata[i];
+      correctN2kMsg.DataLen = len;
+      double RudderPosition;
+      unsigned char Instance;
+      tN2kRudderDirectionOrder RudderDirectionOrder;
+      double AngleOrder;
+      if (ParseN2kPGN127245(correctN2kMsg, RudderPosition, Instance, RudderDirectionOrder, AngleOrder))
+        log::toAll("rudder angle: " + String(RudderPosition*RADTODEG));
+      else log::toAll("failed to parse rudder angle");
 #endif
 
 // process boat speed to update STW for true wind calc
@@ -487,13 +484,12 @@ void BoatSpeed(const tN2kMsg &N2kMsg) {
   }
 }
 
-// claude
-// Convert apparent wind to true wind
-void calcTrueWind() {
+// Convert apparent wind to true wind (compass i.e. TWD)
+void calcTrueWindDirection() {
   double AWS = WindSensor::windSpeedMeters;
   double AWA = rotateout;
   double STW = BoatData.STW;
-  double HDG = pBD->TrueHeading; // Boat heading in radians
+  double HDG = pBD->trueHeading; // Boat heading in radians (DEGREES, MUST CONVERT!)
     
   // Calculate apparent wind components relative to boat
   double aw_x = AWS * sin(AWA);  // perpendicular to boat
@@ -512,13 +508,109 @@ void calcTrueWind() {
   if (BoatData.TWA < 0) {
       BoatData.TWA += 2 * PI;
   }
-    
 //#define DEBUG
 #ifdef DEBUG
   Serial.printf("STW(k): %2.2f AWA(k): %2.2f TWS(k): %2.2f TWA(d): %2.2f\n", STW*1.943844, AWA*(180/M_PI), BoatData.TWS*1.943844, BoatData.TWA*(180/M_PI));
 #endif
 }
 
+// calculate true wind angle (TWA) relative to the bow
+void calcTrueWindAngle() {
+  // Get inputs
+  double AWS = WindSensor::windSpeedMeters;  // Apparent Wind Speed in m/s
+  double AWA = rotateout;                    // Apparent Wind Angle in degrees
+  double STW = BoatData.STW;                 // Speed Through Water in m/s
+  
+  // Handle edge cases
+  if (AWS < 0.01) {  // Very low wind speed
+    // With no apparent wind, true wind is opposite to boat motion
+    BoatData.TWS = STW;
+    BoatData.TWA = 180.0;
+    
+    // Always update maxTWS if TWS is greater
+    if (BoatData.TWS > BoatData.maxTWS) {
+      BoatData.maxTWS = BoatData.TWS;
+    }
+    
+    // Calculate VMG - in this case, it's negative STW (sailing directly away from wind)
+    BoatData.VMG = -STW;
+    return;
+  }
+  
+  if (STW < 0.01) {  // Very low boat speed
+    // With no boat speed, apparent wind equals true wind
+    BoatData.TWS = AWS;
+    BoatData.TWA = AWA;
+    
+    // Always update maxTWS if TWS is greater
+    if (BoatData.TWS > BoatData.maxTWS) {
+      BoatData.maxTWS = BoatData.TWS;
+    }
+    
+    // Still normalize the angle
+    if (BoatData.TWA < 0) {
+      BoatData.TWA += 360;
+    } else if (BoatData.TWA >= 360) {
+      BoatData.TWA -= 360;
+    }
+    
+    // With no boat speed, VMG is zero
+    BoatData.VMG = 0.0;
+    return;
+  }
+  
+  // Convert AWA from degrees to radians for trigonometric calculations
+  double AWA_rad = AWA * DEGTORAD;
+  
+  // Calculate apparent wind components in boat-relative frame
+  double aw_x = AWS * sin(AWA_rad);  // positive to starboard
+  double aw_y = AWS * cos(AWA_rad);  // positive forward
+  
+  // Calculate true wind components by adding boat velocity
+  double tw_x = aw_x;                // no change in x-component
+  double tw_y = aw_y - STW;          // subtract boat speed from y-component
+  
+  // Calculate true wind speed
+  BoatData.TWS = sqrt(tw_x * tw_x + tw_y * tw_y);
+  
+  // Always update maxTWS if TWS is greater or if maxTWS is near zero
+  if (BoatData.TWS > BoatData.maxTWS || (BoatData.maxTWS < 0.001 && BoatData.TWS > 0.001)) {
+    BoatData.maxTWS = BoatData.TWS;
+  }
+  
+  // Calculate true wind angle
+  double wind_angle_rad = atan2(tw_x, tw_y);
+  
+  // Convert TWA from radians to degrees
+  BoatData.TWA = wind_angle_rad * RADTODEG;
+  
+  // Normalize TWA to 0-360 degrees range
+  if (BoatData.TWA < 0) {
+    BoatData.TWA += 360;
+  } else if (BoatData.TWA >= 360) {
+    BoatData.TWA -= 360;
+  }
+  
+  // Calculate VMG (Velocity Made Good) to wind
+  // Use the minimum angle between TWA and 360-TWA to get the absolute angle to wind
+  double abs_angle_to_wind = min(BoatData.TWA, 360.0 - BoatData.TWA);
+  
+  // Calculate VMG: positive when sailing toward wind, negative when sailing away
+  if (BoatData.TWA > 90.0 && BoatData.TWA < 270.0) {
+    // Sailing away from wind (downwind)
+    BoatData.VMG = -STW * cos((180.0 - abs_angle_to_wind) * DEGTORAD);
+  } else {
+    // Sailing toward wind (upwind)
+    BoatData.VMG = STW * cos(abs_angle_to_wind * DEGTORAD);
+  }
 
-
-
+  // Calculate TWD if we have compass heading (true)
+  BoatData.TWD = BoatData.TWA + pBD->trueHeading;
+  
+  // Normalize TWD to 0-360 degrees range
+  if (BoatData.TWD < 0) {
+    BoatData.TWD += 360;
+  } else if (BoatData.TWD >= 360) {
+    BoatData.TWD -= 360;
+  }
+}

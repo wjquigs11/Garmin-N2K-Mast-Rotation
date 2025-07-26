@@ -55,6 +55,7 @@
 // voltage sensor 5:1 so 12v measures at 2.4 volts so use ADC_ATTEN_DB_12
 #endif
 extern bool logPot;
+extern bool passThrough;
 
 class RotationSensor {
   public:
@@ -89,6 +90,9 @@ double ReadWindSpeed();
 int readWindAngleInput();
 void SendN2kWind(int);
 
+void calcTrueWindDirection(); // absolute
+void calcTrueWindAngle(); // relative to bow
+
 #define WindUpdatePeriod 500
 
 extern Preferences preferences;
@@ -119,7 +123,7 @@ extern char prbuf[PRBUF];
 #define highset 244
 extern int mastAngle[];
 
-extern int mastOrientation; // mast compass position relative to boat compass position
+extern float mastOrientation; // mast compass position relative to boat compass position
 extern int sensOrientation; // Honeywell orientation relative to centerline
 extern int boatOrientation; // boat compass position relative to centerline
 extern int rtkOrientation;
@@ -132,9 +136,11 @@ extern int boatCalStatus;
 #define MAXPGN 64
 #define MAX_NETS 4
 
+#ifdef PICAN
 #define SEALEVELPRESSURE_HPA (1013.25)
 extern Adafruit_BME280 bme;
 extern bool bmeFound;
+#endif
 
 #define MAXSAT 140 // no idea how many satellites there are 
 extern struct tGSV GSVseen[]; 
@@ -170,7 +176,23 @@ void initGPX();
 #define GPXTIMER 5000
 #endif
 
+#ifdef WINDLOG
+extern bool windLogging;
+extern File windLogFile;
+extern int windLogFileIdx;
+extern char windLog[];
+#define WINDTIMER 1000
+void writeWindPoint(File &file, unsigned long timestamp, float awa, double aws, double stw, double twa, double tws, double twd, double vmg, double heading);
+void initWindLog();
+void startNextWindLog();
+#endif
+
 #ifdef INA219
 #include <Adafruit_INA219.h>
 extern Adafruit_INA219 ina219;
 #endif
+
+#ifdef BNO08X000
+extern BNO085Compass compass;
+#endif
+

@@ -98,6 +98,13 @@ bool readWiFi() {
   }
   int i=0;
   while(file.available()) {
+    // Peek at the first character to check if it's a comment
+    int nextChar = file.peek();
+    if (nextChar == ';') {
+      // Skip comment line
+      file.readStringUntil('\n');
+      continue;
+    }
     ssid[i] = file.readStringUntil(':');
     pass[i] = file.readStringUntil(':');
     ip[i] = file.readStringUntil(':');

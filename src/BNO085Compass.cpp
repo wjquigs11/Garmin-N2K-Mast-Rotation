@@ -31,10 +31,10 @@
 
     // #ifdef BNO_GRV, enable SH2_ARVR_STABILIZED_GRV (game rotation vector), as well as another report set by the user, 
     // usually SH2_GEOMAGNETIC_ROTATION_VECTOR (0x09) to get a compass heading
-    // note that GRV is requested 10x the rate of the other (compass) report
+    // note that GRV is requested 10x the rate of the other (compass) report. (NOT CURRENTLY)
     bool BNO085Compass::setReports() {
         log::toAll("Setting compass report to: 0x" + String(reportType,HEX));
-        if (!bno08x.enableReport(reportType, frequency*10000)) {
+        if (!bno08x.enableReport(reportType, frequency*1000)) {
             log::toAll("could not set report type: " + String(reportType,HEX));  
             return false;
         }
@@ -62,10 +62,13 @@
         }
 
         if (!bno08x.getSensorEvent(&sensorValue)) {
-            return -3;
+            return boatHeading;
+            // not ready just return last heading
+            //return -3;
         }
 
         numReports[sensorValue.sensorId]++;
+        totalReports++;
         switch (sensorValue.sensorId) {
             case SH2_GAME_ROTATION_VECTOR:
             case SH2_GEOMAGNETIC_ROTATION_VECTOR:
