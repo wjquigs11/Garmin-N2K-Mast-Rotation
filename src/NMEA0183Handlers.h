@@ -14,6 +14,14 @@ void DebugNMEA0183Handlers(Stream* _stream);
 
 void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg);
 
+struct tNMEA0183Handler {
+  const char *Code;
+  void (*Handler)(const tNMEA0183Msg &NMEA0183Msg); 
+  int numMessages;
+};
+
+extern tNMEA0183Handler NMEA0183Handlers[];
+
 #endif
 #endif
 

@@ -1,27 +1,26 @@
+
 var container = document.getElementById('honeyrot-card');
 //var size = Math.min(container.offsetWidth, container.offsetHeight);
 var size = container.offsetWidth;
 
-var gaugeHoneyRot = new RadialGauge({
+var gaugehoneyrot = new RadialGauge({
   renderTo: 'gauge-honeyrot',
   width: size,
   height: size,
 //    units: "degrees",
-  minValue: -50,
-  maxValue: 50,
-//  startAngle: 310,
-//  ticksAngle: 100,
-  startAngle: 100,
-  ticksAngle: -100,
+  minValue: -90,
+  maxValue: 90,
+  startAngle: 90,
+  ticksAngle: 180,
 //    colorValueBoxRect: "#049faa",
 //    colorValueBoxRectEnd: "#049faa",
 //    colorValueBoxBackground: "#f1fbfc",
   valueInt: 2,
   valueBox: true,
   majorTicks: [
-      "-50",
+      "-90",
       "0",
-      "50"
+      "90"
   ],
   minorTicks: 4,
   strokeTicks: true,
@@ -45,5 +44,5 @@ var gaugeHoneyRot = new RadialGauge({
   needleCircleInner: false,
   animationDuration: 10,
   animationRule: "linear",
-  title: "Honeywell Sensor"
+  title: "Honeywell"
 }).draw();
