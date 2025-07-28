@@ -1,0 +1,5 @@
+;SSID:password:IP:gateway
+dmlgooIoT:holachica24::
+Qspot:holachica24::
+NEWspot:holachica24::
+Hedgehog:9550d35cfa3::
