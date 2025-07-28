@@ -25,6 +25,7 @@
                 <a href="/compass">Compass</a>
                 <a href="/update">Update</a>
                 <a href="/host">Host info</a>
+                <a href="/weather">Weather</a>
             </div>
             <a href="javascript:void(0);" class="icon" onclick="menuFun()">
                 <i class="fa fa-bars"></i>
@@ -58,16 +59,22 @@
                 </div>
                 <div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Boat Orientation</p>
+                    <p class="reading"><span id="boatIMU"></span></p>
+                </div>
+                <div class="card">
+                    <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading</p>
                     <p class="reading"><span id="boatHeading"></span></p>
                 </div>
-                <!--div class="card">
-                    <p class="card-title"><i style="color:#059e8a;"></i>Boat Heading (RPI)</p>
-                    <p class="reading"><span id="boatHeadingPi"></span></p>
-                </div-->
                 <div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Heading (True)</p>
                     <p class="reading"><span id="boatTrue"></span></p>
-                    <img id="calibration" src="red.png" width="20" height="20" alt="calibration">
+                    <!--img id="calibration" src="red.png" width="20" height="20" alt="calibration"-->
+                </div>
+                <div>
+                    <p class="reading">temp: <span id="temp"></span></p>
+                    <p class="reading">press: <span id="pressure"></span></p>
+                    <p class="reading">hum: <span id="humidity"></span></p>
+                </div>
                 </div>
                 <!--div class="card">
                     <p class="card-title"><i style="color:#059e8a;"></i>Mast Delta</p>

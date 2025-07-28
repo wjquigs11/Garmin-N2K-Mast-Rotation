@@ -1,0 +1,87 @@
+<html>
+
+<head>
+  <title>ESP Mast Rotation GPX Logging</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <link rel="icon" type="image/png" href="favicon.ico">
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <style>
+    h2 {
+      font-size: 3.0rem;
+    }
+
+    p {
+      font-size: 1.0rem;
+    }
+
+    button {
+      margin: 10px;
+      padding: 10px 20px;
+      font-size: 1rem;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+
+    input[type="text"] {
+      margin: 10px;
+      padding: 8px;
+      font-size: 1rem;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+
+<body>
+    <!-- Simulate a smartphone / tablet -->
+    <div class="mobile-container">
+      <div class="topnav">
+        <a href="/" class="active">
+          <h1>GPX Logging</h1>
+        </a>
+        <div id="myLinks">
+          <a href="/settings">Settings</a>
+          <a href="/wifimanager">Wifi Settings</a>
+          <a href="/calibrate">Calibrate</a>
+          <a href="/mastcompass">Mast Compass</a>
+          <a href="/compass">Compass</a>
+          <a href="/update">Update</a>
+          <a href="/host">Host info</a>
+        </div>
+        <a href="javascript:void(0);" class="icon" onclick="menuFun()">
+          <i class="fa fa-bars"></i>
+        </a>
+      </div>
+
+      <div class="content">
+        <!-- New Form for Base File Name and Logging -->
+        <form action="/gpx" method="post">
+          <p>Base File Name:</p>
+          <input type="text" name="baseFileName" placeholder="Enter base file name:" value="tracklog">
+          <button type="submit" name="action" value="start">Start Log</button>
+          <button type="submit" name="action" value="stop">Stop Log</button>
+        </form>
+
+        <!-- JavaScript for Toggle /-/->
+        <script>function toggleCheckbox(element) {
+            var xhr = new XMLHttpRequest();
+            if (element.checked) { xhr.open("GET", "/params?output=" + element.id + "&state=on", true); }
+            else { xhr.open("GET", "/params?output=" + element.id + "&state=off", true); }
+            xhr.send();
+          }
+        </script-->
+      </div>
+    </div>
+
+    <script src="main-script.js"></script>
+</body>
+
+</html>

@@ -5,7 +5,7 @@ typedef struct compass_s {
     int calStatus;
     int readingId;
     bool compassOnToggle = true;
-    int orientation = 0;
+    float orientation = 0.0;
     int variation = 0;
     int frequency = 100;
     char hostname[64] = "";
@@ -16,8 +16,6 @@ extern compass_s compassParams;
 
 #define BNOREADRATE 20 // msecs for 50Hz rate; optimum for BNO08x calibration
 
-#define DEGTORAD 0.01745329252
-#define RADTODEG 57.2957795131
 #define VARIATION -15.2
 
 #define BNO08X_INT  -1

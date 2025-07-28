@@ -1,3 +1,5 @@
+
+#ifdef BNO08X
 #include <Adafruit_BNO08x.h>
 #include "windparse.h"
 #include "compass.h"
@@ -12,61 +14,84 @@
     bool IMUready;
 
     bool BNO085Compass::begin() {
-        if (!bno08x.begin_I2C()) {
-            logTo::logTo::logToAll("BNO08x not found");
+        if (!bno08x.begin_I2C(BNO08X)) {
+            log::log::toAll("BNO08x not found");
             //i2cScan(Wire);
             return false;
         }
-        logTo::logTo::logToAll("BNO08x Found\n");
+        log::log::toAll("BNO08x Found\n");
         for (int n = 0; n < bno08x.prodIds.numEntries; n++) {
             String logString = "Part " + String(bno08x.prodIds.entry[n].swPartNumber) + ": Version :" + String(bno08x.prodIds.entry[n].swVersionMajor) + "." + String(bno08x.prodIds.entry[n].swVersionMinor) + "." + String(bno08x.prodIds.entry[n].swVersionPatch) + " Build " + String(bno08x.prodIds.entry[n].swBuildNumber);
-            logTo::logTo::logToAll(logString);
+            log::log::toAll(logString);
         }
+        // temporary set frequency
+        frequency = 100;
         return true;
     }
 
-    void BNO085Compass::setReports(int reportType) {
-        if (!bno08x.enableReport((sh2_SensorId_t)reportType)) {
-            // Handle error (e.g., log or throw an exception)
+    // #ifdef BNO_GRV, enable SH2_ARVR_STABILIZED_GRV (game rotation vector), as well as another report set by the user, 
+    // usually SH2_GEOMAGNETIC_ROTATION_VECTOR (0x09) to get a compass heading
+    // note that GRV is requested 10x the rate of the other (compass) report. (NOT CURRENTLY)
+    bool BNO085Compass::setReports() {
+        log::toAll("Setting compass report to: 0x" + String(reportType,HEX));
+        if (!bno08x.enableReport(reportType, frequency*1000)) {
+            log::toAll("could not set report type: " + String(reportType,HEX));  
+            return false;
         }
+#ifdef BNO_GRV
+        if (!bno08x.enableReport(SH2_ARVR_STABILIZED_GRV, frequency*1000)) {
+            log::toAll("could not set report type (2): " + String(SH2_ARVR_STABILIZED_GRV,HEX));
+            return false;
+        } else log::toAll("enabled " + String(SH2_ARVR_STABILIZED_GRV,HEX));
+#endif
+        return true;
     }
-    void BNO085Compass::setReportType(int type) {
-        reportType = type;
-        setReports(reportType);
-    }
+/*        if (!bno08x.enableReport((sh2_SensorId_t)reportType)) {
+            return false;
+        }
+        else return true;
+*/
 
     void BNO085Compass::logPart() {
-        logTo::logTo::logToAll("test");
+        log::log::toAll("test");
     }
 
-    float BNO085Compass::getHeading(int correction) {
+    int BNO085Compass::getHeading(int correction) {
         if (bno08x.wasReset()) {
-            setReports(reportType);
+            setReports();
         }
 
         if (!bno08x.getSensorEvent(&sensorValue)) {
-            return -3.0;
+            return boatHeading;
+            // not ready just return last heading
+            //return -3;
         }
 
+        numReports[sensorValue.sensorId]++;
+        totalReports++;
         switch (sensorValue.sensorId) {
             case SH2_GAME_ROTATION_VECTOR:
             case SH2_GEOMAGNETIC_ROTATION_VECTOR:
                 boatAccuracy = sensorValue.un.rotationVector.accuracy;
                 boatCalStatus = sensorValue.status;
-                return calculateHeading(sensorValue.un.rotationVector.real, 
+                boatHeading = calculateHeading(sensorValue.un.rotationVector.real, 
                                         sensorValue.un.rotationVector.i, 
                                         sensorValue.un.rotationVector.j, 
                                         sensorValue.un.rotationVector.k, 
                                         correction);
+#ifdef DEBUG
+                log::log::toAll("BNO085 Heading: " + String(boatHeading) + " Accuracy: " + String(boatAccuracy) + " CalStatus: " + String(boatCalStatus));
+#endif               
+                return 1;
             case SH2_ARVR_STABILIZED_GRV:
-                heading = calculateHeading(sensorValue.un.arvrStabilizedGRV.real, 
+                boatIMU = calculateHeading(sensorValue.un.arvrStabilizedGRV.real, 
                                            sensorValue.un.arvrStabilizedGRV.i, 
                                            sensorValue.un.arvrStabilizedGRV.j, 
                                            sensorValue.un.arvrStabilizedGRV.k, 
                                            correction);
-                return heading;
+                return 1;
             default:
-                return -4.0;
+                return -4;
         }
     }
 
@@ -94,3 +119,4 @@
 
         return heading;
     }
+#endif

@@ -1,0 +1,336 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="highcharts.js"></script>
+  <style>
+    body {
+      min-width: 310px;
+      max-width: 800px;
+      height: auto;
+      margin: 0 auto;
+    }
+    h2 {
+      font-family: Arial;
+      font-size: 2.5rem;
+      text-align: center;
+    }
+    .container {
+      margin-bottom: 20px; /* Space between charts */
+    }
+  </style>
+</head>
+<body>
+  <h2>Wind Data</h2>
+  <div id="chart-apparent-wind" class="container"></div>
+  <div id="chart-stw" class="container"></div>
+  <div id="chart-wind" class="container"></div>
+  <div id="chart-vmg-percent" class="container"></div>
+
+<script>
+  function createMultiSeriesChart(container, title, yAxisTitle, yMin=0, yMax=100, isSTW=false) {
+    return new Highcharts.Chart({
+      chart: { renderTo: container },
+      title: { text: title },
+      series: isSTW ?
+        [
+          { name: 'STW (knots)', data: [] },
+          { name: 'VMG (knots)', data: [] }
+        ] :
+        [
+          { name: title.includes('Apparent') ? 'AWS (knots)' : 'TWS (knots)', data: [] },
+          { name: title.includes('Apparent') ? 'AWA (degrees)' : 'TWA (degrees)', data: [] }
+        ],
+      plotOptions: {
+        line: { animation: false, dataLabels: { enabled: false } }
+      },
+      xAxis: {
+        type: 'datetime',
+        dateTimeLabelFormats: { second: '%H:%M:%S' }
+      },
+      yAxis: {
+        title: { text: yAxisTitle },
+        min: yMin,
+        max: yMax
+      },
+      legend: {
+        enabled: true
+      },
+      credits: { enabled: false }
+    });
+  }
+
+  Highcharts.setOptions({
+    time: {
+        useUTC: false // Use local time instead of UTC
+        // timezone: 'America/New_York' // Uncomment this line if needed
+    }
+  });
+
+  // Create charts with a wider y-axis range to accommodate both wind speed and angle values
+  const apparentWindChart = createMultiSeriesChart('chart-apparent-wind', 'Apparent Wind', 'Value', 0, 360);
+  const stwChart = createMultiSeriesChart('chart-stw', 'Speed Through Water', 'Knots', 0, 20, true);
+  const windChart = createMultiSeriesChart('chart-wind', 'True Wind Data', 'Value', 0, 360);
+  const vmgPercentChart = new Highcharts.Chart({
+    chart: { renderTo: 'chart-vmg-percent' },
+    title: { text: 'VMG as % of TWS' },
+    series: [{ name: 'VMG/TWS %', data: [] }],
+    plotOptions: {
+      line: { animation: false, dataLabels: { enabled: false } }
+    },
+    xAxis: {
+      type: 'datetime',
+      dateTimeLabelFormats: { second: '%H:%M:%S' }
+    },
+    yAxis: {
+      title: { text: 'Percentage (%)' },
+      min: 0,
+      max: 100
+    },
+    legend: {
+      enabled: true
+    },
+    credits: { enabled: false }
+  });
+
+  // Initialize title variables for the charts
+  let currentApparentWindTitle = 'Apparent Wind';
+  let currentSTWTitle = 'Speed Through Water';
+  let currentWindTitle = 'True Wind Data';
+  let currentVMGPercentTitle = 'VMG as % of TWS';
+
+  function setupEventSource(dataLen) {
+    // Create a new EventSource to connect to the SSE endpoint
+    const eventSource = new EventSource(baseURL + "/events");
+    
+    // Handle connection open
+    eventSource.onopen = function() {
+      console.log("SSE connection established");
+    };
+    
+    // Handle incoming messages with the 'new_readings' event
+    eventSource.addEventListener('new_readings', function(event) {
+      try {
+        // Parse the JSON data from the event
+        const data = JSON.parse(event.data);
+        const timestamp = (new Date()).getTime();
+        
+        // Update Apparent Wind data if available
+        if (data.windSpeed !== undefined) {
+          const aws = parseFloat(data.windSpeed);
+          if (!isNaN(aws)) {
+            if (apparentWindChart.series[0].data.length > dataLen) {
+              apparentWindChart.series[0].addPoint([timestamp, aws], true, true, true);
+            } else {
+              apparentWindChart.series[0].addPoint([timestamp, aws], true, false, true);
+            }
+          }
+        }
+        
+        if (data.rotateout !== undefined) {
+          const awa = parseFloat(data.rotateout);
+          if (!isNaN(awa)) {
+            if (apparentWindChart.series[1].data.length > dataLen) {
+              apparentWindChart.series[1].addPoint([timestamp, awa], true, true, true);
+            } else {
+              apparentWindChart.series[1].addPoint([timestamp, awa], true, false, true);
+            }
+          }
+          updateApparentWindTitle();
+        }
+        
+        // Update STW and VMG data if available
+        let stwUpdated = false;
+        if (data.STW !== undefined) {
+          const stw = parseFloat(data.STW);
+          if (!isNaN(stw)) {
+            if (stwChart.series[0].data.length > dataLen) {
+              stwChart.series[0].addPoint([timestamp, stw], true, true, true);
+            } else {
+              stwChart.series[0].addPoint([timestamp, stw], true, false, true);
+            }
+            stwUpdated = true;
+          }
+        }
+        
+        if (data.VMG !== undefined) {
+          const vmg = parseFloat(data.VMG);
+          if (!isNaN(vmg)) {
+            if (stwChart.series[1].data.length > dataLen) {
+              stwChart.series[1].addPoint([timestamp, vmg], true, true, true);
+            } else {
+              stwChart.series[1].addPoint([timestamp, vmg], true, false, true);
+            }
+            stwUpdated = true;
+          }
+        }
+        
+        if (stwUpdated) {
+          updateSTWTitle();
+        }
+        
+        // Update True Wind data if available
+        let twsUpdated = false;
+        if (data.TWS !== undefined) {
+          const tws = parseFloat(data.TWS);
+          if (!isNaN(tws)) {
+            if (windChart.series[0].data.length > dataLen) {
+              windChart.series[0].addPoint([timestamp, tws], true, true, true);
+            } else {
+              windChart.series[0].addPoint([timestamp, tws], true, false, true);
+            }
+            twsUpdated = true;
+            
+            // Calculate VMG as percentage of TWS
+            calculateVMGPercent(timestamp, tws, dataLen);
+          }
+        }
+        
+        if (data.TWA !== undefined) {
+          const twa = parseFloat(data.TWA);
+          if (!isNaN(twa)) {
+            if (windChart.series[1].data.length > dataLen) {
+              windChart.series[1].addPoint([timestamp, twa], true, true, true);
+            } else {
+              windChart.series[1].addPoint([timestamp, twa], true, false, true);
+            }
+            twsUpdated = true;
+          }
+        }
+        
+        if (twsUpdated) {
+          updateWindTitle();
+        }
+        
+      } catch (e) {
+        console.error("Error processing SSE data:", e);
+      }
+    });
+    
+    // Handle errors
+    eventSource.onerror = function(error) {
+      console.error("SSE connection error:", error);
+      // Try to reconnect after a delay
+      setTimeout(() => {
+        console.log("Attempting to reconnect SSE...");
+        eventSource.close();
+        setupEventSource(dataLen);
+      }, 5000);
+    };
+    
+    return eventSource;
+  }
+  
+  function calculateVMGPercent(timestamp, twsValue, dataLen) {
+    try {
+      // Only calculate if we have VMG data and TWS is valid
+      if (stwChart.series[1].data.length > 0 && twsValue > 0) {
+        const latestVMG = stwChart.series[1].data[stwChart.series[1].data.length - 1].y;
+        
+        // Calculate percentage with bounds checking
+        // Use a simple calculation to minimize processing
+        let percentValue = 0;
+        if (twsValue > 0.1) { // Avoid very small denominators
+          percentValue = Math.min(Math.max((latestVMG / twsValue) * 100, 0), 100);
+        }
+        
+        // Add point with absolutely minimal redrawing
+        // Only keep track of the last 60 points maximum to reduce memory usage
+        if (vmgPercentChart.series[0].data.length > dataLen) {
+          vmgPercentChart.series[0].addPoint([timestamp, percentValue], false, true, false);
+        } else {
+          vmgPercentChart.series[0].addPoint([timestamp, percentValue], false, false, false);
+        }
+        
+        // Update title and redraw chart once, but only every other time to reduce load
+        // Use a static counter to track this
+        calculateVMGPercent.updateCounter = (calculateVMGPercent.updateCounter || 0) + 1;
+        if (calculateVMGPercent.updateCounter % 2 === 0) {
+          updateVMGPercentTitle(percentValue);
+          vmgPercentChart.redraw(false);
+        }
+      }
+    } catch (e) {
+      // Silently catch any errors to prevent crashes
+      console.error("Error in VMG percent calculation:", e);
+    }
+  }
+
+  // Function to update apparent wind chart title
+  function updateApparentWindTitle() {
+    let awsValue = "N/A";
+    let awaValue = "N/A";
+    
+    if (apparentWindChart.series[0].data.length > 0) {
+      awsValue = apparentWindChart.series[0].data[apparentWindChart.series[0].data.length - 1].y.toFixed(1);
+    }
+    
+    if (apparentWindChart.series[1].data.length > 0) {
+      awaValue = apparentWindChart.series[1].data[apparentWindChart.series[1].data.length - 1].y.toFixed(1);
+    }
+    
+    currentApparentWindTitle = `Apparent: AWS ${awsValue} knots, AWA ${awaValue}&deg;`;
+    apparentWindChart.setTitle({ text: currentApparentWindTitle });
+  }
+
+  // Function to update true wind chart title
+  function updateWindTitle() {
+    let twsValue = "N/A";
+    let twaValue = "N/A";
+    
+    if (windChart.series[0].data.length > 0) {
+      twsValue = windChart.series[0].data[windChart.series[0].data.length - 1].y.toFixed(1);
+    }
+    
+    if (windChart.series[1].data.length > 0) {
+      twaValue = windChart.series[1].data[windChart.series[1].data.length - 1].y.toFixed(1);
+    }
+    
+    currentWindTitle = `True: TWS ${twsValue} knots, TWA ${twaValue}&deg;`;
+    windChart.setTitle({ text: currentWindTitle });
+  }
+
+  // Function to update STW chart title
+  function updateSTWTitle() {
+    let stwValue = "N/A";
+    let vmgValue = "N/A";
+    
+    if (stwChart.series[0].data.length > 0) {
+      stwValue = stwChart.series[0].data[stwChart.series[0].data.length - 1].y.toFixed(1);
+    }
+    
+    if (stwChart.series[1].data.length > 0) {
+      vmgValue = stwChart.series[1].data[stwChart.series[1].data.length - 1].y.toFixed(1);
+    }
+    
+    currentSTWTitle = `STW: ${stwValue} knots, VMG: ${vmgValue} knots`;
+    stwChart.setTitle({ text: currentSTWTitle });
+  }
+  
+  // Function to update VMG Percent chart title
+  function updateVMGPercentTitle(percentValue) {
+    const formattedPercent = percentValue.toFixed(1);
+    currentVMGPercentTitle = `VMG/TWS: ${formattedPercent}%`;
+    vmgPercentChart.setTitle({ text: currentVMGPercentTitle });
+  }
+
+  //let baseURL = "http://192.168.68.68";
+  let baseURL = ""; // to go to local (ESP32)
+  
+  // Reduce data history from 300 to 60 points (5 minutes at 5-second intervals)
+  // This significantly reduces memory usage and processing load
+  const dataHistoryLength = 60;
+  
+  // Start SSE connection with reduced history length
+  let eventSource = setupEventSource(dataHistoryLength);
+  
+  // Handle page unload to properly close the SSE connection
+  window.addEventListener('beforeunload', function() {
+    if (eventSource) {
+      eventSource.close();
+    }
+  });
+</script>
+</body>
+</html>
