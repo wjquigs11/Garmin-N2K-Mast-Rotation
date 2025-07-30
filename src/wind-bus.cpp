@@ -951,7 +951,7 @@ if (!ina219.begin()) {
 }
 
 #ifdef RTK
-bool rtkDebug = false;
+bool rtkDebug = true;
 bool tuning = false;
 const int MAXL = 256;
 char keyBuffer[MAXL], gpsBuffer[MAXL];
