@@ -48,7 +48,7 @@ if (!!window.EventSource) {
         }
         gaugeCanvas = document.getElementById("gauge-honeyrot");
         if (gaugeCanvas) {
-            if (myObj.honeywell) {
+            if (myObj.mastRotate) {
                 gaugeCanvas.removeAttribute("hidden");
                 gaugeCanvas.style.display = "";
                 gaugeHoneyRot.value = myObj.mastRotate

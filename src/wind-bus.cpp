@@ -448,10 +448,11 @@ void OLEDdataWindDebug() {
   display->printf("Mast:%2.0f/Rot:%2.0f\n",mastCompassDeg,mastRotate);
 #endif
 #ifdef BNO08X
-  display->printf("M:%2.0f/T:%2.0f\n", compass.boatHeading,pBD->trueHeading);
+  display->printf("M:%0.0f/T:%0.0f/GPS:%0.0f\n", compass.boatHeading,pBD->trueHeading,pBD->COG);
 #else
   display->printf("T:%2.0f\n", pBD->trueHeading);
 #endif
+  display->printf("Lat:%2.2f Lon:%2.2f", pBD->Latitude, pBD->Longitude);
   display->display();
 }
 #endif
@@ -559,8 +560,8 @@ if (!ina219.begin()) {
 #ifdef RTK
   RTKport.SetMsgHandler(HandleNMEA0183Msg);
   RTKserial.begin(RTKBAUD,SERIAL_8N1,RTKRX,RTKTX);
-  RTKport.SetMessageStream(&RTKserial);
-  RTKport.Open();
+  //RTKport.SetMessageStream(&RTKserial);
+  //RTKport.Open();
   if (!RTKserial)
     log::toAll("failed to open RTK serial port");
   else
@@ -749,7 +750,7 @@ if (!ina219.begin()) {
 
 #ifdef N2K
   // No need to parse the messages at every single loop iteration; 1 ms will do
-    app.onRepeat(1, []() {
+  app.onRepeat(1, []() {
     PollCANStatus();
     n2kMain->ParseMessages();
 #if defined(RS485CAN)
@@ -759,8 +760,7 @@ if (!ina219.begin()) {
     n2kWind->ParseMessages();
 #endif
 #if defined(NMEA0183)
-    NMEA0183_3.ParseMessages(); // GPS from ICOM
-#ifdef DEBUG_0183
+#ifdef DEBUG_0183XXX
     tNMEA0183Msg NMEA0183Msg;
     while (NMEA0183_3.GetMessage(NMEA0183Msg)) {
     Serial.print(NMEA0183Msg.Sender());
@@ -769,26 +769,28 @@ if (!ina219.begin()) {
       Serial.print(NMEA0183Msg.Field(i));
       if ( i<NMEA0183Msg.FieldCount()-1 ) Serial.print(" ");
     }
-   Serial.print("\n");
-  }
-#endif
-#endif
+    Serial.print("\n");
+    }
+#else
+    NMEA0183_3.ParseMessages(); // GPS from ICOM
+#endif // DEBUG_0183
+#endif // NMEA0183
 #ifdef RTK
 #ifdef DEBUG_RTK
     tNMEA0183Msg NMEA0183Msg;
     while (RTKport.GetMessage(NMEA0183Msg)) {
-    Serial.print(NMEA0183Msg.Sender());
-    Serial.print(NMEA0183Msg.MessageCode()); Serial.print(" ");
-    for (int i=0; i < NMEA0183Msg.FieldCount(); i++) {
-      Serial.print(NMEA0183Msg.Field(i));
-      if ( i<NMEA0183Msg.FieldCount()-1 ) Serial.print(" ");
+      Serial.print(NMEA0183Msg.Sender());
+      Serial.print(NMEA0183Msg.MessageCode()); Serial.print(" ");
+      for (int i=0; i < NMEA0183Msg.FieldCount(); i++) {
+        Serial.print(NMEA0183Msg.Field(i));
+        if ( i<NMEA0183Msg.FieldCount()-1 ) Serial.print(" ");
+      }
+      Serial.print("\n");
     }
-   Serial.print("\n");
-  }
-#else
-  RTKport.ParseMessages();  // GPS etc from WITmotion/UM982
-#endif
-#endif
+  #else
+    RTKport.ParseMessages();  // GPS etc from WITmotion/UM982
+  #endif
+  #endif
   });
 #endif
 
@@ -963,6 +965,7 @@ void loop() {
   WebSerial.loop();
   ElegantOTA.loop();
 #ifdef RTK
+  // in debug mode, send text input to RTK module and echo responses to Serial
   if (rtkDebug) {
     char incomingChar;
     while (Serial.available() > 0) {
@@ -988,6 +991,21 @@ void loop() {
           gpsBuffer[gpsBufIdx++] = incomingChar;
       }
       //Serial.print(incomingChar);
+    }
+  }
+#endif
+#ifdef DEBUG_0183
+  char incomingChar;
+  // read NMEA0183 serial and echo
+  while (NMEA0183serial.available() > 0) {
+    incomingChar = NMEA0183serial.read();
+    if (incomingChar == '\n' || incomingChar == '\r') {
+      gpsBuffer[gpsBufIdx] = '\0'; // Null terminate
+      //processBuffer();
+      Serial.printf("gps: %s\n", gpsBuffer);
+      gpsBufIdx = 0; // Reset for next line
+    } else if (gpsBufIdx < MAXL - 1) {
+        gpsBuffer[gpsBufIdx++] = incomingChar;
     }
   }
 #endif

@@ -42,6 +42,16 @@ bool debugNMEA = false;
 // 127258: Magnetic Variation 
 // 129025: SetLatLonRapid 
 
+// configuration of UM-982:
+// unlog: stop all logging on current port
+// gphpr com1 1: Heading Pitch Roll on com1 every second
+// config: show configuration
+// saveconfig
+// uniloglist
+// freset: factory reset
+// gpgga com1 1
+// mode heading2 lowdynamic
+
 // Predefinition for functions to make it possible for constant definition for NMEA0183Handlers
 void HandleRMC(const tNMEA0183Msg &NMEA0183Msg);
 void HandleGGA(const tNMEA0183Msg &NMEA0183Msg);
@@ -129,10 +139,14 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
   double variation;
   if (NMEA0183ParseRMC_nc(NMEA0183Msg,pBD->GPSTime,pBD->Latitude,pBD->Longitude,pBD->COG,pBD->SOG,pBD->DaysSince1970,pBD->Variation)) {
   } else if (NMEA0183HandlersDebugStream!=0) { NMEA0183HandlersDebugStream->println("Failed to parse RMC"); }
+  pBD->COG *= RADTODEG;
+  // no heading from RTK sensor so use GPS/COG as heading
+  if (pBD->trueHeading < 0) //&& pBD->SOG > 0.1)
+    pBD->trueHeading = pBD->COG;
   if (n2kMain!=0) {
       tN2kMsg N2kMsg;
       // COGSOGRapid
-      SetN2kPGN129026(N2kMsg, 255, N2khr_true, pBD->COG, pBD->SOG);
+      SetN2kPGN129026(N2kMsg, 255, N2khr_true, pBD->COG*DEGTORAD, pBD->SOG);
       if (!n2kMain->SendMsg(N2kMsg)) num_0183_fail++; else num_0183_ok++;
       // GNSSPosition
       SetN2kPGN129029(N2kMsg,255,pBD->DaysSince1970,pBD->GPSTime,
@@ -159,7 +173,7 @@ void HandleRMC(const tNMEA0183Msg &NMEA0183Msg) {
   //log::toAll("RMC lat: " + String(pBD->Latitude,5) + " lon: " + String(pBD->Longitude,5) + " COG: " + String(pBD->COG));
   // if we are tuning, output relevant data to compare e.g. paddle log with GPS speed
   if (tuning) {
-    sprintf(prbuf, "STW: %2.2f SOG: %2.2f HDG: %2.2f COG: %2.2f", pBD->STW*MTOKTS, pBD->SOG*MTOKTS, pBD->trueHeading, pBD->COG*RADTODEG);
+    sprintf(prbuf, "STW: %2.2f SOG: %2.2f HDG: %2.2f COG: %2.2f", pBD->STW*MTOKTS, pBD->SOG*MTOKTS, pBD->trueHeading, pBD->COG);
     log::toAll(prbuf);
   }
 }

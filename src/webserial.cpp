@@ -108,8 +108,7 @@ void log::toAll(String s) {
 }
 
 String log::commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-  "gps", "gpsdebug", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv", 
-"tuning"};
+  "gps", "gpsdebug", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv"};
 
 const char *RTKqualStr[] = {"invalid", "single point", "differential GPS", "RTK fix", "RTK float", "DR", "manual", "xtra wide", "SBAS"};
 
@@ -244,11 +243,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       log::toAll("maxTWS: " + String(pBD->maxTWS*MTOKTS));
       return;
     }
-    if (words[i].equals("potlog")) {
-      logPot = !logPot;
-      log::toAll("logPot: " + String(logPot));
-      return;
-    }
     if (words[i].equals("compass")) {
       log::toAll("           Boat Compass: " + String(compass.boatHeading));
       log::toAll("              Boat True: " + String(pBD->trueHeading));
@@ -358,44 +352,50 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       return;      
     }
+    // Toggle switches
     if (words[i].startsWith("tog")) {
-      if (!words[++i].isEmpty()) {
+      if (wordCount > 1 && !words[++i].isEmpty()) {
+        if (words[i].equals("potlog")) {
+          logPot = !logPot;
+          log::toAll("logPot: " + String(logPot));
+        }
         if (words[i].startsWith("disp")) {
           displayOnToggle = !displayOnToggle;
           log::toAll("Display: " + String(displayOnToggle));
-          return;
         }
 //#ifdef BNO_GRV
         if (words[i].startsWith("comp")) {
           compass.OnToggle = !compass.OnToggle;
           log::toAll("Compass: " + String(compass.OnToggle));
-          return;
         }        
 //#endif
         if (words[i].startsWith("honey")) {
           honeywellOnToggle = !honeywellOnToggle;
           log::toAll("Honeywell: " + String(honeywellOnToggle));
-          return;
         }
         if (words[i].startsWith("stack")) {
           stackTrace = !stackTrace;
           log::toAll("stackTrace: " + String(stackTrace));
-          return;
         }
         if (words[i].startsWith("windlo")) {
           windLogging = !windLogging;
           if (!windLogging) startNextWindLog();
           log::toAll("windLogging: " + String(windLogging));
-          return;
         }
-      } else {
-        log::toAll("Display: " + String(displayOnToggle));
+        if (words[i].startsWith("tun")) {
+          tuning = !tuning;
+          log::toAll("tuning: " + String(tuning));
+        }
+     } else {
+        log::toAll("logPot: " + String(logPot));
+        log::toAll("display: " + String(displayOnToggle));
 //#ifdef BNO_GRV
-        log::toAll("Compass: " + String(compass.OnToggle));
+        log::toAll("compass: " + String(compass.OnToggle));
 //#endif
-        log::toAll("Honeywell: " + String(honeywellOnToggle));
+        log::toAll("honeywell: " + String(honeywellOnToggle));
         log::toAll("stackTrace: " + String(stackTrace));
-        log::toAll("Wind Log: " + String(windLogging));
+        log::toAll("wind log: " + String(windLogging));
+        log::toAll("tuning:  " + String(tuning));
       }
       return;
     }
@@ -455,9 +455,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         log::toAll("usedSV: " + String(pRTK->usedSV));      
         return;
       }
-    }
-    if (words[i].equals("tuning")) {
-      tuning = !tuning;
     }
 #endif
 #ifdef PICAN
