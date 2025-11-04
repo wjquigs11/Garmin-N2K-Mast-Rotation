@@ -953,12 +953,13 @@ if (!ina219.begin()) {
 }
 
 #ifdef RTK
-bool rtkDebug = true;
+bool rtkDebug = false;
 bool tuning = false;
 const int MAXL = 256;
 char keyBuffer[MAXL], gpsBuffer[MAXL];
 int keyBufIdx, gpsBufIdx;
 #endif
+bool gpsDebug = false;
 
 void loop() { 
   app.tick(); 
@@ -985,7 +986,7 @@ void loop() {
       if (incomingChar == '\n' || incomingChar == '\r') {
         gpsBuffer[gpsBufIdx] = '\0'; // Null terminate
         //processBuffer();
-        Serial.printf("gps: %s\n", gpsBuffer);
+        Serial.printf("%s", gpsBuffer);
         gpsBufIdx = 0; // Reset for next line
       } else if (gpsBufIdx < MAXL - 1) {
           gpsBuffer[gpsBufIdx++] = incomingChar;

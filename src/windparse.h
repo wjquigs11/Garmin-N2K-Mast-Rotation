@@ -11,8 +11,8 @@
 #endif
 #include <ReactESP.h>
 #include <Wire.h>
-#include <esp_int_wdt.h>
-#include <esp_task_wdt.h>
+//#include <esp_int_wdt.h>
+//#include <esp_task_wdt.h>
 #include <movingAvg.h>
 #include "elapsedMillis.h"
 #include <Arduino.h>
@@ -134,7 +134,7 @@ extern float mastCompassDeg;
 extern int boatCalStatus;
 
 #define MAXPGN 64
-#define MAX_NETS 4
+#define MAX_NETS 5
 
 #ifdef PICAN
 #define SEALEVELPRESSURE_HPA (1013.25)
@@ -157,6 +157,7 @@ extern bool stackTrace;
 extern bool rtkDebug;
 extern bool tuning; // for tuning instruments e.g. paddlewheel vs GPS
 #endif
+extern bool gpsDebug;
 
 #ifdef GPX
 // GPX files

@@ -355,7 +355,15 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
     // Toggle switches
     if (words[i].startsWith("tog")) {
       if (wordCount > 1 && !words[++i].isEmpty()) {
-        if (words[i].equals("potlog")) {
+        if (words[i].startsWith("gps")) {
+          gpsDebug = !gpsDebug;
+          log::toAll("gpsdebug: " + String(gpsDebug));
+        }
+        if (words[i].startsWith("rtk")) {
+          rtkDebug = !rtkDebug;
+          log::toAll("rtkDebug: " + String(rtkDebug));
+        }
+        if (words[i].startsWith("potlog")) {
           logPot = !logPot;
           log::toAll("logPot: " + String(logPot));
         }
@@ -422,11 +430,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 #endif
 #ifdef RTK
     if (words[i].equals("rtk")) {
-      if (wordCount > 1 && words[++i].equals("debug")) {
-        rtkDebug = !rtkDebug;
-        log::toAll("rtkDebug: " + String(rtkDebug));
-        return;
-      } else if (pRTK) {
+      if (pRTK) {
         //log::toAll("antA:" + String(pRTK->antennaAstat));
         //log::toAll("antB: " + String(pRTK->antennaBstat));
         //log::toAll("baselen: " + String(pRTK->baseLen));
