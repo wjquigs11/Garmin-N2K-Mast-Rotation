@@ -452,7 +452,7 @@ void OLEDdataWindDebug() {
   display->printf("Mast:%2.0f/Rot:%2.0f\n",mastCompassDeg,mastRotate);
 #endif
 #ifdef BNO08X
-  display->printf("M:%0.0f/T:%0.0f/GPS:%0.0f\n", compass.boatHeading,pBD->trueHeading,pBD->COG);
+  display->printf("M:%0.0f(%d)/T:%0.0f/GPS:%0.0f\n", compass.boatHeading,compass.boatAccuracy,pBD->trueHeading,pBD->COG);
 #else
   display->printf("T:%2.0f\n", pBD->trueHeading);
 #endif
