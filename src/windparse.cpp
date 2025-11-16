@@ -400,8 +400,8 @@ void parseWindCAN() {
         */
         if (hRef == N2khr_magnetic) {
           mastCompassDeg = mastCompassRad * RADTODEG + BoatData.Variation;
-          mastRotate = compassDifference(mastCompassDeg, BoatData.trueHeading);
-          sprintf(prbuf,"compass heading, mast(t): %2.2f boat(t): %2.2f cdelta: %2.2f",mastCompassDeg, BoatData.trueHeading, mastRotate);
+          mastRotate = compassDifference(mastCompassDeg+mastOrientation, BoatData.trueHeading);
+          sprintf(prbuf,"compass heading, mast(t): %2.2f boat(t): %2.2f cdelta: %2.2f corrected: %2.2f",mastCompassDeg, BoatData.trueHeading, mastRotate, mastRotate+mastOrientation);
           log::toAll(prbuf);
         }
   #ifdef DEBUG

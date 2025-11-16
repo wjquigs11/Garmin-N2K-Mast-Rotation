@@ -359,10 +359,12 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           gpsDebug = !gpsDebug;
           log::toAll("gpsdebug: " + String(gpsDebug));
         }
+#ifdef RTK
         if (words[i].startsWith("rtk")) {
           rtkDebug = !rtkDebug;
           log::toAll("rtkDebug: " + String(rtkDebug));
         }
+#endif
         if (words[i].startsWith("potlog")) {
           logPot = !logPot;
           log::toAll("logPot: " + String(logPot));
@@ -385,11 +387,13 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           stackTrace = !stackTrace;
           log::toAll("stackTrace: " + String(stackTrace));
         }
+#ifdef WINDLOG
         if (words[i].startsWith("windlo")) {
           windLogging = !windLogging;
           if (!windLogging) startNextWindLog();
           log::toAll("windLogging: " + String(windLogging));
         }
+#endif
         if (words[i].startsWith("tun")) {
           tuning = !tuning;
           log::toAll("tuning: " + String(tuning));
@@ -402,7 +406,9 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 //#endif
         log::toAll("honeywell: " + String(honeywellOnToggle));
         log::toAll("stackTrace: " + String(stackTrace));
+#ifdef WINDLOG
         log::toAll("wind log: " + String(windLogging));
+#endif
         log::toAll("tuning:  " + String(tuning));
       }
       return;

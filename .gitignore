@@ -8,3 +8,4 @@ src/*.zip
 data.bak/*
 data-big/*
 data/wifi.txt
+*.txt

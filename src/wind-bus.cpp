@@ -48,12 +48,15 @@ Adafruit_SSD1306 *display;
 
 #define N2k_SPI_CS_PIN 5    
 
-#ifdef PICAN
+#if defined(PICAN)
 tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
 Adafruit_BME280 bme;
 bool bmeFound;
 #endif
+
+bool windForward = false;
+bool mainForward = false;
 
 bool passThrough = false;
 
@@ -112,7 +115,9 @@ TwoWire *i2c;
 // SK Pang says it's mapped to /dev/ttyS0 which is 14(tx) and 15(rx) on RPI
 // but that's RPI GPIOs, and RPI GPIO 15 is mapped to IO16 on ESPBerry
 //#define SER_BUF_SIZE (unsigned int)(1024)
-#define NMEA0183BAUD 4800
+//#define NMEA0183BAUD 4800
+// new AIS is 38k baud
+#define NMEA0183BAUD 38400
 tNMEA0183 NMEA0183_3;
 #endif
 
@@ -348,7 +353,6 @@ void HandleNMEA2000MsgWind(const tN2kMsg &N2kMsg) {
   windCounter();
   if (!n2kWindOpen) {
     n2kWindOpen = true;
-    //n2kWind->SetForwardStream(forward_stream);
   }
   ToggleLed();
   // problematic since mast compass can come back online
@@ -548,7 +552,7 @@ if (!ina219.begin()) {
   // Set up NMEA0183 ports and handlers
 #if defined(NMEA0183)
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
-  //DebugNMEA0183Handlers(&Serial);
+  DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
   NMEA0183_3.SetMessageStream(&NMEA0183serial);
   NMEA0183_3.Open();
@@ -560,8 +564,11 @@ if (!ina219.begin()) {
 #ifdef RTK
   RTKport.SetMsgHandler(HandleNMEA0183Msg);
   RTKserial.begin(RTKBAUD,SERIAL_8N1,RTKRX,RTKTX);
-  //RTKport.SetMessageStream(&RTKserial);
-  //RTKport.Open();
+#ifdef RTK_TIMO
+  // use NMEA0183Handlers to process RTK GPS messages
+  RTKport.SetMessageStream(&RTKserial);
+  RTKport.Open();
+#endif
   if (!RTKserial)
     log::toAll("failed to open RTK serial port");
   else
@@ -610,7 +617,8 @@ if (!ina219.begin()) {
   n2kWind->SetN2kCANReceiveFrameBufSize(100);
   n2kWind->SetMode(tNMEA2000::N2km_ListenAndSend);
   n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
-  //n2kWind->EnableForward(false); 
+  n2kWind->SetForwardStream(forward_stream);
+  n2kWind->EnableForward(false); 
   n2kWind->SetForwardOwnMessages(true);
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   if (n2kWind->Open()) {
@@ -952,23 +960,26 @@ if (!ina219.begin()) {
 #endif
 }
 
+const int MAXL = 256;
 #ifdef RTK
 bool rtkDebug = false;
-bool tuning = false;
-const int MAXL = 256;
-char keyBuffer[MAXL], gpsBuffer[MAXL];
-int keyBufIdx, gpsBufIdx;
+char keyBuffer[MAXL];
+int keyBufIdx;
 #endif
+bool tuning = false;
 bool gpsDebug = false;
+char gpsBuffer[MAXL];
+int gpsBufIdx;
 
 void loop() { 
   app.tick(); 
   WebSerial.loop();
   ElegantOTA.loop();
+  char incomingChar;
 #ifdef RTK
   // in debug mode, send text input to RTK module and echo responses to Serial
+  // TBD: figure out a way to read a few lines to view response; right now it goes to Timo
   if (rtkDebug) {
-    char incomingChar;
     while (Serial.available() > 0) {
       incomingChar = Serial.read();
       if (incomingChar == '\n' || incomingChar == '\r') {
@@ -981,32 +992,37 @@ void loop() {
           keyBuffer[keyBufIdx++] = incomingChar;
       }
       //Serial.print(incomingChar);
-    }  while (RTKserial.available() > 0) {
-      incomingChar = RTKserial.read();
-      if (incomingChar == '\n' || incomingChar == '\r') {
-        gpsBuffer[gpsBufIdx] = '\0'; // Null terminate
-        //processBuffer();
-        Serial.printf("%s", gpsBuffer);
-        gpsBufIdx = 0; // Reset for next line
-      } else if (gpsBufIdx < MAXL - 1) {
-          gpsBuffer[gpsBufIdx++] = incomingChar;
-      }
-      //Serial.print(incomingChar);
     }
   }
-#endif
-#ifdef DEBUG_0183
-  char incomingChar;
-  // read NMEA0183 serial and echo
-  while (NMEA0183serial.available() > 0) {
-    incomingChar = NMEA0183serial.read();
+#ifndef RTK_TIMO
+  // don't process serial input stream if we're using NMEA0183Handlers
+  while (RTKserial.available() > 0) {
+    incomingChar = RTKserial.read();
     if (incomingChar == '\n' || incomingChar == '\r') {
       gpsBuffer[gpsBufIdx] = '\0'; // Null terminate
       //processBuffer();
-      Serial.printf("gps: %s\n", gpsBuffer);
+      Serial.printf("%s\n", gpsBuffer);
       gpsBufIdx = 0; // Reset for next line
     } else if (gpsBufIdx < MAXL - 1) {
         gpsBuffer[gpsBufIdx++] = incomingChar;
+    }
+    //Serial.print(incomingChar);
+  }
+#endif
+#endif
+#ifdef DEBUG_0183
+  if (debugNMEA) {
+    // read NMEA0183 serial and echo
+    while (NMEA0183serial.available() > 0) {
+      incomingChar = NMEA0183serial.read();
+      if (incomingChar == '\n' || incomingChar == '\r') {
+        gpsBuffer[gpsBufIdx] = '\0'; // Null terminate
+        //processBuffer();
+        Serial.printf("%s\n", gpsBuffer);
+        gpsBufIdx = 0; // Reset for next line
+      } else if (gpsBufIdx < MAXL - 1) {
+        gpsBuffer[gpsBufIdx++] = incomingChar;
+      }
     }
   }
 #endif

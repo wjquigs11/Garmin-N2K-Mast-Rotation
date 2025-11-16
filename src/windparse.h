@@ -53,9 +53,12 @@
 #if defined(PICAN)
 #define POT_PIN 33 // ESPberry ADC1_CH5
 // voltage sensor 5:1 so 12v measures at 2.4 volts so use ADC_ATTEN_DB_12
+extern tNMEA2000 *n2kWind;
 #endif
 extern bool logPot;
 extern bool passThrough;
+extern bool debugNMEA;
+extern bool debugN2K;
 
 class RotationSensor {
   public:
@@ -82,6 +85,9 @@ void WindSpeed();
 
 extern tNMEA2000Handler NMEA2000Handlers[];
 extern tNMEA2000 *n2kMain;
+
+extern bool windForward;
+extern bool mainForward;
 
 float readAnalogRotationValue();
 void parseWindCAN();
@@ -155,9 +161,9 @@ extern bool stackTrace;
 
 #ifdef RTK
 extern bool rtkDebug;
-extern bool tuning; // for tuning instruments e.g. paddlewheel vs GPS
 #endif
 extern bool gpsDebug;
+extern bool tuning; // for tuning instruments e.g. paddlewheel vs GPS
 
 #ifdef GPX
 // GPX files
