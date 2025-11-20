@@ -1,188 +1,68 @@
+#ifdef WEBSERIAL
+#include "include.h"
 
-#include "windparse.h"
-#include "BoatData.h"
-
-// object-oriented classes
-#include "BNO085Compass.h"
-#include "logto.h"
-
-// TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
-
-extern Stream *forward_stream;
-
-extern tNMEA2000 *n2kMain;
-
-#ifdef HONEY
-// Honeywell sensor
-extern movingAvg honeywellSensor;                // define the moving average object
-//extern int mastRotate, rotateout;
-extern int PotValue, PotLo, PotHi;
-extern Adafruit_ADS1015 ads;
-extern int adsInit;
-#endif
-
-// defs for wifi
-void initWebSocket();
-//void notifyClients(String);
-extern AsyncWebServer server;
-extern bool serverStarted;
-extern char *hostname;
-extern int WebTimerDelay;
-extern AsyncEventSource events;
-extern JSONVar readings;
-extern void setupWifi();
-//extern String host;
-extern void loopWifi();
-void startWebServer();
-void writeWiFi(int priority, String ssidNew, String passwdNew);
+bool debugFlag = false;
 
 #if 0
-// mast compass
-int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
-float parseMastHeading(const tN2kMsg &N2kMsg);  // mast heading
-float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external source
-float getCompass(int correction);      // boat heading from internal ESP32 CMPS14
-void httpInit(const char* serverName);
-extern const char* serverName;
-extern int mastOrientation;   // delta between mast compass and boat compass
-extern float mastCompassDeg;
-#endif
-#ifdef CMPS14
-extern byte calibrationStatus[];
-#endif
-extern float mastDelta;
-
-extern int num_n2k_messages;
-extern int num_wind_messages;
-extern int num_wind_other;
-extern int headingErrCount;
-extern int num_wind_fail;
-extern int num_wind_other_fail;
-extern int num_wind_other_ok;
-extern unsigned long otherPGN[MAXPGN];
-extern int otherPGNindex;
-
-extern int num_0183_messages;
-extern int num_0183_fail;
-extern int num_0183_ok;
-
-void mastHeading();
-float readCompassDelta();
-extern int mastAngle[2]; // array for both sensors
-// 0 = honeywell
-// 1 = compass
-
-extern Adafruit_SSD1306 *display; // temp hack; move to windparse.h, but requires a bunch of #ifdefs
-int displayBright = 200;
-
-/* bool teleplot=false;
-extern int numReports[], totalReports;
-*/
-
-extern elapsedMillis time_since_last_mastcomp_rx;
-
-void WindSpeed(const tN2kMsg &N2kMsg);
-void BoatSpeed(const tN2kMsg &N2kMsg);
-
-extern Preferences preferences;
-
-extern File consLog;
-
-void log::toAll(String s) {
-  if (s.endsWith("\n")) s.remove(s.length() - 1);
-  Serial.println(s);
-  String t = "[" + String(millis() / 1000) + "]: " + s;
-  if (consLog) consLog.println(t);
-  //if (serverStarted)
-    WebSerial.println(s);
-  s = String();
-  t = String();
-}
-
-String log::commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-  "gps", "gpsdebug", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv"};
-
-const char *RTKqualStr[] = {"invalid", "single point", "differential GPS", "RTK fix", "RTK float", "DR", "manual", "xtra wide", "SBAS"};
-
-String words[10];
-
-void lsAPconn() {
-  log::toAll("AP connections");
-  wifi_sta_list_t wifi_sta_list;
-  tcpip_adapter_sta_list_t adapter_sta_list;
- 
-  memset(&wifi_sta_list, 0, sizeof(wifi_sta_list));
-  memset(&adapter_sta_list, 0, sizeof(adapter_sta_list));
- 
-  esp_wifi_ap_get_sta_list(&wifi_sta_list);
-  tcpip_adapter_get_sta_list(&wifi_sta_list, &adapter_sta_list);
- 
-  log::toAll("stations: " + String(adapter_sta_list.num));
-  for (int i = 0; i < adapter_sta_list.num; i++) {
-    tcpip_adapter_sta_info_t station = adapter_sta_list.sta[i];
-    log::toAll("station nr " + String(i) + " MAC:");
-    String printS;
-    for(int i = 0; i< 6; i++){
-      sprintf(prbuf, "%02X", station.mac[i]);
-      printS += prbuf;
-      if(i<5) printS += ".";
-    }
-    log::toAll(printS);
-    //Serial.print("IP: ");  
-    byte octet[4];
-    octet[3] = station.ip.addr & 0xFF;
-    octet[2] = (station.ip.addr >> 8) & 0xFF;
-    octet[1] = (station.ip.addr >> 16) & 0xFF;
-    octet[0] = (station.ip.addr >> 24) & 0xFF;
-    printS = String(octet[3]) + "." + String(octet[2]) + "." + String(octet[1]) + "." + String(octet[0]);
-    log::toAll(printS);
-    printS = String();
-    }
-}
-
 void i2cScan(TwoWire Wire) {
   byte error, address;
   int nDevices = 0;
-  log::toAll("Scanning i2c...");
+
+  log::toAll("Scanning...");
+
   for (address = 1; address < 127; address++) {
-    Serial.printf("0x",address);
+    // The i2c_scanner uses the return value of
+    // the Write.endTransmission to see if
+    // a device acknowledged the address.
     Wire.beginTransmission(address);
-    error = Wire.endTransmission(); 
-    char buf[16];
-    sprintf(buf, "%2X", address); // Formats value as uppercase hex
+    error = Wire.endTransmission();
+
+    sprintf(prbuf, "%2X", address); // Formats value as uppercase hex
+
     if (error == 0) {
-      log::toAll("I2C device found at address 0x" + String(buf));
+      log::toAll("I2C device found at address 0x" + String(prbuf));
       nDevices++;
     }
     else if (error == 4) {
-      log::toAll("error at address 0x" + String(buf));
+      log::toAll("error at address 0x" + String(prbuf));
     }
   }
+
   if (nDevices == 0) {
-    log::toAll("No I2C devices found");
-  }
-  else {
-    log::toAll("done");
+    log::toAll("No I2C devices found\n");
+  } else {
+    log::toAll("done\n");
   }
 }
+#endif
 
-String doubleToTimeString(double time) {
-  int hours = (int)(time / 10000);
-  int minutes = (int)((time - hours * 10000) / 100);
-  double seconds = fmod(time, 100);
-
-  char timeStr[13];
-  sprintf(timeStr, "%02d:%02d:%06.3f", hours, minutes, seconds);
-  return String(timeStr);
+String formatMacAddress(const String& macAddress) {
+  String result = "{";
+  int len = macAddress.length();
+  
+  for (int i = 0; i < len; i += 3) {
+    if (i > 0) {
+      result += ", ";
+    }
+    result += "0x" + macAddress.substring(i, i + 2);
+  }
+  
+  result += "};";
+  return result;
 }
+
+String commandList[] = {"restart", "hostname", "status", "wifi", "conslog", "debug", "spiffs"};
+#define ASIZE(arr) (sizeof(arr) / sizeof(arr[0]))
+String words[10]; // Assuming a maximum of 10 words
 
 void WebSerialonMessage(uint8_t *data, size_t len) {
-  //Serial.printf("Received %lu bytes from WebSerial: ", len);
-  //Serial.write(data, len);
-  //Serial.println();
-  //Serial.printf("commandList size is: %d\n", ASIZE(commandList));
+  Serial.printf("Received %lu bytes from WebSerial: ", len);
+  Serial.write(data, len);
+  Serial.println();
+  //WebSerial.print("Received: ");
   String dataS = String((char*)data);
-  log::toAll(dataS);
+  // Split the String into an array of Strings using spaces as delimiters
+  String words[10]; // Assuming a maximum of 10 words
   int wordCount = 0;
   int startIndex = 0;
   int endIndex = 0;
@@ -195,376 +75,169 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       startIndex = endIndex + 1;
     }
   }
-  //log::toAll("words: " + String(wordCount));
-  for (int i = 0; i < wordCount; i++) {   
-    //log::toAll(String(i) + ":" + words[i]); 
+  for (int i = 0; i < wordCount; i++) {
     int j;
+    WebSerial.print(words[i]);
     if (words[i].equals("?")) {
-      for (j = 1; j < log::ASIZE; j++) {
-        log::toAll(String(j) + ":" + log::commandList[j]);
+      for (j = 1; j < ASIZE(commandList); j++) {
+        WebSerial.println(String(j) + ":" + commandList[j]);
       }
-      return;
-    }
-    if (words[i].toInt() > 0)
-      for (j = 1; j < log::ASIZE; j++) {
-        //log::toAll("j: " + String(j) + " " + log::commandList[j]);
-        if (words[i].toInt() == j) {
-          //Serial.printf("match %d %s %d %s\n", i, words[i].c_str(), j, commandList[j].c_str());
-          words[i] = log::commandList[j];
-        }
-      }
-    if (words[i].equals("status")) {
-      log::toAll("             uptime: " + String(millis() / 1000));
-      log::toAll("           AWS (in): " + String(WindSensor::windSpeedKnots));
-      log::toAll("           AWA (in): " + String(WindSensor::windAngleDegrees));
-      //WebSerial.flush();
-#ifdef HONEY
-      log::toAll(" Sensor L/H/Current: " + String(PotLo) + "/" + String(PotHi) + "/" + String(PotValue));
-      log::toAll("       Sensor angle: " + String(mastRotate));
-      log::toAll("        Correct AWA: " + String(rotateout));
-#endif
-      return;
-    }
-    if (words[i].equals("wind")) {
-      log::toAll("STW: " + String(pBD->STW*MTOKTS));
-      log::toAll("AWS: " + String(WindSensor::windSpeedKnots) + " AWA: " + String(WindSensor::windAngleDegrees));
-      log::toAll("TWS: " + String(pBD->TWS*MTOKTS) + " TWA: " + String(pBD->TWA));
-      log::toAll("HDG: " + String(pBD->trueHeading));
-      log::toAll("TWD:" + String(pBD->TWD));
-      log::toAll("VMG: " + String(pBD->VMG*MTOKTS));
-      log::toAll("maxTWS: " + String(pBD->maxTWS*MTOKTS));
-      return;
-    }
-    if (words[i].equals("compass")) {
-      log::toAll("           Boat Compass: " + String(compass.boatHeading));
-      log::toAll("              Boat True: " + String(pBD->trueHeading));
-      log::toAll("              Variation: " + String(pBD->Variation*RADTODEG));
-      log::toAll("            Orientation: " + String(boatOrientation));
-      log::toAll("      Heading Err Count: " + String(headingErrCount));
-#ifdef BNO_GRV
-      log::toAll("               Boat IMU: " + String(compass.boatIMU));
-      log::toAll("           Mast Compass: " + String(mastCompassDeg));
-#ifdef CMPS14
-      log::toAll("            [Calibration]: ");
-      String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
-      log::toAll("mag: " + String(calibrationStatus[0]) + String(calibrationStatus[1]) + " " + CV);
-      CV = String((calibrationStatus[2] << 8) | calibrationStatus[3]);
-      log::toAll("acc: " + String(calibrationStatus[2]) + String(calibrationStatus[3]) + " " + CV);
-      // gyro cal is "currently broken"
-      CV = String((calibrationStatus[6] << 8) | calibrationStatus[7]);
-      log::toAll("sys: " + String(calibrationStatus[6]) + String(calibrationStatus[7]) + " " + CV);
-      log::toAll();
-      CV = String();
-#endif
-#endif
-      return;
-    } // compass
-#ifdef N2K
-    if (words[i].equals("n2k")) {
-      log::toAll("           n2k main: " + String(num_n2k_messages));
-      log::toAll("           n2k wind: " + String(num_wind_messages));
-      log::toAll("      n2k wind fail: " + String(num_wind_fail));
-      log::toAll("       n2k wind fwd: " + String(num_wind_other));
-      log::toAll("  n2k wind fwd fail: " + String(num_wind_other_fail));
-      log::toAll("    n2k wind fwd ok: " + String(num_wind_other_ok));
-      if (otherPGNindex > 0) {
-        log::toAll("n2k other PGNs: ");
-        for (int i=0; i<otherPGNindex; i++) {
-          log::toAll(String(otherPGN[i]));
-        }
-      }
-      return;
-    }
-#endif
-    if (words[i].equals("format")) {
-      SPIFFS.format();
-      log::toAll("SPIFFS formatted");
       return;
     }
     if (words[i].equals("restart")) {
-      log::toAll("Restarting...");
+      WebSerial.println("restarting...");
       ESP.restart();
     }
-    if (words[i].equals("ls")) {
-      File root = SPIFFS.open("/");
-      File file = root.openNextFile();
-      while (file) {
-        log::toAll(file.name());
-        file.close(); 
-        file = root.openNextFile();
-      }
-      root.close();
-      //log::toAll("done");
-      return;
-    }
     if (words[i].equals("scan")) {
-      i2cScan(Wire);
+      //i2cScan();
       return;
     }
-    if (words[i].equals("readings")) {
-      //log::toAll(readings);
-      return;
-    }
-    if (words[i].equals("mast")) {
-      //sendMastControl();
-      //log::toAll(readings);
-      return;
-    }
-    if (words[i].equals("lsap")) {
-      lsAPconn();
-      return;
-    }
-    if (words[i].equals("wifi")) {
-      int priority;
-      String ssid, passwd;
-      if (!words[++i].isEmpty()) {
-        int j=i;
-        while (!words[j].isEmpty()) {
-          if (words[j].equals("-p")) { // priority (1..3)
-            priority = words[++j].toInt();
-          } 
-          if (words[j].equals("-S")) { // ssid
-            ssid = words[++j];
-          }
-          if (words[j].equals("-P")) { // password
-            passwd = words[++j];
-          }
-          j++;
-        } // while
-        if (priority > 0 && priority < 4 && !ssid.isEmpty() && !passwd.isEmpty()) {
-          log::toAll("wifi params: -p: " + String(priority) + " -s: " + ssid + " -P: " + passwd);
-        } else log::toAll("wifi syntax -p <1..3> -S ssid -P password");
-      } else { // no parameters
-        if (WiFi.status() == WL_CONNECTED)
-          log::toAll("connected to: " + WiFi.SSID());  
-        else log::toAll("wifi not connected");
-      }
-      return;      
-    }
-    // Toggle switches
-    if (words[i].startsWith("tog")) {
-      if (wordCount > 1 && !words[++i].isEmpty()) {
-        if (words[i].startsWith("gps")) {
-          gpsDebug = !gpsDebug;
-          log::toAll("gpsdebug: " + String(gpsDebug));
-        }
-        if (words[i].startsWith("potlog")) {
-          logPot = !logPot;
-          log::toAll("logPot: " + String(logPot));
-        }
-        if (words[i].startsWith("disp")) {
-          displayOnToggle = !displayOnToggle;
-          log::toAll("Display: " + String(displayOnToggle));
-        }
-//#ifdef BNO_GRV
-        if (words[i].startsWith("comp")) {
-          compass.OnToggle = !compass.OnToggle;
-          log::toAll("Compass: " + String(compass.OnToggle));
-        }        
-//#endif
-        if (words[i].startsWith("honey")) {
-          honeywellOnToggle = !honeywellOnToggle;
-          log::toAll("Honeywell: " + String(honeywellOnToggle));
-        }
-        if (words[i].startsWith("stack")) {
-          stackTrace = !stackTrace;
-          log::toAll("stackTrace: " + String(stackTrace));
-        }
-        if (words[i].startsWith("tun")) {
-          tuning = !tuning;
-          log::toAll("tuning: " + String(tuning));
-        }
-     } else {
-        log::toAll("logPot: " + String(logPot));
-        log::toAll("display: " + String(displayOnToggle));
-//#ifdef BNO_GRV
-        log::toAll("compass: " + String(compass.OnToggle));
-//#endif
-        log::toAll("honeywell: " + String(honeywellOnToggle));
-        log::toAll("stackTrace: " + String(stackTrace));
-        log::toAll("tuning:  " + String(tuning));
-      }
-      return;
-    }
-    if (words[i].equals("compass")) {
-      if (pRTK) {
-        //log::toAll("antA:" + String(pRTK->antennaAstat));
-        //log::toAll("antB: " + String(pRTK->antennaBstat));
-        //log::toAll("baselen: " + String(pRTK->baseLen));
-        //log::toAll("GPStime: " + String(pRTK->GPStime));
-        log::toAll("GPStime: " + doubleToTimeString(pRTK->GPStime));
-        // TBD: fix this. Depends on which GPS sensor
-#if 0
-        switch (pRTK->RTKqual) {
-          case 0:
-            log::toAll("qual: no fix");
-            break;
-          case 4:
-            log::toAll("qual: RTK fix");
-            break;        
-          case 6:
-            log::toAll("qual: estimate (DR) mode");
-            break;
-        }
-#endif
-        log::toAll("RTK fix quality: " + String(RTKqualStr[pRTK->RTKqual]));
-        log::toAll("pitch/roll: " + String(pRTK->pitch) + " " + String(pRTK->roll));
-        log::toAll("heading: " + String(pRTK->heading));
-        log::toAll("RTK orientation: " + String(rtkOrientation));
-        //log::toAll("pAcc/rAcc: " + String(pRTK->pAcc) + " " + String(pRTK->rAcc));
-        //log::toAll("hAcc: " + String(pRTK->hAcc));
-        log::toAll("usedSV: " + String(pRTK->usedSV));      
-        return;
-      }
-    }
-#endif
-#ifdef PICAN
-    if (bmeFound && words[i].startsWith("weat") && pENV) {
-      log::toAll("Cabin Temp: " + String(pENV->temp));
-      log::toAll("Pressure: " + String(pENV->pressure));
-      log::toAll("Humidity: " + String(pENV->humidity));
-      return;
-    }
-#endif
-    if (words[i].equals("webserver")) {
-      log::toAll("local IP: ");
-      log::toAll(WiFi.localIP().toString());
-      log::toAll("AP IP address: ");
-      log::toAll(WiFi.softAPIP().toString());
-        int clientCount = WiFi.softAPgetStationNum();
-        if (clientCount > 0) {
-          log::toAll("Clients connected: " + clientCount);
-        } else {
-          log::toAll("No clients connected");
-        }
-      return;
-    }
-    if (words[i].equals("windrx")) {
-      log::toAll("last wind time: " + String(time_since_last_wind_rx) + " avg wind time: " + String(avg_time_since_last_wind) + " ms");
-      if (time_since_last_wind_rx > 0.0)
-        log::toAll(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
-      return;
-    }    
-    if (words[i].equals("hostname")) {
+    if (words[i].startsWith("host")) {
       if (!words[++i].isEmpty()) {
         host = words[i];
         preferences.putString("hostname", host);
-        log::toAll("hostname set to " + host + "\n");
-        log::toAll("restart to change hostname\n");
+        log::toAll("hostname set to " + host);
+        log::toAll("restart to change hostname");
         log::toAll("preferences " + preferences.getString("hostname"));
       } else {
         log::toAll("hostname: " + host);
       }
       return;
-    }  
-    if (words[i].equals("variation")) {
-      if (!words[++i].isEmpty()) {
-        pBD->Variation = atof(words[i].c_str())*DEGTORAD;
-        preferences.putFloat("variation", pBD->Variation);
-        log::toAll("variation set to " + String(pBD->Variation));
-      } else {
-        log::toAll("variation: " + String(pBD->Variation));
-      }
-      return;
-    }  
-#ifdef BNO_GRV
-    if (words[i].equals("hall")) {
-      log::toAll("got true heading trigger, setting orientation mast: " + String(mastCompassDeg) + " boat: " + String(compass.boatIMU) + " delta: " + String(mastDelta));
-      mastOrientation = 0;
-      mastOrientation = mastDelta = readCompassDelta(); 
-      log::toAll("new orientation: " + String(mastDelta));
+    }
+    if (words[i].equals("status")) {
+      time_t ts = lastUpdate/1000;
+      ptm = localtime(&ts);
+      sprintf(prbuf,"[%02d/%02d %02d:%02d:%02d] ",ptm->tm_mon+1,ptm->tm_mday,ptm->tm_hour, ptm->tm_min, ptm->tm_sec);
+      String buf = String(prbuf); 
+      unsigned long uptime = millis() / 1000;
+      buf += "uptime: " + String(uptime);
+      log::toAll(buf);
+      buf = String();
+      log::toAll(getSensorReadings());
       return;
     }
-#endif
-#ifdef PICAN
-    if (words[i].equals("gsv")) {
-      log::toAll("maxSat: " + String(maxSat));
-      int totalSat = 0;
-      for (int j=0; j<MAXSAT; j++) {
-        if (GSVseen[j].SVID > 0) {
-          totalSat++;
-          log::toAll(String(GSVseen[j].SVID) + " el: " + String(GSVseen[j].Elevation) + " az: " + String(GSVseen[j].Azimuth) + " SNR: " + String(GSVseen[j].SNR));
-          GSVseen[j].SVID = 0;
+    if (words[i].startsWith("wifi")) {
+      String buf = "hostname: " + host;
+      buf += " wifi: " + WiFi.SSID();
+      buf += " ip: " + WiFi.localIP().toString();
+      buf += "  MAC addr: " + formatMacAddress(WiFi.macAddress());
+      log::toAll(buf);
+      // TBD: start captive portal?
+      buf = String();
+      return;
+    }
+    // 'spiffs ls'
+    // 'spiffs status'
+    // 'spiffs format'
+    if (words[i].startsWith("spiffs")) {
+      if (wordCount > 1) {
+        if (words[++i].equals("ls")) {
+          File root = SPIFFS.open("/");
+          File file = root.openNextFile();
+          while (file) {
+            WebSerial.println(file.name());
+            file.close(); // Close the file after reading its name
+            file = root.openNextFile();
+          }
+          root.close();
+          WebSerial.println("done");
+          return;
         }
-        if (totalSat % 10 == 0) WebSerial.flush();
+        if (words[i].startsWith("status")) {
+          size_t totalBytes = SPIFFS.totalBytes();
+          size_t usedBytes = SPIFFS.usedBytes();
+          float usedPercentage = ((float)usedBytes / totalBytes) * 100;
+          WebSerial.print("SPIFFS Total space: ");
+          WebSerial.print(totalBytes);
+          WebSerial.println(" bytes");
+          WebSerial.print("Used space: ");
+          WebSerial.print(usedBytes);
+          WebSerial.println(" bytes");
+          WebSerial.print("Free space: ");
+          WebSerial.print(totalBytes - usedBytes);
+          WebSerial.println(" bytes");
+          WebSerial.print("Usage: ");
+          WebSerial.print(usedPercentage);
+          WebSerial.println("%");
+          return;
+        }
+        if (words[i].equals("read")) {
+          if (wordCount > 2) {
+            File file = SPIFFS.open(words[++i]);
+            if (!file || file.isDirectory()) {
+              log::toAll("Failed to open wifi.txt for reading");
+              return;
+            }
+            String fileContent = "";
+            while (file.available()) {
+              fileContent = file.readStringUntil('\n');
+              WebSerial.println(fileContent);
+            }
+            file.close();
+          }
+          return;
+        }
+        if (words[i].equals("format")) {
+          SPIFFS.format();
+          WebSerial.println("SPIFFS formatted");
+          return;
+        }
       }
-      log::toAll("total satellites: " + String(totalSat));
-      log::toAll("resetting GSV list!");
+      WebSerial.println("spiffs {ls|status|format}");
+      return;
+    } // spiffs
+    if (words[i].startsWith("log")) {
+      log::logToSerial = !log::logToSerial;
+      log::toAll("serial log: " + String(log::logToSerial ? "on" : "off"));
       return;
     }
-    if (words[i].startsWith("gsvtog")) {
-      GSVtoggle = !GSVtoggle;
-      log::toAll("GSVtoggle: " + String(GSVtoggle));
+    if (words[i].startsWith("debug")) {
+      debugFlag = !debugFlag;
+      log::toAll("debug: " + String(debugFlag ? "on" : "off"));
       return;
     }
-#endif
-    if (words[i].startsWith("pass")) {
-      passThrough = !passThrough;
-      log::toAll("pass: " + String(passThrough?"true":"false"));
-      WebSerial.printf("PT: %s\n",passThrough?"true":"false");
-      return;
-    }
-#ifdef BNO_GRV
-    if (words[i].startsWith("freq")) {
-      int frequency = compassParams.frequency;
-      if (!words[++i].isEmpty()) {
-        frequency = atoi(words[i].c_str());
-        if (frequency < BNOREADRATE) frequency = BNOREADRATE;
-        preferences.putInt("frequency", frequency);
-        compassParams.frequency = frequency;
+    // 'conslog reset' overwrites console log and restarts
+    // 'conslog' (no arguments) displays existing log
+    if (words[i].startsWith("conslog")) {
+      if (wordCount > 1 && words[++i].startsWith("reset")) {
+        consLog.close();
+        consLog = SPIFFS.open("/console.log", "w", true);
+        if (!consLog) {
+          log::toAll("failed to open console log");
+        }
+        log::toAll("restarted console log");
+        return;
+      } else {
+        // Print the last 20 lines of the console log file
+        File logFile = SPIFFS.open("/console.log", "r");
+        if (!logFile) {
+          log::toAll("Failed to open console log file");
+          return;
+        }
+        // Store the last 20 lines in a circular buffer
+        const int maxLines = 20;
+        String lineBuffer[maxLines];
+        int lineCount = 0;
+        int bufferIndex = 0;
+        // Read all lines, keeping only the last 20
+        while (logFile.available()) {
+          String line = logFile.readStringUntil('\n');
+          lineBuffer[bufferIndex] = line;
+          bufferIndex = (bufferIndex + 1) % maxLines;
+          if (lineCount < maxLines) lineCount++;
+        }
+        // Print the lines in the correct order
+        for (int i = 0; i < lineCount; i++) {
+          int index = (bufferIndex + i) % maxLines;
+          WebSerial.print(lineBuffer[index]);
+        }
+        logFile.close();
+        return;
       }
-      log::toAll("frequency %d\n", frequency);
-      return;
     }
-#endif
-#if 1
-    if (words[i].startsWith("orient")) {
-      if (!words[++i].isEmpty()) {
-        int orientation = atoi(words[i].c_str());
-        if (words[i].startsWith("+")) {
-          words[i].remove(0, 1);
-          orientation = boatOrientation + atoi(words[i].c_str());
-        } else if (words[i].startsWith("-")) {
-          words[i].remove(0, 1);
-          orientation = boatOrientation - atoi(words[i].c_str());
-        } // no + or - so set orientation absolute
-        if (orientation < 0) orientation = 0;
-        if (orientation > 359) orientation = 359;
-        boatOrientation = orientation;
-        preferences.putInt("orientation", orientation);
-      } 
-      log::toAll("boat compass orientation: " + String(boatOrientation));
-      return;
-    }
-#endif
-//#ifdef BNO_GRV
-    if (words[i].startsWith("report")) {
-      for (int i=0; i<SH2_MAX_SENSOR_ID; i++) {
-        if (compass.numReports[i] > 0)
-          log::toAll("report 0x" + String(i,HEX) + "/" + String(i) + ": " + String(compass.numReports[i]));
-      }
-      log::toAll("total reports " + String(compass.totalReports));
-      return;
-    }
-//#endif
-#if 0 // maybe change to a screen timeout but how to turn back on without web interface?
-    if (words[i].equals("bright")) {
-      i++;
-      if (words[i].equals("up")) {
-        displayBright += 10;
-        if (displayBright > 255) displayBright = 255;
-      } else if (words[i].equals("down")) {
-        displayBright -= 10;
-        if (displayBright < 0) displayBright = 0;
-      }
-      log::toAll("set contrast");
-      display->ssd1306_command(SSD1306_SETCONTRAST);
-      display->ssd1306_command(0);
-      return;
-    }
-#endif
+    log::toAll("Unknown command: " + words[i]);
   }
   for (int i=0; i<wordCount; i++) words[i] = String();
   dataS = String();
 }
-
+#endif
