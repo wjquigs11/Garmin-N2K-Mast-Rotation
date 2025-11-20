@@ -81,17 +81,9 @@ extern int numReports[], totalReports;
 
 extern elapsedMillis time_since_last_mastcomp_rx;
 
-#ifdef RS485CAN
-void WindSpeed();
-#else
 void WindSpeed(const tN2kMsg &N2kMsg);
-#endif
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
-#ifdef BNO08X
-#include <Adafruit_BNO08x.h>
-extern Adafruit_BNO08x bno08x;
-#endif
 extern Preferences preferences;
 
 extern File consLog;
@@ -252,9 +244,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 #ifdef BNO_GRV
       log::toAll("               Boat IMU: " + String(compass.boatIMU));
       log::toAll("           Mast Compass: " + String(mastCompassDeg));
-#ifdef BNO08XXXXX
-      log::toAll("           Cal Status: " + String()
-#endif
 #ifdef CMPS14
       log::toAll("            [Calibration]: ");
       String CV = String((uint16_t)((calibrationStatus[0] << 8) | calibrationStatus[1]));
@@ -359,12 +348,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           gpsDebug = !gpsDebug;
           log::toAll("gpsdebug: " + String(gpsDebug));
         }
-#ifdef RTK
-        if (words[i].startsWith("rtk")) {
-          rtkDebug = !rtkDebug;
-          log::toAll("rtkDebug: " + String(rtkDebug));
-        }
-#endif
         if (words[i].startsWith("potlog")) {
           logPot = !logPot;
           log::toAll("logPot: " + String(logPot));
@@ -387,13 +370,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           stackTrace = !stackTrace;
           log::toAll("stackTrace: " + String(stackTrace));
         }
-#ifdef WINDLOG
-        if (words[i].startsWith("windlo")) {
-          windLogging = !windLogging;
-          if (!windLogging) startNextWindLog();
-          log::toAll("windLogging: " + String(windLogging));
-        }
-#endif
         if (words[i].startsWith("tun")) {
           tuning = !tuning;
           log::toAll("tuning: " + String(tuning));
@@ -406,36 +382,11 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 //#endif
         log::toAll("honeywell: " + String(honeywellOnToggle));
         log::toAll("stackTrace: " + String(stackTrace));
-#ifdef WINDLOG
-        log::toAll("wind log: " + String(windLogging));
-#endif
         log::toAll("tuning:  " + String(tuning));
       }
       return;
     }
-#ifdef NMEA0183
-    if (words[i].equals("gps") && pBD) {
-      //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
-      log::toAll("Latitude: " + String(pBD->Latitude));
-      log::toAll("Longitude: " + String(pBD->Longitude));
-      log::toAll("Variation: " + String(pBD->Variation*RADTODEG));
-      // heading is degrees !!!
-      log::toAll("Heading: " + String(pBD->trueHeading));
-      log::toAll("COG: " + String(pBD->COG*RADTODEG));
-      log::toAll("SOG: " + String(pBD->SOG));
-      log::toAll("0183 fail: " + String(num_0183_fail));
-      log::toAll("0183 ok: " + String(num_0183_ok));
-      return;
-    }
-#if 0
-    if (words[i].startsWith("gpsde") && pBD) {
-      gpsDebug = !gpsDebug;
-      log::toAll("rtkDebug: " + String(rtkDebug));
-    }
-#endif
-#endif
-#ifdef RTK
-    if (words[i].equals("rtk")) {
+    if (words[i].equals("compass")) {
       if (pRTK) {
         //log::toAll("antA:" + String(pRTK->antennaAstat));
         //log::toAll("antB: " + String(pRTK->antennaBstat));
@@ -494,13 +445,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         log::toAll(String(1000.0/avg_time_since_last_wind) + " Hz (confirm timing 1000?)");
       return;
     }    
-#ifdef BNO08X
-    if (words[i].equals("teleplot")) {
-      compass.teleplot = !compass.teleplot;
-      log::toAll("teleplot: " + String(compass.teleplot));
-      return;
-    }
-#endif
     if (words[i].equals("hostname")) {
       if (!words[++i].isEmpty()) {
         host = words[i];
@@ -573,19 +517,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;
     }
 #endif
-#ifdef BNO08X
-if (words[i].startsWith("freq")) {
-  int frequency = compass.frequency;
-  if (!words[++i].isEmpty()) {
-    frequency = atoi(words[i].c_str());
-    //if (frequency < BNOREADRATE) frequency = BNOREADRATE;
-    preferences.putInt("frequency", frequency);
-    compass.frequency = frequency;
-  }
-  log::toAll("frequency " + String(frequency));
-  return;
-}
-#endif
 #if 1
     if (words[i].startsWith("orient")) {
       if (!words[++i].isEmpty()) {
@@ -616,22 +547,6 @@ if (words[i].startsWith("freq")) {
       return;
     }
 //#endif
-#ifdef BNO08X
-    if (words[i].equals("rtype")) {
-      int reportType;
-      if (!words[++i].isEmpty()) {
-        reportType = (int)strtol(words[i].c_str(), NULL, 16);
-        preferences.putInt("rtype", reportType);
-        compass.reportType = reportType;
-        log::toAll("compass report type set to 0x" + String(reportType,HEX));
-        if (!compass.setReports()) 
-                log::toAll("Could not enable local report 0x" + String(reportType,HEX));
-      } else {
-        log::toAll("compass report type is 0x" + String(reportType,HEX));
-      }
-      return;
-    }
-#endif
 #if 0 // maybe change to a screen timeout but how to turn back on without web interface?
     if (words[i].equals("bright")) {
       i++;

@@ -1,37 +1,27 @@
 /* 
-Integrated (single ESP32) mast rotation correction 
-Relies on ESPberry to get RPI header for MCP2515-based HAT, since MCP2515 module causes kernel panic
-Added PGN for "rudder" to output mast rotation angle from Honeywell sensor
-Also reads NMEA0183 data from ICOM VHF and injects it onto N2K bus
-Web server for displaying wind speed/angle/mast rotation
-TBD: add wiring from TX on Serial(1) to Autohelm plug; port autopilot code here and modify web interface
-TBD: translate apparent wind to Seatalk1 and send to tiller pilot
+Simplified mast rotation for Ceratops
+Stage 1: read Wind PGNs, read rotation sensor, update web page with mast rotation angle and AWA
+  Do not change any N2K data
+  Single CAN interface only for reading
+Stage 2: add second ESP32 as in v3 of the code, forward in Actisense format over serial link
 */
-#include "compass.h"
 #include "windparse.h"
 #include "BoatData.h"
 
 // object-oriented classes
-#include "BNO085Compass.h"
 #include "logto.h"
 
-#ifdef PICAN
 #include <N2kMsg.h>
 #include <NMEA2000.h>
-#include <mcp_can.h>
-#include <NMEA2000_mcp.h>
-#endif
-#ifdef RS485CAN
-#include "mcp2515_can.h"
-#endif
+#include <NMEA2000_esp32.h>
+#include <N2kMessages.h>
+
+#define ESP32_CAN_TX_PIN GPIO_NUM_33
+#define ESP32_CAN_RX_PIN GPIO_NUM_32
+#define USE_N2K_CAN 7  // for use with ESP32
 
 #define SCREEN_WIDTH 128  // OLED display width, in pixels
 #define SCREEN_HEIGHT 64  // OLED display height, in pixels
-
-#ifdef D1MINI
-#define CAN_TX_PIN GPIO_NUM_17
-#define CAN_RX_PIN GPIO_NUM_16
-#endif
 
 #if defined(RS485CAN) || defined(OGDISPLAY)  // on SPI
 #define OLED_MOSI  23 // RPI 19
@@ -43,17 +33,8 @@ TBD: translate apparent wind to Seatalk1 and send to tiller pilot
 Adafruit_SSD1306 *display;
 #endif
 
-#define CAN_TX_PIN GPIO_NUM_27 // 27 = IO27, not GPIO27, RPI header pin 18
-#define CAN_RX_PIN GPIO_NUM_35 // RPI header pin 15
-
-#define N2k_SPI_CS_PIN 5    
-
-#if defined(PICAN)
 tNMEA2000 *n2kWind;
 bool n2kWindOpen = false;
-Adafruit_BME280 bme;
-bool bmeFound;
-#endif
 
 bool windForward = false;
 bool mainForward = false;
@@ -71,76 +52,18 @@ bool passThrough = false;
 Adafruit_SSD1306 *display;
 #endif
 
-#ifdef RS485CAN
-// Define CAN Ports and their Chip Select/Enable
-// RS485 CAN HAT
-#define SPI_CS_PIN 5
-mcp2515_can n2kWind(SPI_CS_PIN); // CAN0 interface CS
-const int CAN0_INT = 25;    // RPi Pin 12 -- IO25#endif
-#endif
-
-#ifdef SH_ESP32
-//#define CAN_TX_PIN GPIO_NUM_32
-//#define CAN_RX_PIN GPIO_NUM_34
-// external transceiver because on-board one isn't working
-#define CAN_RX_PIN GPIO_NUM_27
-#define CAN_TX_PIN GPIO_NUM_25
-//#define N2k_CAN_INT_PIN 22   
-//#define MOSI 23
-//#define MISO 19
-//#define SS 5
-//#define SCK 18
-#define SDA_PIN 16
-#define SCL_PIN 17
-//#define TXD0 18
-//#define RXD0 19
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-#define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
-// RPI pin 24 = CP0/GPIO8 = IO5
-#define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
-//Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-Adafruit_SSD1306 *display;
-#endif // SH_ESP32
-
 using namespace reactesp;
 ReactESP app;
 #define RECOVERY_RETRY_MS 1000  // How long to attempt CAN bus recovery
 bool stackTrace = false;
 TwoWire *i2c;
 
-#if defined(NMEA0183)
-#define NMEA0183serial Serial1
-#define NMEA0183RX 16 // ESPberry RX0 = IO16? 
-#define NMEA0183TX 15 
-// SK Pang says it's mapped to /dev/ttyS0 which is 14(tx) and 15(rx) on RPI
-// but that's RPI GPIOs, and RPI GPIO 15 is mapped to IO16 on ESPBerry
-//#define SER_BUF_SIZE (unsigned int)(1024)
-//#define NMEA0183BAUD 4800
-// new AIS is 38k baud
-#define NMEA0183BAUD 38400
-tNMEA0183 NMEA0183_3;
-#endif
-
-#if defined(RTK)
-#define RTKserial Serial2
-#define RTKRX 33
-#define RTKTX 32
-#define RTKBAUD 115200
-tNMEA0183 RTKport;
-#endif
-
 tBoatData BoatData;
-tRTKstats RTKdata;
-tEnvStats ENVdata;
 
 // TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
 
 //Stream *read_stream = &Serial;
 Stream *forward_stream = &Serial;
-
-tNMEA2000 *n2kMain;
-bool n2kMainOpen = false;
-extern tN2kMsg correctN2kMsg;
 
 #ifdef HONEY
 // Honeywell sensor
@@ -168,14 +91,13 @@ elapsedMillis time_since_last_mastcomp_rx = 0;
 unsigned long total_time_since_last_mastcomp = 0.0;
 unsigned long avg_time_since_last_mastcomp = 0.0;
 
-extern int num_0183_messages;
-extern int num_0183_fail;
-extern int num_0183_ok;
-
+#ifdef NTP
 // Define NTP Client to get time
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
+#endif
 
+#ifdef WIFI
 // defs for wifi
 void initWebSocket();
 //void notifyClients(String);
@@ -191,41 +113,8 @@ void startAP();
 void startWebServer();
 bool sendMastControl();
 String getSensorReadings();
-
 String host = "ESPwind";
-
-// mast compass
-int convertMagHeading(const tN2kMsg &N2kMsg); // magnetic heading of boat (from e.g. B&G compass)
-float parseMastHeading(const tN2kMsg &N2kMsg);  // mast heading
-float parseN2KHeading(const tN2kMsg &N2kMsg); // boat heading from external source
-//float getCompass(int correction);      // boat heading from internal ESP32 compass
-void httpInit(const char* serverName);
-extern const char* serverName;
-float mastOrientation; // delta between mast compass and boat compass
-int sensOrientation; // delta between mast centered and Honeywell sensor reading at center
-int boatOrientation; // delta between boat compass and magnetic north
-int rtkOrientation;  // delta between boat RTK compass and TRUE north
-float boatCompassTrue;
-float mastCompassDeg;
-float mastDelta;
-extern tN2kWindReference wRef;
-#ifdef BNO_GRV
-movingAvg mastCompDelta(10);
 #endif
-void mastHeading();
-int mastAngle[2]; // array for both sensors
-// 0 = honeywell
-// 1 = compass
-float getMastHeading();
-
-bool imuReady=false;
-bool mastIMUready=false;
-
-#ifdef BNO08X
-BNO085Compass compass;
-#endif
-
-int headingErrCount;
 
 // Time after which we should reboot if we haven't received any CAN messages
 #define MAX_RX_WAIT_TIME_MS 30000
@@ -249,12 +138,8 @@ void ToggleLed() {
   led_state = !led_state;
 }
 
-#ifdef RS485CAN
-void parseWindCAN();
-#else
 void ParseWindN2K(const tN2kMsg &N2kMsg);
 void ParseCompassN2K(const tN2kMsg &N2kMsg);
-#endif
 void BoatSpeed(const tN2kMsg &N2kMsg);
 
 const unsigned long TransmitMessages[] PROGMEM={130306L,127250L,0};
@@ -448,14 +333,7 @@ void OLEDdataWindDebug() {
     display->printf("Delta:%2d\n", mastAngle[1]);
   }
 #endif
-#ifdef MASTIMU
-  display->printf("Mast:%2.0f/Rot:%2.0f\n",mastCompassDeg,mastRotate);
-#endif
-#ifdef BNO08X
-  display->printf("M:%0.0f(%d)/T:%0.0f/GPS:%0.0f\n", compass.boatHeading,compass.boatAccuracy,pBD->trueHeading,pBD->COG);
-#else
   display->printf("T:%2.0f\n", pBD->trueHeading);
-#endif
   display->printf("Lat:%2.2f Lon:%2.2f", pBD->Latitude, pBD->Longitude);
   display->display();
 }
@@ -545,9 +423,6 @@ if (!ina219.begin()) {
   }
 #endif // HONEY
   pBD=&BoatData; // need this even if we're not using 0183
-#ifdef RTK
-  pRTK=&RTKdata;
-#endif
   pENV=&ENVdata;
   // Set up NMEA0183 ports and handlers
 #if defined(NMEA0183)
@@ -560,19 +435,6 @@ if (!ina219.begin()) {
     log::toAll("failed to open NMEA0183 serial port");
   else
     log::toAll("opened NMEA0183 serial port");
-#endif
-#ifdef RTK
-  RTKport.SetMsgHandler(HandleNMEA0183Msg);
-  RTKserial.begin(RTKBAUD,SERIAL_8N1,RTKRX,RTKTX);
-#ifdef RTK_TIMO
-  // use NMEA0183Handlers to process RTK GPS messages
-  RTKport.SetMessageStream(&RTKserial);
-  RTKport.Open();
-#endif
-  if (!RTKserial)
-    log::toAll("failed to open RTK serial port");
-  else
-    log::toAll("opened RTK serial port");
 #endif
 #ifdef N2K
   // instantiate the NMEA2000 object for the main bus
@@ -665,12 +527,6 @@ if (!ina219.begin()) {
   }
 
   readPrefs();
-#ifdef GPX
-  initGPX();
-#endif
-#ifdef WINDLOG
-  initWindLog();
-#endif
 
 // making it async
   if (initWiFi()) {
@@ -719,20 +575,6 @@ if (!ina219.begin()) {
     //i2cScan(Wire);
   }
 #endif
-#ifdef BNO08X
-  log::toAll("BNO08X");
-  imuReady = compass.OnToggle = compass.begin();
-  pBD->Variation = VARIATION;
-  if (imuReady) {
-    //compass.setReports();
-  } else {
-    log::toAll("BNO08x not found");
-    //i2cScan(Wire);
-  }
-#endif
-#ifdef BNO_GRV
-  mastCompDelta.begin();
-#endif
 
   ElegantOTA.begin(&server);
   WebSerial.setBuffer(128);
@@ -767,38 +609,6 @@ if (!ina219.begin()) {
 #if defined(PICAN)
     n2kWind->ParseMessages();
 #endif
-#if defined(NMEA0183)
-#ifdef DEBUG_0183XXX
-    tNMEA0183Msg NMEA0183Msg;
-    while (NMEA0183_3.GetMessage(NMEA0183Msg)) {
-    Serial.print(NMEA0183Msg.Sender());
-    Serial.print(NMEA0183Msg.MessageCode()); Serial.print(" ");
-    for (int i=0; i < NMEA0183Msg.FieldCount(); i++) {
-      Serial.print(NMEA0183Msg.Field(i));
-      if ( i<NMEA0183Msg.FieldCount()-1 ) Serial.print(" ");
-    }
-    Serial.print("\n");
-    }
-#else
-    NMEA0183_3.ParseMessages(); // GPS from ICOM
-#endif // DEBUG_0183
-#endif // NMEA0183
-#ifdef RTK
-#ifdef DEBUG_RTK
-    tNMEA0183Msg NMEA0183Msg;
-    while (RTKport.GetMessage(NMEA0183Msg)) {
-      Serial.print(NMEA0183Msg.Sender());
-      Serial.print(NMEA0183Msg.MessageCode()); Serial.print(" ");
-      for (int i=0; i < NMEA0183Msg.FieldCount(); i++) {
-        Serial.print(NMEA0183Msg.Field(i));
-        if ( i<NMEA0183Msg.FieldCount()-1 ) Serial.print(" ");
-      }
-      Serial.print("\n");
-    }
-  #else
-    RTKport.ParseMessages();  // GPS etc from WITmotion/UM982
-  #endif
-  #endif
   });
 #endif
 
@@ -824,25 +634,6 @@ if (!ina219.begin()) {
 #endif
     consLog.flush();
   });
-
-#ifdef GPX
-  static int trackPtCounter=0;
-  app.onRepeat(GPXTIMER, []() {
-    writeTrackPoint(GPXlogFile, pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->trueHeading, pBD->GPSTime);
-    if (trackPtCounter++ % 500 == 0) {
-      writeHeadingWaypoint(WPTlogFile, pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->trueHeading, pBD->GPSTime);
-      sprintf(prbuf, "lat: %3.4lf lon: %3.4f SOG: %2.2f Heading: %2.2f", pBD->Latitude, pBD->Longitude, pBD->SOG, pBD->trueHeading);
-      log::toAll(prbuf);
-    }
-  });
-#endif
-
-#ifdef WINDLOG
-  app.onRepeat(WINDTIMER, []() {
-    if (windLogging)
-      writeWindPoint(windLogFile, millis()/1000, rotateout, WindSensor::windSpeedKnots, pBD->STW, pBD->TWA, pBD->TWS, pBD->TWD, pBD->VMG, pBD->trueHeading);
-  });
-#endif
 
 // if wifi not connected, we're only going to attempt reconnect once every 5 minutes
 // if we get in range, it's simpler to reboot than to constantly check
@@ -873,61 +664,6 @@ if (!ina219.begin()) {
       log::toAll("Client " + String(i+1) + " MAC: " + String(station.mac[0],HEX) + ":" + String(station.mac[1],HEX)+ ":" + String(station.mac[2],HEX)+ ":" + String(station.mac[3],HEX)+ ":" + String(station.mac[4],HEX)+ ":" + String(station.mac[5],HEX));
     }
 });
-#endif
-
-#ifdef BNO08X
-  if (imuReady) {
-    log::toAll("checking heading at " + String(compass.frequency));
-    app.onRepeat(compass.frequency, []() {
-      float heading;
-      int err;
-      if ((err = compass.getHeading(boatOrientation)) < 0) {
-        headingErrCount++;
-        if (headingErrCount % 500 == 0)
-          log::toAll("heading error count: " + String(headingErrCount) + "ret val: " + String(err));
-      } else
-        pBD->magHeading = compass.boatHeading;
-    });
-  }
-  // check in for new heading 100 msecs = 10Hz
-  if (imuReady && !demoModeToggle)
-    app.onRepeat(compass.frequency, []() {
-      // TBD: delete reaction and recreate if frequency changes
-      // Heading, corrected for local variation (acquired from ICOM via NMEA0183)
-      // TBD: set Variation if we get a Heading PGN on main bus that includes it
-    if (compass.teleplot) {
-        Serial.print(">mast:");
-        float corrMastComp = mastCompassDeg+mastOrientation;
-        if (corrMastComp > 359) corrMastComp -= 360;
-        if (corrMastComp < 0) corrMastComp += 360;
-        Serial.println(corrMastComp);
-        Serial.print(">boatIMU:");
-        Serial.println(compass.boatIMU);
-        Serial.print(">delta:");
-        Serial.println(mastDelta);  
-        Serial.printf(">boatCOMP:%0.2f\n", compass.boatHeading);
-        Serial.printf(">true:%0.2f\n",BoatData.trueHeading); 
-        Serial.printf(">calstat:%d\n", compass.boatCalStatus);
-        Serial.printf(">acc:%0.2f\n", compass.boatAccuracy*RADTODEG);
-    }
-#if defined(N2K) && !defined(RTK)
-    // transmit heading 
-    pBD->trueHeading = compass.boatHeading + pBD->Variation;
-    if (n2kMainOpen) {
-      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)compass.boatHeading*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_magnetic);
-      if (!n2kMain->SendMsg(correctN2kMsg)) {
-        //log::toAll("Failed to send mag heading from compass reaction");
-        num_wind_other_fail++;
-      }
-      SetN2kPGN127250(correctN2kMsg, 0xFF, (double)pBD->trueHeading*DEGTORAD, N2kDoubleNA, N2kDoubleNA, N2khr_true);
-      if (!n2kMain->SendMsg(correctN2kMsg)) {
-        //log::toAll("Failed to send true heading from compass reaction");
-        num_wind_other_fail++;
-      }
-    }
-#endif
-    });
-    else log::log::toAll("compass not ready no heading reaction");
 #endif
 
 #ifdef DISPLAYON
@@ -961,11 +697,6 @@ if (!ina219.begin()) {
 }
 
 const int MAXL = 256;
-#ifdef RTK
-bool rtkDebug = false;
-char keyBuffer[MAXL];
-int keyBufIdx;
-#endif
 bool tuning = false;
 bool gpsDebug = false;
 char gpsBuffer[MAXL];
@@ -976,41 +707,7 @@ void loop() {
   WebSerial.loop();
   ElegantOTA.loop();
   char incomingChar;
-#ifdef RTK
-  // in debug mode, send text input to RTK module and echo responses to Serial
-  // TBD: figure out a way to read a few lines to view response; right now it goes to Timo
-  if (rtkDebug) {
-    while (Serial.available() > 0) {
-      incomingChar = Serial.read();
-      if (incomingChar == '\n' || incomingChar == '\r') {
-        keyBuffer[keyBufIdx] = '\0'; // Null terminate
-        // send to GPS
-        //Serial.printf("command: %s\n", keyBuffer);
-        RTKserial.println(keyBuffer);
-        keyBufIdx = 0; // Reset for next line
-      } else if (keyBufIdx < MAXL - 1) {
-          keyBuffer[keyBufIdx++] = incomingChar;
-      }
-      //Serial.print(incomingChar);
-    }
-  }
-#ifndef RTK_TIMO
-  // don't process serial input stream if we're using NMEA0183Handlers
-  while (RTKserial.available() > 0) {
-    incomingChar = RTKserial.read();
-    if (incomingChar == '\n' || incomingChar == '\r') {
-      gpsBuffer[gpsBufIdx] = '\0'; // Null terminate
-      //processBuffer();
-      Serial.printf("%s\n", gpsBuffer);
-      gpsBufIdx = 0; // Reset for next line
-    } else if (gpsBufIdx < MAXL - 1) {
-        gpsBuffer[gpsBufIdx++] = incomingChar;
-    }
-    //Serial.print(incomingChar);
-  }
-#endif
-#endif
-#ifdef DEBUG_0183
+}
   if (debugNMEA) {
     // read NMEA0183 serial and echo
     while (NMEA0183serial.available() > 0) {

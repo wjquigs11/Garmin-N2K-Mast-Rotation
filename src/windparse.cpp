@@ -14,19 +14,6 @@
 #include <SPI.h>
 #include <mcp_can.h>
 #include <NMEA2000_mcp.h>
-#ifdef NMEA0183
-#include <NMEA0183.h>
-#include <NMEA0183Msg.h>
-#include <NMEA0183Messages.h>
-//#include "NMEA0183Handlers.h"
-extern tNMEA0183 NMEA0183_3;
-tNMEA0183Msg NMEA0183Msg;
-#define NMEA0183serial Serial1
-#endif
-#endif
-
-#ifdef RS485CAN
-#include "mcp2515_can.h"
 #endif
 
 float mastRotate, rotateout;
@@ -168,19 +155,6 @@ float readCompassDelta() {
 
 tN2kMsg correctN2kMsg;
 
-#ifdef NMEA0183
-byte calculateNMEAChecksum(const char* sentence) {
-  byte checksum = 0;
-  // Start after the '$' and continue until '*' or end of string
-  for (int i = 1; sentence[i] != '\0' && sentence[i] != '*'; i++) {
-    checksum ^= sentence[i];
-  }
-  return checksum;
-}
-
-char n0183buf[64],n0183cksumbuf[64];
-#endif
-
 void WindSpeed() {
   ////Serial.println("windspeed");
   num_wind_messages++;
@@ -208,15 +182,6 @@ void WindSpeed() {
       mastOrientation = mastDelta = readCompassDelta();
       log::toAll("new orientation: " + String(mastDelta));
     }
-#endif
-#ifdef MASTIMU
-    //mastRotate = mastOrientation; // read from Rudder PGN on Wind bus from mast IMU
-    mastRotate = readCompassDelta();
-#endif
-#ifdef XMITRUDDER
-    // shift from -portRange..stbdRange to 0..x
-    SetN2kPGN127245(correctN2kMsg, (mastRotate+portRange)*DEGTORAD, 0, N2kRDO_NoDirectionOrder, 0);
-    n2kMain->SendMsg(correctN2kMsg);
 #endif
   }
 #endif
@@ -249,24 +214,6 @@ void WindSpeed() {
     //Serial.println("Failed to send wind");  
     num_wind_other_fail++;
   }
-#ifdef NMEA0183
-  // send on NMEA0183 serial (to Tiller Pilot)
-  ////Serial.printf("0183 vars: %x %f %d %f %x\n", &NMEA0183Msg, rotateout, NMEA0183Wind_Apparent, WindSensor::windSpeedMeters,NMEA0183_3);
-  float bowAngle;
-  char direction;
-  if (rotateout > 180) {
-    bowAngle = 360 - rotateout;
-    direction = 'L'; // Left
-  } else {
-    bowAngle = rotateout;
-    direction = 'R'; // Right
-  }
-  sprintf(n0183buf,"$IIVWR,%2d,%c,%2.1f,N,%2.1f,M,%2.1f,K*",(int)rotateout, direction, WindSensor::windSpeedKnots, WindSensor::windSpeedMeters, WindSensor::windSpeedMeters/3.6);
-  int cksum = calculateNMEAChecksum(n0183buf);
-  sprintf(n0183cksumbuf,"%s%02X", n0183buf, cksum);
-  //Serial.println(buf2);
-  NMEA0183serial.println(n0183cksumbuf);
-#endif
   //calcTrueWind();
 #ifdef XMITTRUE
   // calculate TWS/TWA from boat speed and send another wind PGN
@@ -320,13 +267,6 @@ void ParseCompassN2K(const tN2kMsg &N2kMsg) {
 }
 #endif
 
-//#define DEBUG
-#ifdef RS485CAN
-extern mcp2515_can n2kWind;
-//extern tN2kMsg correctN2kMsg;
-int windCANsrc = -1;
-//extern mcp2515_can n2kWind;
-byte cdata[MAX_DATA_SIZE] = {0};
 //#define DEBUG
 // parse a packet manually from CAN bus data (not using Timo library)
 // set globals for wind speed/angle or heading for processing by WindSpeed() or Heading()

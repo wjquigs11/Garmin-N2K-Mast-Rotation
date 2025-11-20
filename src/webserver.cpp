@@ -68,22 +68,6 @@ String getSensorReadings() {
     readings["PotValue"] = PotValue;
   }
 #endif
-#ifdef BNO08X
-  if (compass.OnToggle) {
-    #ifdef BNO_GRV
-    if (mastCompassDeg >= 0) { // set to -1 if mast compass times out
-      readings["mastHeading"] = String(mastCompassDeg+mastOrientation,1);
-      readings["mastDelta"] = mastAngle[1];
-      readings["boatIMU"] = String(compass.boatIMU,1);
-    }
-    #endif
-    readings["boatHeading"] = String(compass.boatHeading,0);
-    readings["boatTrue"] = String(pBD->trueHeading,0);
-    //readings["boatCalStatus"] = String(boatCalStatus);
-    if (!honeywellOnToggle) // honeywell takes precedence if both are enabled
-      readings["rotateout"] = String(rotateout,0);
-  }
-#endif
   readings["windSpeed"] = String(WindSensor::windSpeedKnots,2);
   readings["windAngle"] = String(WindSensor::windAngleDegrees,0);
 #ifdef PICAN // doing this with URLs for now because I want the client side to control refresh rate
@@ -134,9 +118,6 @@ String settings_processor(const String& var) {
   if (var == "sensorient") return (settingsString = String(sensOrientation));
   if (var == "boatorient") return (settingsString = String(boatOrientation));
   if (var == "RTKorient") return (settingsString = String(rtkOrientation));
-#ifdef BNO08X
-  if (var == "frequency") return (settingsString = String(compass.frequency));
-#endif
   if (var == "controlMAC") return (settingsString = String(WiFi.macAddress()));
   if (var == "variation") return (settingsString = String(BoatData.Variation));
   return (settingsString = String("settings processor: placeholder not found " + var));
@@ -206,15 +187,6 @@ void readPrefs() {
   preferences.begin("ESPwind", false);
   displayOnToggle = (preferences.getString("displayOnTog", "true") == "true") ? true : false;
   log::toAll("display = " + String(displayOnToggle));
-#ifdef BNO08X
-  compass.OnToggle = (preferences.getString("compass.OnTog", "false") == "true") ? true : false;
-  log::toAll("compass = " + String(compass.OnToggle));
-  //readings["compass"] = (compass.OnToggle ? 1 : 0);
-  compass.frequency = preferences.getInt("compassFreq", 50);
-  log::toAll("compassFrequency = " + String(compass.frequency));
-  compass.reportType = preferences.getInt("rtype", 0);
-  log::toAll("reportType = " + String(compass.reportType));
-#endif
   honeywellOnToggle = (preferences.getString("honeywellOnTog", "false") == "true") ? true : false;
   log::toAll("honeywell = " + String(honeywellOnToggle));
   //readings["honeywell"] = (honeywellOnToggle ? 1 : 0);
@@ -225,26 +197,6 @@ void readPrefs() {
   sensOrientation = preferences.getInt("sensOrientation", 0);
   boatOrientation = preferences.getInt("boatOrientation", 0);
   BoatData.Variation = preferences.getFloat("variation", VARIATION);
-#ifdef GPX
-preferences.putString("GPXlog", "gpxfile");
-preferences.putInt("GPXlogFileIdx", 0);
-  strcpy(GPXlog, preferences.getString("GPXlog", "gpxfile").c_str());
-  log::toAll("gpxFilePrefix = " + String(GPXlog));
-  // increment here? maybe!
-  logFileIdx = preferences.getInt("GPXlogFileIdx", 0)+1;
-  log::toAll("GPXlogFileIdx = " + String(logFileIdx));
-#endif
-#ifdef WINDLOG
-preferences.putString("windLog", windLog);
-// comment out after first run
-preferences.putInt("windLogFileIdx", 0);
-strcpy(windLog, preferences.getString("windLog", windLog).c_str());
-log::toAll("wind log file prefix = " + String(windLog));
-// increment here? maybe
-windLogFileIdx = preferences.getInt("windLogFileIdx", 0);//+1;
-log::toAll("windLogFileIdx = " + String(windLogFileIdx));
-// TBD: consider storing bool windLogging instead of turning it on each time you reboot
-#endif
 }
 
 #ifdef PICAN
@@ -615,12 +567,6 @@ void startWebServer() {
           mastOrientation = atoi(p->value().c_str());
           preferences.putInt("mastOrientation", mastOrientation);
         }
-#ifdef BNO08X
-        if (p->name() == "frequency") {
-          compass.frequency = atoi(p->value().c_str());
-          preferences.putInt("compassFreq", compass.frequency);
-        }
-#endif
         if (p->name() == "variation") {
           BoatData.Variation = atof(p->value().c_str());
           preferences.putFloat("variation", BoatData.Variation);
