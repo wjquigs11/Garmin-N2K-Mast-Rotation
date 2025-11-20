@@ -148,10 +148,12 @@ extern Adafruit_BME280 bme;
 extern bool bmeFound;
 #endif
 
+#ifdef NMEA0183
 #define MAXSAT 140 // no idea how many satellites there are 
 extern struct tGSV GSVseen[]; 
 extern int maxSat;
 extern bool GSVtoggle;
+#endif
 
 extern bool displayOnToggle, honeywellOnToggle;
 extern bool stackTrace;
@@ -202,4 +204,12 @@ extern Adafruit_INA219 ina219;
 #ifdef BNO08X000
 extern BNO085Compass compass;
 #endif
+
+#ifdef AIS_FORWARD
+#include <WiFiUdp.h>
+extern WiFiUDP udp_server;
+#define UDP_FORWARD_PORT 2000
+void handle_serial_event();
+#endif
+#define NMEA0183serial Serial1
 

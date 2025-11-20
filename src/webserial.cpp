@@ -532,7 +532,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       return;
     }
 #endif
-#ifdef PICAN
+#if defined(PICAN) && defined(NMEA0183)
     if (words[i].equals("gsv")) {
       log::toAll("maxSat: " + String(maxSat));
       int totalSat = 0;

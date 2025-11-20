@@ -17,7 +17,7 @@ unsigned int num_0183_messages;
 unsigned int num_0183_fail;
 unsigned int num_0183_ok;
 
-bool debugNMEA = true;
+bool debugNMEA = false;
 bool debugN2K = false;
 
 // WITmotion RTK output:
@@ -134,22 +134,23 @@ void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg) {
     NMEA0183Handlers[iHandler].numMessages++;
     //log::toAll(String(NMEA0183Handlers[iHandler].Code) + " " + String(NMEA0183Handlers[iHandler].numMessages));
     NMEA0183Handlers[iHandler].Handler(NMEA0183Msg); 
+    return;
   }
-#if defined(SPECIAL_HANDLERS) & defined(RTK)
-  else {
+  // No standard handler found, check special handlers
+#if defined(RTK)
     char idMess[16];
-    for (iHandler=0; specialHandlers[iHandler].Code!=0; iHandler++) {
+    for (iHandler=0; specialHandlers[iHandler].Code!=0 && !handlerFound; iHandler++) {
       // need to concat sender and code to get message identifier
       sprintf(idMess, "%s%s", NMEA0183Msg.Sender(), NMEA0183Msg.MessageCode());
       size_t codeLen = strlen(specialHandlers[iHandler].Code);
-      if (strncmp(idMess, specialHandlers[iHandler].Code, codeLen) == 0)
+      if (strncmp(idMess, specialHandlers[iHandler].Code, codeLen) == 0) {
         // handles messages with suffix like "RTKSTATUSA"
         specialHandlers[iHandler].Handler(NMEA0183Msg);
+        return;
+      }
     }
-  }
 #endif
 #ifdef WITMOTION
-  else {
     if (!strcmp(NMEA0183Msg.Sender(),"PA")) // ignore RTK "PAIR" for now
       log::toAll("unknown 0183 message: " + String(NMEA0183Msg.Sender()) + " " + String(NMEA0183Msg.MessageCode()));
     //for (int i=0; i < NMEA0183Msg.FieldCount(); i++) {
@@ -159,7 +160,29 @@ void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg) {
     //}
     //Serial.println();
     num_0183_ok++;
+    return;
   }
+#endif
+#ifdef AIS_FORWARD
+  // we only get here if no handler matched the message
+  // Build complete NMEA sentence in prbuf
+  // send as udp broadcast
+  int offset = 0;
+  offset += snprintf(prbuf + offset, PRBUF - offset, "%c%s%s", 
+                      NMEA0183Msg.GetPrefix(),
+                      NMEA0183Msg.Sender(), 
+                      NMEA0183Msg.MessageCode());
+  
+  for (int i = 0; i < NMEA0183Msg.FieldCount(); i++) {
+    offset += snprintf(prbuf + offset, PRBUF - offset, ",%s", NMEA0183Msg.Field(i));
+  }
+  snprintf(prbuf + offset, PRBUF - offset, "*%02X", NMEA0183Msg.GetCheckSum());
+  // does UDP write need \r\n?
+  offset += snprintf(prbuf + offset, PRBUF - offset, "\r\n");
+  Serial.print(prbuf);
+  int result = udp_server.beginPacket(INADDR_NONE, UDP_FORWARD_PORT);
+  udp_server.write((const uint8_t*)prbuf, offset);
+  udp_server.endPacket();
 #endif
 }
 

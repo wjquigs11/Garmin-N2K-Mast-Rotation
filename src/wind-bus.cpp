@@ -109,7 +109,6 @@ bool stackTrace = false;
 TwoWire *i2c;
 
 #if defined(NMEA0183)
-#define NMEA0183serial Serial1
 #define NMEA0183RX 16 // ESPberry RX0 = IO16? 
 #define NMEA0183TX 15 
 // SK Pang says it's mapped to /dev/ttyS0 which is 14(tx) and 15(rx) on RPI
@@ -127,6 +126,10 @@ tNMEA0183 NMEA0183_3;
 #define RTKTX 32
 #define RTKBAUD 115200
 tNMEA0183 RTKport;
+#endif
+
+#ifdef AIS_FORWARD
+WiFiUDP udp_server;
 #endif
 
 tBoatData BoatData;
@@ -551,15 +554,19 @@ if (!ina219.begin()) {
   pENV=&ENVdata;
   // Set up NMEA0183 ports and handlers
 #if defined(NMEA0183)
-  NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
-  DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
-  NMEA0183_3.SetMessageStream(&NMEA0183serial);
-  NMEA0183_3.Open();
   if (!NMEA0183serial) 
     log::toAll("failed to open NMEA0183 serial port");
   else
     log::toAll("opened NMEA0183 serial port");
+//#ifndef AIS_FORWARD // parse NMEA0183 messages
+  NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
+  //DebugNMEA0183Handlers(&Serial);
+  NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
+  NMEA0183_3.SetMessageStream(&NMEA0183serial);
+  NMEA0183_3.Open();
+//#else // AIS_FORWARD -- do not parse, just forward
+//#endif
 #endif
 #ifdef RTK
   RTKport.SetMsgHandler(HandleNMEA0183Msg);
@@ -616,10 +623,10 @@ if (!ina219.begin()) {
   n2kWind->SetN2kCANMsgBufSize(8);
   n2kWind->SetN2kCANReceiveFrameBufSize(100);
   n2kWind->SetMode(tNMEA2000::N2km_ListenAndSend);
-  n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
-  n2kWind->SetForwardStream(forward_stream);
+  //n2kWind->SetForwardType(tNMEA2000::fwdt_Text);
+  //n2kWind->SetForwardStream(forward_stream);
   n2kWind->EnableForward(false); 
-  n2kWind->SetForwardOwnMessages(true);
+  //n2kWind->SetForwardOwnMessages(true);
   n2kWind->SetMsgHandler(HandleNMEA2000MsgWind);
   if (n2kWind->Open()) {
     log::toAll("opening n2kWind");
@@ -754,6 +761,10 @@ if (!ina219.begin()) {
 
   log::toAll("ESP flash size 0x" + String(ESP.getFlashChipSize(),HEX)); // 4194304
 
+#ifdef AIS_FORWARD // do not parse, just forward
+  udp_server.begin(UDP_FORWARD_PORT);
+  log::toAll("udp port open");
+#endif // AIS
   consLog.flush();
 
 #ifdef N2K
@@ -780,7 +791,10 @@ if (!ina219.begin()) {
     Serial.print("\n");
     }
 #else
+//#ifndef AIS_FORWARD
     NMEA0183_3.ParseMessages(); // GPS from ICOM
+//#else // AIS_FORWARD -- do not parse, just forward
+//#endif // AIS
 #endif // DEBUG_0183
 #endif // NMEA0183
 #ifdef RTK
@@ -975,6 +989,12 @@ void loop() {
   app.tick(); 
   WebSerial.loop();
   ElegantOTA.loop();
+#ifdef AIS_FORWARD_XXX
+  // handling incoming AIS data differently; not one char at a time
+  // might be more efficient but also might take longer per sentence, hence yield() after
+  handle_serial_event();
+  yield();
+#endif
   char incomingChar;
 #ifdef RTK
   // in debug mode, send text input to RTK module and echo responses to Serial
