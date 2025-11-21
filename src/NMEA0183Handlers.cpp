@@ -176,11 +176,12 @@ void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg) {
   for (int i = 0; i < NMEA0183Msg.FieldCount(); i++) {
     offset += snprintf(prbuf + offset, PRBUF - offset, ",%s", NMEA0183Msg.Field(i));
   }
-  snprintf(prbuf + offset, PRBUF - offset, "*%02X", NMEA0183Msg.GetCheckSum());
-  // does UDP write need \r\n?
+  offset += snprintf(prbuf + offset, PRBUF - offset, "*%02X", NMEA0183Msg.GetCheckSum());
   offset += snprintf(prbuf + offset, PRBUF - offset, "\r\n");
-  Serial.print(prbuf);
-  int result = udp_server.beginPacket(INADDR_NONE, UDP_FORWARD_PORT);
+  //Serial.print(prbuf);
+  IPAddress broadcastIP(255, 255, 255, 255);
+  //int result = udp_server.beginPacket(INADDR_NONE, UDP_FORWARD_PORT);
+  int result = udp_server.beginPacket(broadcastIP, UDP_FORWARD_PORT);
   udp_server.write((const uint8_t*)prbuf, offset);
   udp_server.endPacket();
 #endif
