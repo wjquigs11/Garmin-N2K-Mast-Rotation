@@ -139,7 +139,7 @@ void HandleNMEA0183Msg(const tNMEA0183Msg &NMEA0183Msg) {
   // No standard handler found, check special handlers
 #if defined(RTK)
     char idMess[16];
-    for (iHandler=0; specialHandlers[iHandler].Code!=0 && !handlerFound; iHandler++) {
+    for (iHandler=0; specialHandlers[iHandler].Code!=0; iHandler++) {
       // need to concat sender and code to get message identifier
       sprintf(idMess, "%s%s", NMEA0183Msg.Sender(), NMEA0183Msg.MessageCode());
       size_t codeLen = strlen(specialHandlers[iHandler].Code);
@@ -439,9 +439,9 @@ void HandleHPR(const tNMEA0183Msg &NMEA0183Msg) {
     //if (Heading > 0.01 && Pitch > 0.01 && Roll > 0.01) {
       // sensor is currently sending 0 for HPR so only set heading if all are >0
       pBD->trueHeading=fmod(Heading+rtkOrientation, 359.9);
+      pRTK->heading=Heading;
       pRTK->GPStime = UTC;
       pRTK->RTKqual = QF; // quality of fix
-      pRTK->heading = pBD->trueHeading;
       pRTK->pitch = Pitch;
       pRTK->roll = Roll;
       pRTK->usedSV = SatNo;
@@ -458,7 +458,7 @@ void HandleHPR(const tNMEA0183Msg &NMEA0183Msg) {
     // Vessel Heading (deviation should always be 0 since it's not a magnetic compass)
     // heading arrives in DEGREES convert to radians for n2k
     if (rtkDebug) {
-      //log::toAll("sending n2k true heading " + String(pBD->trueHeading) + " variation " + String(pBD->Variation));
+      log::toAll("sending n2k true heading " + String(pBD->trueHeading) + " variation " + String(pBD->Variation));
     }
     SetN2kPGN127250(N2kMsg, 1, pBD->trueHeading*DEGTORAD, 0, pBD->Variation*DEGTORAD, N2khr_true);
     n2kMain->SendMsg(N2kMsg);

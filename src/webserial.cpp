@@ -398,6 +398,14 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           tuning = !tuning;
           log::toAll("tuning: " + String(tuning));
         }
+        if (words[i].startsWith("0183")) {
+          debugNMEA = !debugNMEA;
+          log::toAll("debug NMEA 0183:" + String(debugNMEA));
+        }
+        if (words[i].startsWith("gsv")) {
+          GSVtoggle = !GSVtoggle;
+          log::toAll("GSVtoggle: " + String(GSVtoggle));
+        }
      } else {
         log::toAll("logPot: " + String(logPot));
         log::toAll("display: " + String(displayOnToggle));
@@ -410,9 +418,10 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         log::toAll("wind log: " + String(windLogging));
 #endif
         log::toAll("tuning:  " + String(tuning));
+        log::toAll("debug 0183:" + String(debugNMEA));
       }
       return;
-    }
+    } // toggle
 #ifdef NMEA0183
     if (words[i].equals("gps") && pBD) {
       //Serial.printf("gps coords: %2.2d %2.2d\n", pBD->Latitude, pBD->Longitude);
@@ -441,6 +450,11 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
         //log::toAll("antB: " + String(pRTK->antennaBstat));
         //log::toAll("baselen: " + String(pRTK->baseLen));
         //log::toAll("GPStime: " + String(pRTK->GPStime));
+        log::toAll("heading: " + String(pRTK->heading));
+        log::toAll("qualith: " + String(pRTK->RTKqual)); // quality of fix
+        log::toAll("pitch: " + String(pRTK->pitch));
+        log::toAll("roll: " + String(pRTK->roll));
+        log::toAll("satellites: " + String(pRTK->usedSV));
         log::toAll("GPStime: " + doubleToTimeString(pRTK->GPStime));
         // TBD: fix this. Depends on which GPS sensor
 #if 0
@@ -546,11 +560,6 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       }
       log::toAll("total satellites: " + String(totalSat));
       log::toAll("resetting GSV list!");
-      return;
-    }
-    if (words[i].startsWith("gsvtog")) {
-      GSVtoggle = !GSVtoggle;
-      log::toAll("GSVtoggle: " + String(GSVtoggle));
       return;
     }
 #endif

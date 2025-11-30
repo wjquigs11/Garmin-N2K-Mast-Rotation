@@ -44,11 +44,12 @@ public:
 };
 
 struct tRTKstats {
-  double antennaAstat, antennaBstat, baseLen, GPStime, pitch, roll, heading, pAcc, rAcc, hAcc, usedSV;
+  double heading, antennaAstat, antennaBstat, baseLen, GPStime, pitch, roll, pAcc, rAcc, hAcc, usedSV;
   int RTKqual;
 
 public:
   tRTKstats() {
+    heading=0;
     antennaAstat=0;
     antennaBstat=0;
     baseLen=0;
@@ -56,7 +57,6 @@ public:
     RTKqual=0;
     pitch=0;
     roll=0;
-    heading=0;
     pAcc=0;
     rAcc=0;
     hAcc=0;

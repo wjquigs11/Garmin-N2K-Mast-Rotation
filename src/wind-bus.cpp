@@ -561,6 +561,7 @@ if (!ina219.begin()) {
     log::toAll("opened NMEA0183 serial port");
 //#ifndef AIS_FORWARD // parse NMEA0183 messages
   NMEA0183_3.SetMsgHandler(HandleNMEA0183Msg);
+  // if (debugNMEA)
   //DebugNMEA0183Handlers(&Serial);
   NMEA0183serial.begin(NMEA0183BAUD, SERIAL_8N1, NMEA0183RX, NMEA0183TX);
   NMEA0183_3.SetMessageStream(&NMEA0183serial);
@@ -791,10 +792,7 @@ if (!ina219.begin()) {
     Serial.print("\n");
     }
 #else
-//#ifndef AIS_FORWARD
-    NMEA0183_3.ParseMessages(); // GPS from ICOM
-//#else // AIS_FORWARD -- do not parse, just forward
-//#endif // AIS
+NMEA0183_3.ParseMessages(); // AIS on NMEA0183Serial
 #endif // DEBUG_0183
 #endif // NMEA0183
 #ifdef RTK

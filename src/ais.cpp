@@ -69,6 +69,8 @@ void handle_outgoing_sentence(char *sentence, size_t length) {
     nmea_sentences_received ++;
 }
 
+// for now I'm doing it directly from nmea0183handlers.cpp but might want to move it here
+// inaddr_none doesn't work though
 void transmit_outgoing_over_udp(char *sentence, size_t length) {
     int result = udp_server.beginPacket(INADDR_NONE, UDP_FORWARD_PORT);
     udp_server.write((const uint8_t*)sentence, length);
