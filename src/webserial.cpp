@@ -398,27 +398,33 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           tuning = !tuning;
           log::toAll("tuning: " + String(tuning));
         }
+#ifdef NMEA0183
         if (words[i].startsWith("0183")) {
           debugNMEA = !debugNMEA;
           log::toAll("debug NMEA 0183:" + String(debugNMEA));
         }
+#endif
+#ifdef GSV
         if (words[i].startsWith("gsv")) {
           GSVtoggle = !GSVtoggle;
           log::toAll("GSVtoggle: " + String(GSVtoggle));
         }
+#endif
      } else {
         log::toAll("logPot: " + String(logPot));
         log::toAll("display: " + String(displayOnToggle));
-//#ifdef BNO_GRV
+#ifdef BNO08X
         log::toAll("compass: " + String(compass.OnToggle));
-//#endif
+#endif
         log::toAll("honeywell: " + String(honeywellOnToggle));
         log::toAll("stackTrace: " + String(stackTrace));
 #ifdef WINDLOG
         log::toAll("wind log: " + String(windLogging));
 #endif
+#ifdef NMEA0183
         log::toAll("tuning:  " + String(tuning));
         log::toAll("debug 0183:" + String(debugNMEA));
+#endif
       }
       return;
     } // toggle
