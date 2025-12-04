@@ -3,7 +3,9 @@
 #include "BoatData.h"
 
 // object-oriented classes
+#ifdef BNO08X
 #include "BNO085Compass.h"
+#endif
 #include "logto.h"
 
 // TBD: I should add mag heading, mast heading etc (all the globals) to BoatData struct so I could have a single extern in each file
@@ -67,10 +69,14 @@ extern int num_0183_fail;
 extern int num_0183_ok;
 
 void mastHeading();
+#ifdef BNO08X
 float readCompassDelta();
+#endif
 extern int mastAngle[2]; // array for both sensors
 // 0 = honeywell
+#ifdef BNO08X
 // 1 = compass
+#endif
 
 extern Adafruit_SSD1306 *display; // temp hack; move to windparse.h, but requires a bunch of #ifdefs
 int displayBright = 200;
@@ -108,7 +114,11 @@ void log::toAll(String s) {
 }
 
 String log::commandList[] = {"?", "format", "restart", "ls", "scan", "status", "readings", "mast", "lsap", "toggle",
-  "gps", "gpsdebug", "webserver", "compass", "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv"};
+  "gps", "gpsdebug", "webserver",
+#ifdef BNO08X
+  "compass",
+#endif
+  "windrx", "espnow", "teleplot", "hostname", "rtype", "n2k", "wifi", "rtk", "gsv"};
 
 const char *RTKqualStr[] = {"invalid", "single point", "differential GPS", "RTK fix", "RTK float", "DR", "manual", "xtra wide", "SBAS"};
 
@@ -243,6 +253,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
       log::toAll("maxTWS: " + String(pBD->maxTWS*MTOKTS));
       return;
     }
+#ifdef BNO08X
     if (words[i].equals("compass")) {
       log::toAll("           Boat Compass: " + String(compass.boatHeading));
       log::toAll("              Boat True: " + String(pBD->trueHeading));
@@ -270,6 +281,7 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
 #endif
       return;
     } // compass
+#endif
 #ifdef N2K
     if (words[i].equals("n2k")) {
       log::toAll("           n2k main: " + String(num_n2k_messages));
@@ -373,12 +385,12 @@ void WebSerialonMessage(uint8_t *data, size_t len) {
           displayOnToggle = !displayOnToggle;
           log::toAll("Display: " + String(displayOnToggle));
         }
-//#ifdef BNO_GRV
+#ifdef BNO08X
         if (words[i].startsWith("comp")) {
           compass.OnToggle = !compass.OnToggle;
           log::toAll("Compass: " + String(compass.OnToggle));
-        }        
-//#endif
+        }
+#endif
         if (words[i].startsWith("honey")) {
           honeywellOnToggle = !honeywellOnToggle;
           log::toAll("Honeywell: " + String(honeywellOnToggle));
@@ -621,7 +633,7 @@ if (words[i].startsWith("freq")) {
       return;
     }
 #endif
-//#ifdef BNO_GRV
+#ifdef BNO_GRV
     if (words[i].startsWith("report")) {
       for (int i=0; i<SH2_MAX_SENSOR_ID; i++) {
         if (compass.numReports[i] > 0)
@@ -630,7 +642,7 @@ if (words[i].startsWith("freq")) {
       log::toAll("total reports " + String(compass.totalReports));
       return;
     }
-//#endif
+#endif
 #ifdef BNO08X
     if (words[i].equals("rtype")) {
       int reportType;
